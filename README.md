@@ -17,4 +17,15 @@ with a single conversation to discuss them.
 
 ## Run
 
-    make run    # start the daemon (its log streams in this terminal)
+    make install   # set up the daemon (and the web client, once it exists)
+    make run       # start the daemon on 127.0.0.1:47825 (its log streams in this terminal)
+
+Health check:
+
+    curl http://127.0.0.1:47825/health    # {"status": "ok"}
+
+## Layout
+
+- `daemon/` — Python FastAPI daemon (SQLite, and later the MCP server + Agent SDK sessions)
+- `web/` — TypeScript React client (added in a later phase)
+- `skills/` — the launcher / review-adapter skills (added in a later phase)
