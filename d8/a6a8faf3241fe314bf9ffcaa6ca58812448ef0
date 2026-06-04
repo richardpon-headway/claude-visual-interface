@@ -1,0 +1,42 @@
+mise.toml
+  s_2d2a8100f95fdb::t_693f2f813022bf 1-5
+tests/test_migrations.py
+  s_2d2a8100f95fdb::t_60be8969ea3f54 1
+  s_2d2a8100f95fdb::t_b5b457cdc46b92 2-45,62-79
+  s_2d2a8100f95fdb::t_cc85e7eefd0edc 46-61
+tests/test_health.py
+  s_2d2a8100f95fdb::t_46a143fb5d91d3 1,3-6,11-12,16-17
+  s_2d2a8100f95fdb::t_77edfa5bfc2a75 2,7-10,13-15
+README.md
+  s_2d2a8100f95fdb::t_c7f285c875a6cb 20-31
+daemon/migrations/001_session.sql
+  s_2d2a8100f95fdb::t_16f31b013aa2ce 1-33
+daemon/db.py
+  s_2d2a8100f95fdb::t_60be8969ea3f54 21
+  s_2d2a8100f95fdb::t_40f3beb4fea2cf 1-20,22-147
+Makefile
+  s_2d2a8100f95fdb::t_4ba5b02d7bef8c 1-21
+pyproject.toml
+  s_2d2a8100f95fdb::t_a024a701cc7c6e 1-40
+daemon/main.py
+  s_2d2a8100f95fdb::t_2039a6aeb9c814 1-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "d8a6a8faf3241fe314bf9ffcaa6ca58812448ef0",
+  "prompts": {},
+  "sessions": {
+    "s_2d2a8100f95fdb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d07d54f-882d-4c6f-8ed2-861cc7aaa606",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
