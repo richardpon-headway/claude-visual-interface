@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from daemon.db import apply_migrations
+from daemon.mcp_server import SERVER_NAME, TOOLS
 
 HOST = "127.0.0.1"
 PORT = 47825
@@ -24,6 +25,7 @@ log = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await apply_migrations()
+    log.info("MCP server '%s' ready with %d primitive(s)", SERVER_NAME, len(TOOLS))
     yield
 
 

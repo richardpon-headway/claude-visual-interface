@@ -26,6 +26,6 @@ Health check:
 
 ## Layout
 
-- `daemon/` — Python FastAPI daemon (SQLite, and later the MCP server + Agent SDK sessions)
+- `daemon/` — Python FastAPI daemon (SQLite + the MCP render-primitive vocabulary; Agent SDK review sessions land later)
 - `web/` — TypeScript React client (added in a later phase)
 - `skills/` — the launcher / review-adapter skills (added in a later phase)
