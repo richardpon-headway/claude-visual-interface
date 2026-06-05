@@ -15,6 +15,28 @@ EXPECTED_PRIMITIVES = {
     "get_view_state",
 }
 
+# Valid arguments for each primitive, so every handler can be exercised.
+VALID_ARGS = {
+    "open_code": {"surface": "mcp-test", "file": "a.py"},
+    "split_pane": {"surface": "mcp-test", "n": 2},
+    "highlight_range": {"surface": "mcp-test", "file": "a.py", "range": {"start": 1, "end": 3}},
+    "show_diff": {"surface": "mcp-test", "a": "current", "b": "patch-1"},
+    "upsert_finding": {"session_id": "sess", "file": "a.py", "title": "t", "body": "b"},
+    "set_disposition": {"finding_id": "f", "value": "dismiss"},
+    "anchor_message": {"message_id": "m", "file": "a.py", "range": {"start": 1, "end": 2}},
+    "get_selection": {"surface": "mcp-test"},
+    "get_view_state": {"surface": "mcp-test"},
+}
+
+# Primitives still stubbed in this phase (state + pull); their handlers echo their name.
+UNWIRED_PRIMITIVES = {
+    "upsert_finding",
+    "set_disposition",
+    "anchor_message",
+    "get_selection",
+    "get_view_state",
+}
+
 
 def test_server_registers_the_full_primitive_vocabulary():
     assert {t.name for t in TOOLS} == EXPECTED_PRIMITIVES
@@ -33,10 +55,17 @@ def test_allowed_tools_are_fully_qualified():
 
 async def test_every_handler_returns_a_content_block():
     for t in TOOLS:
-        result = await t.handler({"surface": "s-1"})
+        result = await t.handler(VALID_ARGS[t.name])
         assert isinstance(result["content"], list)
+        assert result["content"]
         assert result["content"][0]["type"] == "text"
-        assert t.name in result["content"][0]["text"]
+
+
+async def test_unwired_primitives_still_echo_their_name():
+    by_name = {t.name: t for t in TOOLS}
+    for name in UNWIRED_PRIMITIVES:
+        result = await by_name[name].handler(VALID_ARGS[name])
+        assert name in result["content"][0]["text"]
 
 
 def test_build_agent_options_attaches_server_and_approves_primitives():
