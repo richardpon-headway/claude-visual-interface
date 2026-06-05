@@ -34,12 +34,21 @@ class Diff:
 
 
 @dataclass
+class Selection:
+    file: str
+    range: Range
+
+
+@dataclass
 class ViewState:
     surface: str
     panes: int = 1
     open: dict[int, OpenFile] = field(default_factory=dict)
     highlights: dict[str, list[Range]] = field(default_factory=dict)
     diff: Diff | None = None
+    # What the user has selected on the left pane (emitted by the browser, read
+    # back by the pull primitives). The pane emits selections only — no input.
+    selection: Selection | None = None
 
 
 def _to_range(raw: dict[str, int] | None) -> Range | None:
@@ -80,6 +89,12 @@ class ViewStore:
 
     def show_diff(self, surface: str, a: str, b: str) -> None:
         self.get_or_create(surface).diff = Diff(a=a, b=b)
+
+    def set_selection(self, surface: str, file: str, line_range: dict[str, int]) -> None:
+        selected = _to_range(line_range)
+        self.get_or_create(surface).selection = (
+            Selection(file=file, range=selected) if selected is not None else None
+        )
 
     def snapshot(self, surface: str) -> dict[str, Any]:
         return asdict(self.get_or_create(surface))

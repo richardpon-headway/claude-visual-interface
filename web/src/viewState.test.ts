@@ -26,6 +26,7 @@ describe("applyMessage", () => {
       open: { "0": { file: "a.py", range: null } },
       highlights: {},
       diff: null,
+      selection: null,
     };
     const next = applyMessage(emptyViewState("s"), { type: "snapshot", surface: "s", payload: incoming });
     expect(next).toEqual(incoming);

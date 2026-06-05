@@ -5,6 +5,7 @@
 export type Range = { start: number; end: number };
 export type OpenFile = { file: string; range: Range | null };
 export type Diff = { a: string; b: string };
+export type Selection = { file: string; range: Range };
 
 export type ViewState = {
   surface: string;
@@ -12,6 +13,7 @@ export type ViewState = {
   open: Record<string, OpenFile>; // pane index (as string) -> open file
   highlights: Record<string, Range[]>; // file -> highlighted ranges
   diff: Diff | null;
+  selection: Selection | null; // what the user has selected on the left pane
 };
 
 // Messages the daemon pushes over the WebSocket. `snapshot` carries a full
@@ -26,7 +28,7 @@ export type WsMessage =
 const MESSAGE_TYPES = ["snapshot", "open_code", "split_pane", "highlight_range", "show_diff"];
 
 export function emptyViewState(surface: string): ViewState {
-  return { surface, panes: 1, open: {}, highlights: {}, diff: null };
+  return { surface, panes: 1, open: {}, highlights: {}, diff: null, selection: null };
 }
 
 // Parse a raw WebSocket payload into a known message, or null if it doesn't
