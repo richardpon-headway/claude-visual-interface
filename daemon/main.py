@@ -8,6 +8,7 @@ streams in that terminal.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -45,9 +46,9 @@ async def ws_surface(websocket: WebSocket, surface: str) -> None:
     """Subscribe a browser to a surface's live stream.
 
     On connect the client gets the current view-state snapshot so it can render
-    immediately; thereafter it receives view-control events as they happen. There
-    is no inbound protocol yet (selection reporting lands with the pull
-    primitives) — reads only keep the socket open and detect close.
+    immediately; thereafter it receives view-control events as they happen. The
+    only inbound message is the browser reporting its left-pane selection, which
+    the daemon stores so the pull primitives can read it back.
     """
     await websocket.accept()
     hub.register(surface, websocket)
@@ -56,11 +57,29 @@ async def ws_surface(websocket: WebSocket, surface: str) -> None:
     )
     try:
         while True:
-            await websocket.receive_text()
+            _apply_inbound(surface, await websocket.receive_text())
     except WebSocketDisconnect:
         pass
     finally:
         hub.unregister(surface, websocket)
+
+
+def _apply_inbound(surface: str, raw: str) -> None:
+    """Apply a browser→daemon frame. Only `selection` is understood; anything
+    malformed or unknown is ignored (the socket stays open)."""
+    try:
+        msg = json.loads(raw)
+    except (ValueError, TypeError):
+        return
+    if not isinstance(msg, dict) or msg.get("type") != "selection":
+        return
+    payload = msg.get("payload")
+    if not isinstance(payload, dict):
+        return
+    file = payload.get("file")
+    line_range = payload.get("range")
+    if isinstance(file, str) and isinstance(line_range, dict):
+        store.set_selection(surface, file, line_range)
 
 
 def main() -> None:

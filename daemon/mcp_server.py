@@ -15,6 +15,7 @@ or push to the browser — that wiring (DB + WebSocket) lands in a later phase.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from claude_agent_sdk import ClaudeAgentOptions, ToolAnnotations, create_sdk_mcp_server, tool
@@ -206,7 +207,7 @@ async def anchor_message(args: dict[str, Any]) -> dict[str, Any]:
     annotations=ToolAnnotations(readOnlyHint=True),
 )
 async def get_selection(args: dict[str, Any]) -> dict[str, Any]:
-    return _not_wired("get_selection", args)
+    return _ok(json.dumps({"selection": store.snapshot(args["surface"])["selection"]}))
 
 
 @tool(
@@ -216,7 +217,7 @@ async def get_selection(args: dict[str, Any]) -> dict[str, Any]:
     annotations=ToolAnnotations(readOnlyHint=True),
 )
 async def get_view_state(args: dict[str, Any]) -> dict[str, Any]:
-    return _not_wired("get_view_state", args)
+    return _ok(json.dumps(store.snapshot(args["surface"])))
 
 
 # The full primitive vocabulary, in push-then-pull order.

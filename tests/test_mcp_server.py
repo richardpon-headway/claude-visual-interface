@@ -28,13 +28,12 @@ VALID_ARGS = {
     "get_view_state": {"surface": "mcp-test"},
 }
 
-# Primitives still stubbed in this phase (state + pull); their handlers echo their name.
+# Primitives still stubbed in this phase (the persisted state tools land with the
+# finding table in phase 2); their handlers echo their name.
 UNWIRED_PRIMITIVES = {
     "upsert_finding",
     "set_disposition",
     "anchor_message",
-    "get_selection",
-    "get_view_state",
 }
 
 

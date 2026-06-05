@@ -42,6 +42,15 @@ def test_show_diff_sets_the_current_diff():
     )
 
 
+def test_set_selection_records_and_clears():
+    store = ViewStore()
+    store.set_selection("s", "a.py", {"start": 3, "end": 8})
+    sel = store.get_or_create("s").selection
+    assert sel is not None
+    assert sel.file == "a.py"
+    assert (sel.range.start, sel.range.end) == (3, 8)
+
+
 def test_snapshot_is_json_shaped_and_starts_empty():
     store = ViewStore()
     snap = store.snapshot("fresh")
@@ -51,4 +60,5 @@ def test_snapshot_is_json_shaped_and_starts_empty():
         "open": {},
         "highlights": {},
         "diff": None,
+        "selection": None,
     }
