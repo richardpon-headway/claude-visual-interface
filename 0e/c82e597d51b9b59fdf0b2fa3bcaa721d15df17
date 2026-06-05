@@ -1,0 +1,32 @@
+web/src/App.tsx
+  s_2d2a8100f95fdb::t_a82cc0b4aae494 2,13,23-33
+web/src/useSurfaceSocket.ts
+  s_2d2a8100f95fdb::t_6a637ca9eb6bef 3-4,12-15,17-18,21-34,42-44
+web/src/FindingsPanel.tsx
+  s_2d2a8100f95fdb::t_88923dc46f257c 1-55
+web/src/viewState.ts
+  s_2d2a8100f95fdb::t_5e808d66deb368 1-3,10,17-38,42,48-50,52-60,66-71,91,94,97,102,104,108-112,115-125
+web/src/viewState.test.ts
+  s_2d2a8100f95fdb::t_5e30b7b0453e56 3-4,6-21,23-28,31-33,37-38,42,47-51,55,60,64-66,68-89,92-96,99-101,103,105
+web/vite.config.ts
+  s_2d2a8100f95fdb::t_c781247016d751 17-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "0ec82e597d51b9b59fdf0b2fa3bcaa721d15df17",
+  "prompts": {},
+  "sessions": {
+    "s_2d2a8100f95fdb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d07d54f-882d-4c6f-8ed2-861cc7aaa606",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
