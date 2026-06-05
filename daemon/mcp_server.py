@@ -19,6 +19,9 @@ from typing import Any
 
 from claude_agent_sdk import ClaudeAgentOptions, ToolAnnotations, create_sdk_mcp_server, tool
 
+from daemon.hub import hub
+from daemon.view_state import store
+
 SERVER_NAME = "cvi"
 SERVER_VERSION = "0.1.0"
 
@@ -33,10 +36,14 @@ _RANGE_SCHEMA = {
 }
 
 
+def _ok(text: str) -> dict[str, Any]:
+    return {"content": [{"type": "text", "text": text}]}
+
+
 def _not_wired(name: str, args: dict[str, Any]) -> dict[str, Any]:
     """Stub result for an unwired primitive — echoes the call for observability."""
     text = f"[cvi skeleton] {name} accepted {args!r}; state/render wiring lands in a later phase."
-    return {"content": [{"type": "text", "text": text}]}
+    return _ok(text)
 
 
 # --- view-control primitives (transient) -----------------------------------------
@@ -58,7 +65,17 @@ def _not_wired(name: str, args: dict[str, Any]) -> dict[str, Any]:
     },
 )
 async def open_code(args: dict[str, Any]) -> dict[str, Any]:
-    return _not_wired("open_code", args)
+    surface = args["surface"]
+    file = args["file"]
+    line_range = args.get("range")
+    pane = args.get("pane", 0)
+    store.open_code(surface, file, line_range, pane)
+    await hub.broadcast(
+        surface,
+        {"type": "open_code", "surface": surface,
+         "payload": {"file": file, "range": line_range, "pane": pane}},
+    )
+    return _ok(f"opened {file} on surface {surface} (pane {pane})")
 
 
 @tool(
@@ -67,7 +84,13 @@ async def open_code(args: dict[str, Any]) -> dict[str, Any]:
     {"surface": str, "n": int},
 )
 async def split_pane(args: dict[str, Any]) -> dict[str, Any]:
-    return _not_wired("split_pane", args)
+    surface = args["surface"]
+    n = args["n"]
+    store.split_pane(surface, n)
+    await hub.broadcast(
+        surface, {"type": "split_pane", "surface": surface, "payload": {"n": n}}
+    )
+    return _ok(f"split surface {surface} into {n} pane(s)")
 
 
 @tool(
@@ -84,7 +107,16 @@ async def split_pane(args: dict[str, Any]) -> dict[str, Any]:
     },
 )
 async def highlight_range(args: dict[str, Any]) -> dict[str, Any]:
-    return _not_wired("highlight_range", args)
+    surface = args["surface"]
+    file = args["file"]
+    line_range = args["range"]
+    store.highlight_range(surface, file, line_range)
+    await hub.broadcast(
+        surface,
+        {"type": "highlight_range", "surface": surface,
+         "payload": {"file": file, "range": line_range}},
+    )
+    return _ok(f"highlighted {file} {line_range} on surface {surface}")
 
 
 @tool(
@@ -94,7 +126,14 @@ async def highlight_range(args: dict[str, Any]) -> dict[str, Any]:
     {"surface": str, "a": str, "b": str},
 )
 async def show_diff(args: dict[str, Any]) -> dict[str, Any]:
-    return _not_wired("show_diff", args)
+    surface = args["surface"]
+    a = args["a"]
+    b = args["b"]
+    store.show_diff(surface, a, b)
+    await hub.broadcast(
+        surface, {"type": "show_diff", "surface": surface, "payload": {"a": a, "b": b}}
+    )
+    return _ok(f"showing diff {a} vs {b} on surface {surface}")
 
 
 # --- state primitives (persisted) -------------------------------------------------
