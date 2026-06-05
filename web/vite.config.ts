@@ -14,6 +14,8 @@ export default defineConfig({
     proxy: {
       "/ws": { target: DAEMON, changeOrigin: false, ws: true },
       "/health": { target: DAEMON, changeOrigin: false },
+      "/sessions": { target: DAEMON, changeOrigin: false },
+      "/reviews": { target: DAEMON, changeOrigin: false },
     },
   },
   test: {

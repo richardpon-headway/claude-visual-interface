@@ -1,4 +1,5 @@
 import { CodePane } from "./CodePane";
+import { FindingsPanel } from "./FindingsPanel";
 import { useSurfaceSocket } from "./useSurfaceSocket";
 
 // Routing (/s/<uuid>) lands in a later phase; for now the surface id is the
@@ -9,7 +10,7 @@ function surfaceFromLocation(): string {
 
 export function App() {
   const surface = surfaceFromLocation();
-  const view = useSurfaceSocket(surface);
+  const { view, findings } = useSurfaceSocket(surface);
   const paneIndexes = Array.from({ length: view.panes }, (_, i) => i);
 
   return (
@@ -19,13 +20,17 @@ export function App() {
         <span className="text-zinc-500">surface: {surface}</span>
       </header>
 
-      <main className="flex min-h-0 flex-1">
-        {paneIndexes.map((i) => (
-          <div key={i} className="min-w-0 flex-1 border-r border-zinc-800 last:border-r-0">
-            <CodePane openFile={view.open[String(i)]} />
-          </div>
-        ))}
-      </main>
+      <div className="flex min-h-0 flex-1">
+        {/* Left: code panes. Right: findings (the conversation lands here later). */}
+        <main className="flex min-h-0 flex-1">
+          {paneIndexes.map((i) => (
+            <div key={i} className="min-w-0 flex-1 border-r border-zinc-800 last:border-r-0">
+              <CodePane openFile={view.open[String(i)]} />
+            </div>
+          ))}
+        </main>
+        <FindingsPanel findings={findings} />
+      </div>
 
       <footer className="border-t border-zinc-800 px-4 py-1 text-xs text-zinc-500">
         {view.diff ? `diff: ${view.diff.a} vs ${view.diff.b} · ` : ""}
