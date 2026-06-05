@@ -1,0 +1,52 @@
+web/tsconfig.json
+  s_2d2a8100f95fdb::t_d229df9f31f274 1-7
+web/vite.config.ts
+  s_2d2a8100f95fdb::t_55a41c5aaa0fe3 1-25
+web/src/useSurfaceSocket.ts
+  s_2d2a8100f95fdb::t_e0185a08295cd3 1-32
+web/src/main.tsx
+  s_2d2a8100f95fdb::t_39e7a1865e9dc5 1-11
+web/pnpm-lock.yaml
+  ai_agent 1-2255
+.gitignore
+  s_2d2a8100f95fdb::t_51c63684aa0e3a 12
+web/src/styles.css
+  s_2d2a8100f95fdb::t_9181627a4eb82d 1-11
+web/src/viewState.test.ts
+  s_2d2a8100f95fdb::t_38869c443d3f6d 1-70
+web/package.json
+  s_2d2a8100f95fdb::t_176bc2c87225a4 1-32
+web/tsconfig.node.json
+  s_2d2a8100f95fdb::t_6122e389260eb5 1-18
+web/src/CodePane.tsx
+  s_2d2a8100f95fdb::t_372f575fa22147 1-58
+web/tsconfig.app.json
+  s_2d2a8100f95fdb::t_8e0f6c9057b815 1-21
+web/index.html
+  s_2d2a8100f95fdb::t_c1ffcbd5103497 1-12
+web/src/viewState.ts
+  s_2d2a8100f95fdb::t_cea417b62a6a78 1-77
+web/src/test-setup.ts
+  s_2d2a8100f95fdb::t_2b1e0d3cde1f62 1-18
+web/src/App.tsx
+  s_2d2a8100f95fdb::t_241cb92d664874 1-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "e1cff412059025777114e64ea508668a8483332b",
+  "prompts": {},
+  "sessions": {
+    "s_2d2a8100f95fdb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d07d54f-882d-4c6f-8ed2-861cc7aaa606",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
