@@ -8,6 +8,7 @@ streams in that terminal.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -17,7 +18,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from daemon import reviews
+from daemon import findings, reviews
 from daemon.db import apply_migrations
 from daemon.hub import hub
 from daemon.mcp_server import SERVER_NAME, TOOLS
@@ -44,6 +45,14 @@ app = FastAPI(title="Claude Visual Interface", lifespan=lifespan)
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/sessions/{session_id}/findings")
+async def list_session_findings(session_id: str) -> dict[str, Any]:
+    """The findings for a session, for a browser's initial load (live updates
+    then arrive as `finding` / `disposition` events over the WebSocket)."""
+    rows = await asyncio.to_thread(findings.list_findings, session_id)
+    return {"findings": rows}
 
 
 class ReviewRequest(BaseModel):
