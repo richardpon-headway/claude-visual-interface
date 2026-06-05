@@ -15,11 +15,13 @@ or push to the browser — that wiring (DB + WebSocket) lands in a later phase.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
 from claude_agent_sdk import ClaudeAgentOptions, ToolAnnotations, create_sdk_mcp_server, tool
 
+from daemon import findings
 from daemon.hub import hub
 from daemon.view_state import store
 
@@ -169,7 +171,20 @@ async def show_diff(args: dict[str, Any]) -> dict[str, Any]:
     },
 )
 async def upsert_finding(args: dict[str, Any]) -> dict[str, Any]:
-    return _not_wired("upsert_finding", args)
+    finding_id = await asyncio.to_thread(
+        findings.upsert_finding,
+        finding_id=args.get("id"),
+        session_id=args["session_id"],
+        file=args["file"],
+        title=args["title"],
+        body=args["body"],
+        severity=args.get("severity"),
+        anchor=args.get("anchor"),
+        suggested_patch=args.get("suggested_patch"),
+        source_lens=args.get("source_lens"),
+        actions=args.get("actions"),
+    )
+    return _ok(json.dumps({"finding_id": finding_id}))
 
 
 @tool(
@@ -178,7 +193,14 @@ async def upsert_finding(args: dict[str, Any]) -> dict[str, Any]:
     {"finding_id": str, "value": str},
 )
 async def set_disposition(args: dict[str, Any]) -> dict[str, Any]:
-    return _not_wired("set_disposition", args)
+    finding_id = args["finding_id"]
+    found = await asyncio.to_thread(findings.set_disposition, finding_id, args["value"])
+    if not found:
+        return {
+            "content": [{"type": "text", "text": f"no finding with id {finding_id}"}],
+            "is_error": True,
+        }
+    return _ok(f"set disposition of {finding_id} to {args['value']}")
 
 
 @tool(

@@ -1,4 +1,4 @@
-from daemon.db import apply_migrations_sync, open_db
+from daemon.db import _discover_migrations, apply_migrations_sync, open_db
 
 
 def _table_columns(db_path, table):
@@ -76,4 +76,6 @@ def test_rerunning_migrations_is_a_noop(tmp_path):
     finally:
         conn.close()
 
-    assert first == second == 1
+    # Re-running is a no-op: the count is unchanged and equals the number of
+    # migration files on disk (every one applied exactly once).
+    assert first == second == len(_discover_migrations())
