@@ -12,13 +12,17 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, Field
 
 from daemon.db import apply_migrations
 from daemon.hub import hub
 from daemon.mcp_server import SERVER_NAME, TOOLS
 from daemon.view_state import store
+
+_TOOLS_BY_NAME = {t.name: t for t in TOOLS}
 
 HOST = "127.0.0.1"
 PORT = 47825
@@ -39,6 +43,22 @@ app = FastAPI(title="Claude Visual Interface", lifespan=lifespan)
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+class EmitRequest(BaseModel):
+    tool: str
+    args: dict[str, Any] = Field(default_factory=dict)
+
+
+@app.post("/dev/emit")
+async def dev_emit(req: EmitRequest) -> dict[str, Any]:
+    """Dev harness: invoke an MCP primitive by name so the push→render path can be
+    exercised by hand — e.g. ``curl`` an ``open_code`` while a browser watches
+    ``/ws/<surface>`` — without a real Claude session."""
+    tool = _TOOLS_BY_NAME.get(req.tool)
+    if tool is None:
+        raise HTTPException(status_code=404, detail=f"unknown primitive: {req.tool}")
+    return await tool.handler(req.args)
 
 
 @app.websocket("/ws/{surface}")
