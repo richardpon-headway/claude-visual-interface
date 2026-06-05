@@ -9,6 +9,7 @@ __pycache__/
 # Node / web
 node_modules/
 dist/
+*.tsbuildinfo
 
 # Local data
 *.db
