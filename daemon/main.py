@@ -17,6 +17,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
+from daemon import reviews
 from daemon.db import apply_migrations
 from daemon.hub import hub
 from daemon.mcp_server import SERVER_NAME, TOOLS
@@ -43,6 +44,28 @@ app = FastAPI(title="Claude Visual Interface", lifespan=lifespan)
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+class ReviewRequest(BaseModel):
+    worktree_path: str
+    base_ref: str
+    repo: str | None = None
+    branch: str | None = None
+    title: str | None = None
+
+
+@app.post("/reviews")
+async def create_review(req: ReviewRequest) -> dict[str, str]:
+    """Create a review session over a worktree and kick off the run. Returns the
+    session id; the run proceeds in the background and streams over its WebSocket."""
+    session_id = await reviews.start_review(
+        worktree_path=req.worktree_path,
+        base_ref=req.base_ref,
+        repo=req.repo,
+        branch=req.branch,
+        title=req.title,
+    )
+    return {"session_id": session_id}
 
 
 class EmitRequest(BaseModel):
