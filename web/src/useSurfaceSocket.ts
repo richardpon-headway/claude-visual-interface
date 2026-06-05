@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
-import { applyMessage, emptyViewState, parseMessage } from "./viewState";
-import type { ViewState } from "./viewState";
+import { applyMessage, emptySurface, parseMessage } from "./viewState";
+import type { Finding, SurfaceState } from "./viewState";
 
 function surfaceUrl(surface: string): string {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -9,15 +9,29 @@ function surfaceUrl(surface: string): string {
 }
 
 /**
- * Subscribe to a surface's live stream. Returns the current view state, which
- * starts empty, is replaced by the snapshot on connect, then advances as
- * view-control events arrive. Re-subscribes when `surface` changes.
+ * Subscribe to a surface. Returns its full state — the live view plus findings.
+ * On (re)subscribe it fetches the current findings once over HTTP, then stays
+ * current from WebSocket events. Live events win over the fetched baseline if the
+ * two race. Re-subscribes when `surface` changes.
  */
-export function useSurfaceSocket(surface: string): ViewState {
-  const [state, setState] = useState<ViewState>(() => emptyViewState(surface));
+export function useSurfaceSocket(surface: string): SurfaceState {
+  const [state, setState] = useState<SurfaceState>(() => emptySurface(surface));
 
   useEffect(() => {
-    setState(emptyViewState(surface));
+    setState(emptySurface(surface));
+    let cancelled = false;
+
+    fetch(`/sessions/${encodeURIComponent(surface)}/findings`)
+      .then((res) => (res.ok ? res.json() : { findings: [] }))
+      .then((data: { findings?: Finding[] }) => {
+        if (cancelled) return;
+        const fetched = Object.fromEntries((data.findings ?? []).map((f) => [f.id, f]));
+        setState((prev) => ({ ...prev, findings: { ...fetched, ...prev.findings } }));
+      })
+      .catch(() => {
+        /* daemon unreachable or no findings yet — live events still flow */
+      });
+
     const ws = new WebSocket(surfaceUrl(surface));
     ws.onmessage = (event) => {
       const msg = parseMessage(event.data);
@@ -25,7 +39,10 @@ export function useSurfaceSocket(surface: string): ViewState {
         setState((prev) => applyMessage(prev, msg));
       }
     };
-    return () => ws.close();
+    return () => {
+      cancelled = true;
+      ws.close();
+    };
   }, [surface]);
 
   return state;

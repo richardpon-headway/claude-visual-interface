@@ -1,0 +1,55 @@
+import type { Finding } from "./viewState";
+
+function severityClass(severity: string | null): string {
+  switch (severity) {
+    case "high":
+      return "bg-red-900 text-red-200";
+    case "medium":
+      return "bg-amber-900 text-amber-200";
+    default:
+      return "bg-zinc-800 text-zinc-300";
+  }
+}
+
+function FindingRow({ finding }: { finding: Finding }) {
+  const lines = finding.anchor ? `:${finding.anchor.range.start}–${finding.anchor.range.end}` : "";
+  return (
+    <li className={`border-b border-zinc-800 p-3 ${finding.disposition ? "opacity-50" : ""}`}>
+      <div className="flex items-center gap-2">
+        <span className={`rounded px-1.5 py-0.5 text-xs ${severityClass(finding.severity)}`}>
+          {finding.severity ?? "note"}
+        </span>
+        <span className="text-sm font-medium">{finding.title}</span>
+      </div>
+      <div className="mt-1 font-mono text-xs text-zinc-500">
+        {finding.file}
+        {lines}
+      </div>
+      {finding.disposition ? (
+        <div className="mt-1 text-xs text-zinc-400">→ {finding.disposition}</div>
+      ) : null}
+    </li>
+  );
+}
+
+export function FindingsPanel({ findings }: { findings: Record<string, Finding> }) {
+  const items = Object.values(findings);
+  const open = items.filter((f) => !f.disposition).length;
+
+  return (
+    <aside className="flex w-96 min-w-0 flex-col border-l border-zinc-800">
+      <div className="border-b border-zinc-800 px-3 py-2 text-sm font-semibold">
+        Findings <span className="text-zinc-500">· {items.length} · {open} open</span>
+      </div>
+      {items.length === 0 ? (
+        <div className="p-3 text-sm text-zinc-500">no findings yet</div>
+      ) : (
+        <ul className="min-h-0 flex-1 overflow-auto">
+          {items.map((f) => (
+            <FindingRow key={f.id} finding={f} />
+          ))}
+        </ul>
+      )}
+    </aside>
+  );
+}
