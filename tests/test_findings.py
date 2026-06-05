@@ -66,5 +66,9 @@ def test_upsert_by_id_updates_content_but_preserves_disposition():
     assert rows[0]["disposition"] == "dismissed"  # re-emit preserves the decision
 
 
-def test_set_disposition_reports_missing_finding():
-    assert findings.set_disposition("does-not-exist", "dismiss") is False
+def test_set_disposition_returns_session_id_or_none():
+    fid = findings.upsert_finding(
+        finding_id=None, session_id="sess", file="a.py", title="t", body="b"
+    )
+    assert findings.set_disposition(fid, "dismissed") == "sess"
+    assert findings.set_disposition("does-not-exist", "dismiss") is None

@@ -184,6 +184,10 @@ async def upsert_finding(args: dict[str, Any]) -> dict[str, Any]:
         source_lens=args.get("source_lens"),
         actions=args.get("actions"),
     )
+    finding = await asyncio.to_thread(findings.get_finding, finding_id)
+    if finding is not None:
+        surface = finding["session_id"]
+        await hub.broadcast(surface, {"type": "finding", "surface": surface, "payload": finding})
     return _ok(json.dumps({"finding_id": finding_id}))
 
 
@@ -194,13 +198,22 @@ async def upsert_finding(args: dict[str, Any]) -> dict[str, Any]:
 )
 async def set_disposition(args: dict[str, Any]) -> dict[str, Any]:
     finding_id = args["finding_id"]
-    found = await asyncio.to_thread(findings.set_disposition, finding_id, args["value"])
-    if not found:
+    value = args["value"]
+    surface = await asyncio.to_thread(findings.set_disposition, finding_id, value)
+    if surface is None:
         return {
             "content": [{"type": "text", "text": f"no finding with id {finding_id}"}],
             "is_error": True,
         }
-    return _ok(f"set disposition of {finding_id} to {args['value']}")
+    await hub.broadcast(
+        surface,
+        {
+            "type": "disposition",
+            "surface": surface,
+            "payload": {"finding_id": finding_id, "value": value},
+        },
+    )
+    return _ok(f"set disposition of {finding_id} to {value}")
 
 
 @tool(

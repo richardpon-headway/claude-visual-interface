@@ -116,18 +116,36 @@ def upsert_finding(
         conn.close()
 
 
-def set_disposition(finding_id: str, value: str) -> bool:
-    """Set a finding's disposition. Returns False if no such finding exists."""
+def set_disposition(finding_id: str, value: str) -> str | None:
+    """Set a finding's disposition. Returns the finding's session_id (so callers
+    can notify that surface), or None if no such finding exists."""
     conn = open_db()
     try:
-        cursor = conn.execute(
+        row = conn.execute(
+            "SELECT session_id FROM finding WHERE id = ?", (finding_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        conn.execute(
             "UPDATE finding SET disposition = ?, updated_at = ? WHERE id = ?",
             (value, _now_iso(), finding_id),
         )
         conn.commit()
-        return cursor.rowcount > 0
+        return row[0]
     finally:
         conn.close()
+
+
+def get_finding(finding_id: str) -> dict[str, Any] | None:
+    conn = open_db()
+    try:
+        row = conn.execute(
+            f"SELECT {', '.join(_COLUMNS)} FROM finding WHERE id = ?",
+            (finding_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    return _decode(row) if row else None
 
 
 def list_findings(session_id: str) -> list[dict[str, Any]]:
