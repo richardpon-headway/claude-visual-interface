@@ -1,7 +1,9 @@
 import pytest
+from fastapi.testclient import TestClient
 
 from daemon import sessions
 from daemon.db import apply_migrations_sync, open_db
+from daemon.main import app
 
 
 @pytest.fixture(autouse=True)
@@ -73,3 +75,50 @@ def test_excludes_archived_unless_requested():
 
     assert [s["id"] for s in sessions.list_sessions()] == ["live"]
     assert {s["id"] for s in sessions.list_sessions(include_archived=True)} == {"live", "filed"}
+
+
+def test_archive_hides_from_default_list_and_unarchive_restores():
+    _insert_session("s", updated_at="2026-01-01T00:00:00Z")
+    assert sessions.set_archived("s", True) is True
+    assert sessions.list_sessions() == []
+    assert [r["id"] for r in sessions.list_sessions(include_archived=True)] == ["s"]
+
+    assert sessions.set_archived("s", False) is True
+    assert [r["id"] for r in sessions.list_sessions()] == ["s"]
+
+
+def test_soft_delete_hides_everywhere_and_restore_brings_back():
+    _insert_session("s", updated_at="2026-01-01T00:00:00Z")
+    assert sessions.set_deleted("s", True) is True
+    assert sessions.list_sessions(include_archived=True) == []  # hidden even with archived shown
+
+    assert sessions.set_deleted("s", False) is True
+    assert [r["id"] for r in sessions.list_sessions()] == ["s"]
+
+
+def test_lifecycle_toggle_reports_missing_session():
+    assert sessions.set_archived("ghost", True) is False
+    assert sessions.set_deleted("ghost", True) is False
+
+
+def test_archive_endpoint_removes_session_from_the_listing():
+    _insert_session("s", updated_at="2026-01-01T00:00:00Z")
+    with TestClient(app) as client:
+        assert client.post("/sessions/s/archive").status_code == 200
+        listed = client.get("/sessions").json()["sessions"]
+    assert listed == []
+
+
+def test_delete_endpoint_then_restore():
+    _insert_session("s", updated_at="2026-01-01T00:00:00Z")
+    with TestClient(app) as client:
+        assert client.delete("/sessions/s").status_code == 200
+        assert client.get("/sessions").json()["sessions"] == []
+        assert client.post("/sessions/s/restore").status_code == 200
+        assert [r["id"] for r in client.get("/sessions").json()["sessions"]] == ["s"]
+
+
+def test_lifecycle_endpoint_404s_on_missing_session():
+    with TestClient(app) as client:
+        assert client.post("/sessions/ghost/archive").status_code == 404
+        assert client.delete("/sessions/ghost").status_code == 404
