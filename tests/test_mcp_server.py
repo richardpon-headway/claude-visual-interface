@@ -1,4 +1,25 @@
+import pytest
+
+from daemon.db import apply_migrations_sync, open_db
 from daemon.mcp_server import ALLOWED_TOOLS, SERVER_NAME, TOOLS, build_agent_options, cvi_server
+
+
+@pytest.fixture(autouse=True)
+def db(tmp_path, monkeypatch):
+    # Some primitives now persist to SQLite; isolate the DB and seed the session
+    # that upsert_finding's VALID_ARGS reference (the finding FK requires it).
+    monkeypatch.setenv("CVI_DB_PATH", str(tmp_path / "cvi.db"))
+    apply_migrations_sync()
+    conn = open_db()
+    try:
+        conn.execute(
+            "INSERT INTO session (id, type, status, created_at, updated_at) "
+            "VALUES ('mcp-test', 'review', 'running', 't', 't')",
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
 
 EXPECTED_PRIMITIVES = {
     # view-control
@@ -21,18 +42,16 @@ VALID_ARGS = {
     "split_pane": {"surface": "mcp-test", "n": 2},
     "highlight_range": {"surface": "mcp-test", "file": "a.py", "range": {"start": 1, "end": 3}},
     "show_diff": {"surface": "mcp-test", "a": "current", "b": "patch-1"},
-    "upsert_finding": {"session_id": "sess", "file": "a.py", "title": "t", "body": "b"},
+    "upsert_finding": {"session_id": "mcp-test", "file": "a.py", "title": "t", "body": "b"},
     "set_disposition": {"finding_id": "f", "value": "dismiss"},
     "anchor_message": {"message_id": "m", "file": "a.py", "range": {"start": 1, "end": 2}},
     "get_selection": {"surface": "mcp-test"},
     "get_view_state": {"surface": "mcp-test"},
 }
 
-# Primitives still stubbed in this phase (the persisted state tools land with the
-# finding table in phase 2); their handlers echo their name.
+# anchor_message stays stubbed until the messages table (phase 4); its handler
+# still echoes its name.
 UNWIRED_PRIMITIVES = {
-    "upsert_finding",
-    "set_disposition",
     "anchor_message",
 }
 
