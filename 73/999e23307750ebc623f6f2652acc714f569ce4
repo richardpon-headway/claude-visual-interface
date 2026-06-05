@@ -1,0 +1,22 @@
+web/src/HomePage.tsx
+  s_2d2a8100f95fdb::t_30712b25fedf6b 1,21-23,25-32,34,38-40,45-61,68,71-73,76-77,79-84,92-99,104,115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "73999e23307750ebc623f6f2652acc714f569ce4",
+  "prompts": {},
+  "sessions": {
+    "s_2d2a8100f95fdb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d07d54f-882d-4c6f-8ed2-861cc7aaa606",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
