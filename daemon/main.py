@@ -18,7 +18,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from daemon import findings, reviews
+from daemon import findings, reviews, sessions
 from daemon.db import apply_migrations
 from daemon.hub import hub
 from daemon.mcp_server import SERVER_NAME, TOOLS
@@ -45,6 +45,14 @@ app = FastAPI(title="Claude Visual Interface", lifespan=lifespan)
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/sessions")
+async def get_sessions(include_archived: bool = False) -> dict[str, Any]:
+    """List sessions for the home page (newest activity first, with findings
+    summaries). Soft-deleted sessions are excluded; archived ones unless asked."""
+    rows = await asyncio.to_thread(sessions.list_sessions, include_archived=include_archived)
+    return {"sessions": rows}
 
 
 @app.get("/sessions/{session_id}/findings")
