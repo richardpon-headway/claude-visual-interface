@@ -1,0 +1,25 @@
+tests/test_dev_emit.py
+  s_2d2a8100f95fdb::t_c17d4c5c399892 1-26
+daemon/main.py
+  s_2d2a8100f95fdb::t_6cf0247c139c73 15,17-18,25
+  s_2d2a8100f95fdb::t_b5f323895740bb 48-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "5b14e510443eb65f0c208f622252d80ed3e14f27",
+  "prompts": {},
+  "sessions": {
+    "s_2d2a8100f95fdb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d07d54f-882d-4c6f-8ed2-861cc7aaa606",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
