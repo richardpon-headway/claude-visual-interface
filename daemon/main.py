@@ -55,6 +55,34 @@ async def get_sessions(include_archived: bool = False) -> dict[str, Any]:
     return {"sessions": rows}
 
 
+async def _toggle_lifecycle(fn: Any, session_id: str, value: bool) -> dict[str, bool]:
+    changed = await asyncio.to_thread(fn, session_id, value)
+    if not changed:
+        raise HTTPException(status_code=404, detail=f"no session with id {session_id}")
+    return {"ok": True}
+
+
+@app.post("/sessions/{session_id}/archive")
+async def archive_session(session_id: str) -> dict[str, bool]:
+    return await _toggle_lifecycle(sessions.set_archived, session_id, True)
+
+
+@app.post("/sessions/{session_id}/unarchive")
+async def unarchive_session(session_id: str) -> dict[str, bool]:
+    return await _toggle_lifecycle(sessions.set_archived, session_id, False)
+
+
+@app.delete("/sessions/{session_id}")
+async def delete_session(session_id: str) -> dict[str, bool]:
+    """Soft-delete (recoverable): hide the session from the default list."""
+    return await _toggle_lifecycle(sessions.set_deleted, session_id, True)
+
+
+@app.post("/sessions/{session_id}/restore")
+async def restore_session(session_id: str) -> dict[str, bool]:
+    return await _toggle_lifecycle(sessions.set_deleted, session_id, False)
+
+
 @app.get("/sessions/{session_id}/findings")
 async def list_session_findings(session_id: str) -> dict[str, Any]:
     """The findings for a session, for a browser's initial load (live updates

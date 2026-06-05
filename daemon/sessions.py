@@ -98,6 +98,30 @@ def list_sessions(*, include_archived: bool = False) -> list[dict[str, Any]]:
     return sessions
 
 
+def _set_lifecycle_timestamp(session_id: str, column: str, on: bool) -> bool:
+    """Set (on) or clear (off) a lifecycle timestamp column. Returns False if no
+    such session. `column` is an internal constant, never user input."""
+    now = _now_iso()
+    conn = open_db()
+    try:
+        cursor = conn.execute(
+            f"UPDATE session SET {column} = ?, updated_at = ? WHERE id = ?",
+            (now if on else None, now, session_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def set_archived(session_id: str, archived: bool) -> bool:
+    return _set_lifecycle_timestamp(session_id, "archived_at", archived)
+
+
+def set_deleted(session_id: str, deleted: bool) -> bool:
+    return _set_lifecycle_timestamp(session_id, "deleted_at", deleted)
+
+
 def get_session(session_id: str) -> dict[str, Any] | None:
     conn = open_db()
     try:
