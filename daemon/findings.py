@@ -10,11 +10,16 @@ them via ``asyncio.to_thread``.
 from __future__ import annotations
 
 import json
+import sqlite3
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 from daemon.db import open_db
+
+
+class UnknownSessionError(Exception):
+    """A finding referenced a session_id with no matching session row."""
 
 # Column order shared by the SELECT and the row decoder.
 _COLUMNS = (
@@ -90,26 +95,31 @@ def upsert_finding(
             return existing
 
         new_id = finding_id or str(uuid.uuid4())
-        conn.execute(
-            "INSERT INTO finding (id, session_id, file, anchor, severity, title, body, "
-            "suggested_patch, source_lens, actions, disposition, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                new_id,
-                session_id,
-                file,
-                _dump(anchor),
-                severity,
-                title,
-                body,
-                suggested_patch,
-                source_lens,
-                _dump(actions),
-                None,
-                now,
-                now,
-            ),
-        )
+        try:
+            conn.execute(
+                "INSERT INTO finding (id, session_id, file, anchor, severity, title, body, "
+                "suggested_patch, source_lens, actions, disposition, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    new_id,
+                    session_id,
+                    file,
+                    _dump(anchor),
+                    severity,
+                    title,
+                    body,
+                    suggested_patch,
+                    source_lens,
+                    _dump(actions),
+                    None,
+                    now,
+                    now,
+                ),
+            )
+        except sqlite3.IntegrityError as exc:
+            # The only INSERT-time integrity constraint on finding is the
+            # session_id foreign key, so this means the session doesn't exist.
+            raise UnknownSessionError(session_id) from exc
         conn.commit()
         return new_id
     finally:
