@@ -1,0 +1,29 @@
+daemon/mcp_server.py
+  s_2d2a8100f95fdb::t_6edf31650cfd86 174-192
+tests/test_findings.py
+  s_2d2a8100f95fdb::t_c59be3cee609a7 69-75
+tests/test_findings_wire.py
+  s_2d2a8100f95fdb::t_1fb7208e4dc983 96-115
+daemon/findings.py
+  s_2d2a8100f95fdb::t_87b6c504d36f9d 98-122
+  s_2d2a8100f95fdb::t_a008dc43e8030d 13,20-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "cb45a3353233f2be65adfb012fe7ebcf54d569d4",
+  "prompts": {},
+  "sessions": {
+    "s_2d2a8100f95fdb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d07d54f-882d-4c6f-8ed2-861cc7aaa606",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
