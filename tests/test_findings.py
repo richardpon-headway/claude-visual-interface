@@ -66,6 +66,13 @@ def test_upsert_by_id_updates_content_but_preserves_disposition():
     assert rows[0]["disposition"] == "dismissed"  # re-emit preserves the decision
 
 
+def test_upsert_with_unknown_session_raises():
+    with pytest.raises(findings.UnknownSessionError):
+        findings.upsert_finding(
+            finding_id=None, session_id="ghost", file="a.py", title="t", body="b"
+        )
+
+
 def test_set_disposition_returns_session_id_or_none():
     fid = findings.upsert_finding(
         finding_id=None, session_id="sess", file="a.py", title="t", body="b"

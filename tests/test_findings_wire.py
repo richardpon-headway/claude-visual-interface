@@ -93,3 +93,23 @@ def test_get_findings_returns_the_sessions_findings():
     findings_list = response.json()["findings"]
     assert len(findings_list) == 1
     assert findings_list[0]["file"] == "a.py"
+
+
+async def test_upsert_unknown_session_returns_is_error_not_a_crash():
+    result = await upsert_finding.handler(
+        {"session_id": "nonexistent", "file": "a.py", "title": "t", "body": "b"}
+    )
+    assert result["is_error"] is True
+
+
+def test_dev_emit_unknown_session_is_a_clean_200_not_500():
+    with TestClient(app) as client:
+        resp = client.post(
+            "/dev/emit",
+            json={
+                "tool": "upsert_finding",
+                "args": {"session_id": "nonexistent", "file": "a.py", "title": "t", "body": "b"},
+            },
+        )
+    assert resp.status_code == 200
+    assert resp.json()["is_error"] is True

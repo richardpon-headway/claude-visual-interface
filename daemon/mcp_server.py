@@ -171,19 +171,25 @@ async def show_diff(args: dict[str, Any]) -> dict[str, Any]:
     },
 )
 async def upsert_finding(args: dict[str, Any]) -> dict[str, Any]:
-    finding_id = await asyncio.to_thread(
-        findings.upsert_finding,
-        finding_id=args.get("id"),
-        session_id=args["session_id"],
-        file=args["file"],
-        title=args["title"],
-        body=args["body"],
-        severity=args.get("severity"),
-        anchor=args.get("anchor"),
-        suggested_patch=args.get("suggested_patch"),
-        source_lens=args.get("source_lens"),
-        actions=args.get("actions"),
-    )
+    try:
+        finding_id = await asyncio.to_thread(
+            findings.upsert_finding,
+            finding_id=args.get("id"),
+            session_id=args["session_id"],
+            file=args["file"],
+            title=args["title"],
+            body=args["body"],
+            severity=args.get("severity"),
+            anchor=args.get("anchor"),
+            suggested_patch=args.get("suggested_patch"),
+            source_lens=args.get("source_lens"),
+            actions=args.get("actions"),
+        )
+    except findings.UnknownSessionError:
+        return {
+            "content": [{"type": "text", "text": f"no session with id {args['session_id']}"}],
+            "is_error": True,
+        }
     finding = await asyncio.to_thread(findings.get_finding, finding_id)
     if finding is not None:
         surface = finding["session_id"]
