@@ -1,0 +1,37 @@
+daemon/mcp_server.py
+  s_2d2a8100f95fdb::t_deac657a189cf7 20
+  s_2d2a8100f95fdb::t_226cf6697f8a5f 23-31
+  s_2d2a8100f95fdb::t_c75c54ab9369de 298-317,319-320,323-325
+tests/test_review_runner.py
+  s_2d2a8100f95fdb::t_226cf6697f8a5f 6,8-9
+  s_2d2a8100f95fdb::t_f49239e0363ba0 81-83
+  s_2d2a8100f95fdb::t_28922c3b521fa2 1-5,7,10-80,84-99
+tests/test_mcp_server.py
+  s_2d2a8100f95fdb::t_b982fece35bbe9 92-110
+tests/test_sessions.py
+  s_2d2a8100f95fdb::t_5157d956fd4ef7 104-110
+daemon/sessions.py
+  s_2d2a8100f95fdb::t_6ffe8e60fb57d2 117-132
+daemon/review_runner.py
+  s_2d2a8100f95fdb::t_cdc9d4edcf380f 4-10,15,26-29,37-69,72,77-89,92-93
+  s_2d2a8100f95fdb::t_226cf6697f8a5f 19-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "75763d06d428851b8db847c781c4779dba48d318",
+  "prompts": {},
+  "sessions": {
+    "s_2d2a8100f95fdb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d07d54f-882d-4c6f-8ed2-861cc7aaa606",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
