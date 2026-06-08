@@ -101,6 +101,13 @@ def test_lifecycle_toggle_reports_missing_session():
     assert sessions.set_deleted("ghost", True) is False
 
 
+def test_set_status_updates_and_reports_missing():
+    _insert_session("s", updated_at="2026-01-01T00:00:00Z")
+    assert sessions.set_status("s", "ready") is True
+    assert sessions.get_session("s")["status"] == "ready"
+    assert sessions.set_status("ghost", "ready") is False
+
+
 def test_archive_endpoint_removes_session_from_the_listing():
     _insert_session("s", updated_at="2026-01-01T00:00:00Z")
     with TestClient(app) as client:

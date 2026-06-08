@@ -114,6 +114,22 @@ def _set_lifecycle_timestamp(session_id: str, column: str, on: bool) -> bool:
         conn.close()
 
 
+def set_status(session_id: str, status: str) -> bool:
+    """Set a session's status (e.g. running → ready / error). Returns False if no
+    such session. Bumps updated_at."""
+    now = _now_iso()
+    conn = open_db()
+    try:
+        cursor = conn.execute(
+            "UPDATE session SET status = ?, updated_at = ? WHERE id = ?",
+            (status, now, session_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
 def set_archived(session_id: str, archived: bool) -> bool:
     return _set_lifecycle_timestamp(session_id, "archived_at", archived)
 
