@@ -17,9 +17,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Any
 
-from claude_agent_sdk import ClaudeAgentOptions, ToolAnnotations, create_sdk_mcp_server, tool
+from claude_agent_sdk import (
+    ClaudeAgentOptions,
+    PermissionResultAllow,
+    PermissionResultDeny,
+    ToolAnnotations,
+    ToolPermissionContext,
+    create_sdk_mcp_server,
+    tool,
+)
 
 from daemon import findings
 from daemon.hub import hub
@@ -286,11 +295,32 @@ cvi_server = create_sdk_mcp_server(
 )
 
 
-def build_agent_options() -> ClaudeAgentOptions:
+# Built-in tools a review session needs to inspect the checkout (read + git),
+# auto-approved alongside the cvi primitives. Edit/Write are intentionally absent:
+# a review is read-only (applying fixes is a later phase).
+REVIEW_TOOLS = ["Read", "Grep", "Glob", "Bash"]
+
+_REVIEW_APPROVED = frozenset([*ALLOWED_TOOLS, *REVIEW_TOOLS])
+
+
+async def _approve_read_only_tools(
+    tool_name: str, tool_input: dict[str, Any], context: ToolPermissionContext
+) -> PermissionResultAllow | PermissionResultDeny:
+    """Headless permission gate: approve the review tool set, deny everything else
+    (e.g. Edit/Write). Keeps an unattended review read-only and never blocks on an
+    interactive prompt."""
+    if tool_name in _REVIEW_APPROVED:
+        return PermissionResultAllow()
+    return PermissionResultDeny(message="CVI review sessions are read-only")
+
+
+def build_agent_options(cwd: str | Path | None = None) -> ClaudeAgentOptions:
     """Build the session-connection point: options that attach the CVI MCP server
-    and pre-approve its primitives. Later phases extend this with the checkout cwd
-    and a review skill."""
+    and pre-approve its primitives plus the read-only review tools. Pass `cwd` to
+    run the session against a review worktree."""
     return ClaudeAgentOptions(
         mcp_servers={SERVER_NAME: cvi_server},
-        allowed_tools=list(ALLOWED_TOOLS),
+        allowed_tools=[*ALLOWED_TOOLS, *REVIEW_TOOLS],
+        can_use_tool=_approve_read_only_tools,
+        cwd=cwd,
     )

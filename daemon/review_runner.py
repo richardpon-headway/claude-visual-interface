@@ -1,17 +1,31 @@
 """The review-run seam.
 
 ``POST /reviews`` creates a session row and hands off to a ReviewRunner. The real
-runner — spawning a Claude Agent SDK session that runs the review adapter over the
-checkout (it inherits the user's Claude Code auth; no alternate key) — needs the
-Claude Code CLI, auth, and a worktree, and lands in a later slice. Until then the
-placeholder just records the request. Swap ``runner`` to plug in the real
-implementation (or a fake, in tests).
+runner spawns a Claude Agent SDK session over the review worktree — inheriting the
+user's Claude Code auth (no alternate key, per the plan) — that reviews the diff
+against base_ref and emits findings through the cvi MCP tools, which already
+persist and broadcast to the browser. Swap ``runner`` for a fake in tests.
+
+This is the minimal runner: a direct, read-only review prompt. Invoking the
+configured review skill (pr-review) via a YAML config is a later slice.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Protocol
+
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeSDKClient,
+    ResultMessage,
+    TextBlock,
+    ToolUseBlock,
+)
+
+from daemon import sessions
+from daemon.mcp_server import build_agent_options
 
 log = logging.getLogger(__name__)
 
@@ -20,16 +34,60 @@ class ReviewRunner(Protocol):
     async def run(self, *, session_id: str, worktree_path: str, base_ref: str) -> None: ...
 
 
-class PlaceholderRunner:
+def _review_prompt(session_id: str, base_ref: str) -> str:
+    return (
+        f"Review the code changes in this worktree against the base ref `{base_ref}`. "
+        f"Start by running `git diff {base_ref}...HEAD` to see what changed, then read "
+        "the surrounding code as needed. For each issue you find, call the "
+        "mcp__cvi__upsert_finding tool with these arguments: "
+        f'session_id="{session_id}", the `file` path, a short `title`, a `body` '
+        "explaining the issue, and a `severity` of high, medium, or low. Where you can, "
+        "include an `anchor` of the relevant snippet and line range. This is a "
+        "read-only review — do not edit any files. When you have reported every finding, "
+        "stop."
+    )
+
+
+def _log_activity(session_id: str, message: object) -> None:
+    """Relay session activity to the daemon terminal (headless but never invisible).
+    A live token stream to the browser is a later phase."""
+    if isinstance(message, AssistantMessage):
+        for block in message.content:
+            if isinstance(block, TextBlock):
+                log.info("[review %s] %s", session_id, block.text)
+            elif isinstance(block, ToolUseBlock):
+                log.info("[review %s] tool: %s", session_id, block.name)
+    elif isinstance(message, ResultMessage):
+        log.info(
+            "[review %s] result: subtype=%s is_error=%s",
+            session_id,
+            message.subtype,
+            message.is_error,
+        )
+
+
+class AgentReviewRunner:
     async def run(self, *, session_id: str, worktree_path: str, base_ref: str) -> None:
         log.info(
-            "review run requested for session %s (worktree=%s, base=%s); "
-            "Agent SDK session wiring lands in a later slice",
+            "starting review for session %s (worktree=%s, base=%s)",
             session_id,
             worktree_path,
             base_ref,
         )
+        try:
+            options = build_agent_options(cwd=worktree_path)
+            async with ClaudeSDKClient(options=options) as client:
+                await client.query(_review_prompt(session_id, base_ref))
+                async for message in client.receive_response():
+                    _log_activity(session_id, message)
+            await asyncio.to_thread(sessions.set_status, session_id, "ready")
+            log.info("review complete for session %s", session_id)
+        except Exception:
+            # Fail-open: a failed run marks the session and must not propagate out
+            # of the fire-and-forget task or take down the daemon.
+            log.warning("review failed for session %s", session_id, exc_info=True)
+            await asyncio.to_thread(sessions.set_status, session_id, "error")
 
 
-# The active runner. A later slice replaces this with the Agent SDK implementation.
-runner: ReviewRunner = PlaceholderRunner()
+# The active runner. Tests inject a fake via daemon.review_runner.runner.
+runner: ReviewRunner = AgentReviewRunner()

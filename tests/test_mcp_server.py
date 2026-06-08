@@ -89,4 +89,22 @@ async def test_unwired_primitives_still_echo_their_name():
 def test_build_agent_options_attaches_server_and_approves_primitives():
     options = build_agent_options()
     assert options.mcp_servers == {SERVER_NAME: cvi_server}
-    assert options.allowed_tools == ALLOWED_TOOLS
+    # cvi primitives plus the read-only review tools are auto-approved.
+    assert set(ALLOWED_TOOLS).issubset(options.allowed_tools)
+    assert {"Read", "Grep", "Glob", "Bash"}.issubset(options.allowed_tools)
+    assert options.cwd is None
+
+
+def test_build_agent_options_sets_the_review_worktree():
+    options = build_agent_options(cwd="/tmp/worktree")
+    assert options.cwd == "/tmp/worktree"
+
+
+async def test_review_permission_gate_allows_read_only_tools_and_denies_writes():
+    options = build_agent_options(cwd="/tmp/worktree")
+    allow_read = await options.can_use_tool("Read", {}, None)
+    allow_cvi = await options.can_use_tool(f"mcp__{SERVER_NAME}__upsert_finding", {}, None)
+    deny_edit = await options.can_use_tool("Edit", {}, None)
+    assert allow_read.behavior == "allow"
+    assert allow_cvi.behavior == "allow"
+    assert deny_edit.behavior == "deny"
