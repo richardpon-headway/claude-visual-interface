@@ -1,0 +1,31 @@
+tests/test_gitref.py
+  s_2d2a8100f95fdb::t_2ec9136621a182 1-62
+daemon/gitref.py
+  s_2d2a8100f95fdb::t_447950af02f2c4 1-52
+tests/test_review_runner.py
+  s_2d2a8100f95fdb::t_d6c07afa615e7b 153-154,156
+  s_2d2a8100f95fdb::t_48021832df74ae 52,63
+  s_2d2a8100f95fdb::t_7f49c58db0d61f 106-123
+daemon/review_runner.py
+  s_2d2a8100f95fdb::t_7f3eff7c20c3b1 28
+  s_2d2a8100f95fdb::t_4d995ec10772dc 105-112,115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "97da4d9a66c035006dd6d76831d90e314e63718c",
+  "prompts": {},
+  "sessions": {
+    "s_2d2a8100f95fdb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d07d54f-882d-4c6f-8ed2-861cc7aaa606",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
