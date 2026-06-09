@@ -24,8 +24,8 @@ from claude_agent_sdk import (
     ToolUseBlock,
 )
 
-from daemon import sessions
-from daemon.mcp_server import build_agent_options
+from daemon import findings, sessions
+from daemon.mcp_server import build_agent_options, open_file_on_surface
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +66,22 @@ def _log_activity(session_id: str, message: object) -> None:
         )
 
 
+async def _open_first_finding(session_id: str) -> None:
+    """Auto-open the first (oldest) finding's file so the surface lands on real
+    code when opened, instead of a blank pane. Best-effort: a failure here must
+    not fail a review that otherwise succeeded."""
+    try:
+        rows = await asyncio.to_thread(findings.list_findings, session_id)
+        if not rows:
+            return
+        first = rows[0]
+        anchor = first.get("anchor")
+        line_range = anchor["range"] if anchor else None
+        await open_file_on_surface(session_id, first["file"], line_range)
+    except Exception:
+        log.warning("auto-open first finding failed for session %s", session_id, exc_info=True)
+
+
 class AgentReviewRunner:
     async def run(self, *, session_id: str, worktree_path: str, base_ref: str) -> None:
         log.info(
@@ -80,6 +96,7 @@ class AgentReviewRunner:
                 await client.query(_review_prompt(session_id, base_ref))
                 async for message in client.receive_response():
                     _log_activity(session_id, message)
+            await _open_first_finding(session_id)
             await asyncio.to_thread(sessions.set_status, session_id, "ready")
             log.info("review complete for session %s", session_id)
         except Exception:

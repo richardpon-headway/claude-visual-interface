@@ -60,6 +60,20 @@ def _not_wired(name: str, args: dict[str, Any]) -> dict[str, Any]:
 
 # --- view-control primitives (transient) -----------------------------------------
 
+async def open_file_on_surface(
+    surface: str, file: str, line_range: dict[str, int] | None = None, pane: int = 0
+) -> None:
+    """Open a file in a surface's left pane: update the view store and push the
+    open_code event to subscribers. The canonical effect behind the open_code
+    primitive — also called by the review runner to auto-open a finding's file."""
+    store.open_code(surface, file, line_range, pane)
+    await hub.broadcast(
+        surface,
+        {"type": "open_code", "surface": surface,
+         "payload": {"file": file, "range": line_range, "pane": pane}},
+    )
+
+
 @tool(
     "open_code",
     "Open a file in the review's left pane, optionally scrolled to a line range and "
@@ -79,14 +93,8 @@ def _not_wired(name: str, args: dict[str, Any]) -> dict[str, Any]:
 async def open_code(args: dict[str, Any]) -> dict[str, Any]:
     surface = args["surface"]
     file = args["file"]
-    line_range = args.get("range")
     pane = args.get("pane", 0)
-    store.open_code(surface, file, line_range, pane)
-    await hub.broadcast(
-        surface,
-        {"type": "open_code", "surface": surface,
-         "payload": {"file": file, "range": line_range, "pane": pane}},
-    )
+    await open_file_on_surface(surface, file, args.get("range"), pane)
     return _ok(f"opened {file} on surface {surface} (pane {pane})")
 
 
