@@ -1,0 +1,149 @@
+"""The conversational session: lazy start, turn serialization, idle/shutdown reaping,
+and the no-worktree guard — exercised with a fake Agent SDK client. The real agent
+turn (Claude actually answering) needs the CLI + auth and is verified locally."""
+
+import asyncio
+
+import pytest
+from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
+
+from daemon import agent_session
+from daemon.agent_session import AgentSessionRegistry
+from daemon.db import apply_migrations_sync, open_db
+from daemon.view_state import store
+
+SESSION = "chat-session"
+
+
+@pytest.fixture(autouse=True)
+def db(tmp_path, monkeypatch):
+    monkeypatch.setenv("CVI_DB_PATH", str(tmp_path / "cvi.db"))
+    apply_migrations_sync()
+
+
+def _seed_session(session_id, *, worktree_path):
+    conn = open_db()
+    try:
+        conn.execute(
+            "INSERT INTO session (id, type, status, worktree_path, created_at, updated_at) "
+            "VALUES (?, 'review', 'ready', ?, 't', 't')",
+            (session_id, worktree_path),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+class FakeClient:
+    """An async-ctx-manager stand-in for ClaudeSDKClient that records queries and
+    replies with a canned assistant message + result per turn."""
+
+    instances: list["FakeClient"] = []
+
+    def __init__(self):
+        self.queried: list[str] = []
+        FakeClient.instances.append(self)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def query(self, prompt):
+        self.queried.append(prompt)
+
+    async def receive_response(self):
+        yield AssistantMessage(content=[TextBlock(text="on it")], model="test")
+        yield ResultMessage(
+            subtype="success",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=1,
+            session_id=SESSION,
+        )
+
+
+async def _wait_until(predicate, limit=1.0):
+    elapsed = 0.0
+    while elapsed < limit:
+        if predicate():
+            return
+        await asyncio.sleep(0.01)
+        elapsed += 0.01
+    raise AssertionError("condition not met within limit")
+
+
+@pytest.fixture(autouse=True)
+def fake_client(monkeypatch):
+    FakeClient.instances.clear()
+    monkeypatch.setattr(agent_session, "ClaudeSDKClient", lambda options=None: FakeClient())
+
+
+async def test_first_message_starts_a_session_records_user_and_relays_reply():
+    _seed_session(SESSION, worktree_path="/tmp/wt")
+    store.get_or_create(SESSION).activity.clear()
+    reg = AgentSessionRegistry()
+
+    await reg.send(SESSION, "review the diff")
+    await _wait_until(
+        lambda: any(e.kind == "result" for e in store.get_or_create(SESSION).activity)
+    )
+
+    kinds = [(e.kind, e.text) for e in store.get_or_create(SESSION).activity]
+    assert ("user", "review the diff") in kinds
+    assert ("text", "on it") in kinds
+    assert ("result", "success") in kinds
+    assert FakeClient.instances[0].queried == ["review the diff"]
+
+    await reg.shutdown_all()
+
+
+async def test_turns_are_serialized_in_order():
+    _seed_session(SESSION, worktree_path="/tmp/wt")
+    reg = AgentSessionRegistry()
+
+    await reg.send(SESSION, "first")
+    await reg.send(SESSION, "second")
+    await _wait_until(
+        lambda: len(FakeClient.instances) == 1
+        and FakeClient.instances[0].queried == ["first", "second"]
+    )
+
+    # One session, one client — the second turn ran after the first completed.
+    assert len(FakeClient.instances) == 1
+    await reg.shutdown_all()
+
+
+async def test_idle_timeout_closes_and_deregisters(monkeypatch):
+    _seed_session(SESSION, worktree_path="/tmp/wt")
+    monkeypatch.setattr(agent_session, "AGENT_IDLE_SECONDS", 0.05)
+    reg = AgentSessionRegistry()
+
+    await reg.send(SESSION, "hi")
+    await _wait_until(lambda: reg.active_surfaces() == [])
+
+
+async def test_shutdown_all_closes_a_live_session():
+    _seed_session(SESSION, worktree_path="/tmp/wt")
+    reg = AgentSessionRegistry()
+
+    await reg.send(SESSION, "hi")
+    await _wait_until(lambda: reg.active_surfaces() == [SESSION])
+
+    await reg.shutdown_all()
+    assert reg.active_surfaces() == []
+
+
+async def test_no_worktree_records_a_notice_and_starts_nothing():
+    _seed_session("no-wt", worktree_path=None)
+    store.get_or_create("no-wt").activity.clear()
+    reg = AgentSessionRegistry()
+
+    await reg.send("no-wt", "hello?")
+
+    assert reg.active_surfaces() == []
+    notes = [e.text for e in store.get_or_create("no-wt").activity]
+    assert any("no worktree" in n for n in notes)
+    assert FakeClient.instances == []

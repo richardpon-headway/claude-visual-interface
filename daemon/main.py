@@ -19,6 +19,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from daemon import files, findings, reviews, sessions
+from daemon.agent_session import agents
 from daemon.db import apply_migrations
 from daemon.hub import hub
 from daemon.mcp_server import SERVER_NAME, TOOLS
@@ -37,6 +38,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await apply_migrations()
     log.info("MCP server '%s' ready with %d primitive(s)", SERVER_NAME, len(TOOLS))
     yield
+    await agents.shutdown_all()
 
 
 app = FastAPI(title="Claude Visual Interface", lifespan=lifespan)
@@ -177,29 +179,36 @@ async def ws_surface(websocket: WebSocket, surface: str) -> None:
     )
     try:
         while True:
-            _apply_inbound(surface, await websocket.receive_text())
+            await _handle_inbound(surface, await websocket.receive_text())
     except WebSocketDisconnect:
         pass
     finally:
         hub.unregister(surface, websocket)
 
 
-def _apply_inbound(surface: str, raw: str) -> None:
-    """Apply a browser→daemon frame. Only `selection` is understood; anything
+async def _handle_inbound(surface: str, raw: str) -> None:
+    """Apply a browser→daemon frame. `selection` records the left-pane selection;
+    `message` routes a chat turn to the surface's live agent session. Anything
     malformed or unknown is ignored (the socket stays open)."""
     try:
         msg = json.loads(raw)
     except (ValueError, TypeError):
         return
-    if not isinstance(msg, dict) or msg.get("type") != "selection":
+    if not isinstance(msg, dict):
         return
     payload = msg.get("payload")
     if not isinstance(payload, dict):
         return
-    file = payload.get("file")
-    line_range = payload.get("range")
-    if isinstance(file, str) and isinstance(line_range, dict):
-        store.set_selection(surface, file, line_range)
+    msg_type = msg.get("type")
+    if msg_type == "selection":
+        file = payload.get("file")
+        line_range = payload.get("range")
+        if isinstance(file, str) and isinstance(line_range, dict):
+            store.set_selection(surface, file, line_range)
+    elif msg_type == "message":
+        text = payload.get("text")
+        if isinstance(text, str) and text.strip():
+            await agents.send(surface, text)
 
 
 def main() -> None:

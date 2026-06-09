@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { applyMessage, emptySurface, parseMessage } from "./viewState";
 import type { Finding, SurfaceState } from "./viewState";
@@ -8,14 +8,17 @@ function surfaceUrl(surface: string): string {
   return `${proto}//${window.location.host}/ws/${encodeURIComponent(surface)}`;
 }
 
+export type SendMessage = (text: string) => void;
+
 /**
- * Subscribe to a surface. Returns its full state — the live view plus findings.
- * On (re)subscribe it fetches the current findings once over HTTP, then stays
- * current from WebSocket events. Live events win over the fetched baseline if the
- * two race. Re-subscribes when `surface` changes.
+ * Subscribe to a surface. Returns its full state — the live view plus findings —
+ * and a `sendMessage` that pushes a chat turn to the surface's agent over the same
+ * socket. On (re)subscribe it fetches the current findings + status once over HTTP,
+ * then stays current from WebSocket events. Re-subscribes when `surface` changes.
  */
-export function useSurfaceSocket(surface: string): SurfaceState {
+export function useSurfaceSocket(surface: string): [SurfaceState, SendMessage] {
   const [state, setState] = useState<SurfaceState>(() => emptySurface(surface));
+  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     setState(emptySurface(surface));
@@ -47,6 +50,7 @@ export function useSurfaceSocket(surface: string): SurfaceState {
       });
 
     const ws = new WebSocket(surfaceUrl(surface));
+    wsRef.current = ws;
     ws.onmessage = (event) => {
       const msg = parseMessage(event.data);
       if (msg) {
@@ -55,9 +59,17 @@ export function useSurfaceSocket(surface: string): SurfaceState {
     };
     return () => {
       cancelled = true;
+      wsRef.current = null;
       ws.close();
     };
   }, [surface]);
 
-  return state;
+  const sendMessage = useCallback<SendMessage>((text) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "message", payload: { text } }));
+    }
+  }, []);
+
+  return [state, sendMessage];
 }

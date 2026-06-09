@@ -343,13 +343,31 @@ async def _approve_read_only_tools(
     return PermissionResultDeny(message="CVI review sessions are read-only")
 
 
-def build_agent_options(cwd: str | Path | None = None) -> ClaudeAgentOptions:
+# Tells a conversational session it's operating a visual review surface and to
+# use the cvi primitives to drive the left pane. The one-shot runner omits this
+# (its review prompt is self-contained); the interactive chat session passes it.
+CVI_SURFACE_SYSTEM_PROMPT = (
+    "You are operating a visual code-review surface. The user watches a left code "
+    "pane and a right conversation pane. Use the cvi tools to drive the left pane: "
+    "mcp__cvi__open_code to show a file (optionally at a line range), "
+    "mcp__cvi__highlight_range to point at lines, and mcp__cvi__upsert_finding to "
+    "record a review finding anchored to code. When the user asks you to look at or "
+    "show something, open it in the pane rather than only describing it. This is a "
+    "read-only session — do not edit files."
+)
+
+
+def build_agent_options(
+    cwd: str | Path | None = None, system_prompt: str | None = None
+) -> ClaudeAgentOptions:
     """Build the session-connection point: options that attach the CVI MCP server
     and pre-approve its primitives plus the read-only review tools. Pass `cwd` to
-    run the session against a review worktree."""
+    run the session against a review worktree, and `system_prompt` to steer an
+    interactive session (the one-shot runner leaves it None)."""
     return ClaudeAgentOptions(
         mcp_servers={SERVER_NAME: cvi_server},
         allowed_tools=[*ALLOWED_TOOLS, *REVIEW_TOOLS],
         can_use_tool=_approve_read_only_tools,
         cwd=cwd,
+        system_prompt=system_prompt,
     )
