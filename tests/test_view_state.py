@@ -1,4 +1,4 @@
-from daemon.view_state import ViewStore
+from daemon.view_state import MAX_ACTIVITY, ViewStore
 
 
 def test_open_code_records_file_and_range_per_pane():
@@ -61,4 +61,29 @@ def test_snapshot_is_json_shaped_and_starts_empty():
         "highlights": {},
         "diff": None,
         "selection": None,
+        "activity": [],
     }
+
+
+def test_append_activity_accumulates_and_rides_the_snapshot():
+    store = ViewStore()
+    store.append_activity("s", "text", "reviewing the diff")
+    store.append_activity("s", "tool", "Bash")
+
+    snap = store.snapshot("s")
+    assert snap["activity"] == [
+        {"kind": "text", "text": "reviewing the diff"},
+        {"kind": "tool", "text": "Bash"},
+    ]
+
+
+def test_append_activity_caps_at_max_keeping_newest():
+    store = ViewStore()
+    for i in range(MAX_ACTIVITY + 10):
+        store.append_activity("s", "text", f"line {i}")
+
+    activity = store.get_or_create("s").activity
+    assert len(activity) == MAX_ACTIVITY
+    # Oldest dropped: the buffer keeps the most recent MAX_ACTIVITY lines.
+    assert activity[0].text == "line 10"
+    assert activity[-1].text == f"line {MAX_ACTIVITY + 9}"

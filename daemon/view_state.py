@@ -40,6 +40,18 @@ class Selection:
 
 
 @dataclass
+class ActivityEntry:
+    # One line of review narration: Claude's text, a tool call, or a run result.
+    kind: str  # "text" | "tool" | "result"
+    text: str
+
+
+# Cap the per-surface activity buffer so a long review can't grow it without
+# bound; oldest entries are dropped when it overflows.
+MAX_ACTIVITY = 200
+
+
+@dataclass
 class ViewState:
     surface: str
     panes: int = 1
@@ -49,6 +61,9 @@ class ViewState:
     # What the user has selected on the left pane (emitted by the browser, read
     # back by the pull primitives). The pane emits selections only — no input.
     selection: Selection | None = None
+    # Recent review narration, buffered so a browser connecting mid-review sees
+    # what's happened so far (rides the connect snapshot).
+    activity: list[ActivityEntry] = field(default_factory=list)
 
 
 def _to_range(raw: dict[str, int] | None) -> Range | None:
@@ -95,6 +110,12 @@ class ViewStore:
         self.get_or_create(surface).selection = (
             Selection(file=file, range=selected) if selected is not None else None
         )
+
+    def append_activity(self, surface: str, kind: str, text: str) -> None:
+        activity = self.get_or_create(surface).activity
+        activity.append(ActivityEntry(kind=kind, text=text))
+        if len(activity) > MAX_ACTIVITY:
+            del activity[: len(activity) - MAX_ACTIVITY]
 
     def snapshot(self, surface: str) -> dict[str, Any]:
         return asdict(self.get_or_create(surface))

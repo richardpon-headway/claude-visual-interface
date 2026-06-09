@@ -9,8 +9,19 @@ from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUse
 
 from daemon import review_runner, sessions
 from daemon.db import apply_migrations_sync, open_db
+from daemon.hub import hub
 from daemon.review_runner import AgentReviewRunner
 from daemon.view_state import store
+
+
+class FakeWS:
+    """A hub subscriber that records the events broadcast to a surface."""
+
+    def __init__(self) -> None:
+        self.received: list = []
+
+    async def send_json(self, data) -> None:
+        self.received.append(data)
 
 SESSION = "run-session"
 
@@ -88,6 +99,61 @@ async def test_successful_run_marks_session_ready(monkeypatch):
     await AgentReviewRunner().run(session_id=SESSION, worktree_path="/tmp/wt", base_ref="main")
 
     assert sessions.get_session(SESSION)["status"] == "ready"
+
+
+async def test_run_streams_activity_and_a_terminal_status_event(monkeypatch):
+    messages = [
+        AssistantMessage(
+            content=[
+                TextBlock(text="reviewing the diff"),
+                ToolUseBlock(id="t1", name="Bash", input={}),
+            ],
+            model="test",
+        ),
+        ResultMessage(
+            subtype="success",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=1,
+            session_id=SESSION,
+        ),
+    ]
+    monkeypatch.setattr(
+        review_runner, "ClaudeSDKClient", lambda options=None: FakeClient(messages=messages)
+    )
+    store.get_or_create(SESSION).activity.clear()  # the store is process-global
+    ws = FakeWS()
+    hub.register(SESSION, ws)
+    try:
+        await AgentReviewRunner().run(session_id=SESSION, worktree_path="/tmp/wt", base_ref="main")
+    finally:
+        hub.unregister(SESSION, ws)
+
+    # The narration is buffered on the surface (rides a later connect snapshot).
+    assert [(e.kind, e.text) for e in store.get_or_create(SESSION).activity] == [
+        ("text", "reviewing the diff"),
+        ("tool", "Bash"),
+        ("result", "success"),
+    ]
+    # ...and was pushed live, capped by a terminal status event flipping the chip.
+    tool_payload = {"kind": "tool", "text": "Bash"}
+    assert {"type": "activity", "surface": SESSION, "payload": tool_payload} in ws.received
+    assert ws.received[-1] == {"type": "status", "surface": SESSION, "payload": {"status": "ready"}}
+
+
+async def test_failed_run_broadcasts_an_error_status(monkeypatch):
+    monkeypatch.setattr(
+        review_runner, "ClaudeSDKClient", lambda options=None: FakeClient(raise_on="query")
+    )
+    ws = FakeWS()
+    hub.register(SESSION, ws)
+    try:
+        await AgentReviewRunner().run(session_id=SESSION, worktree_path="/tmp/wt", base_ref="main")
+    finally:
+        hub.unregister(SESSION, ws)
+
+    assert ws.received[-1] == {"type": "status", "surface": SESSION, "payload": {"status": "error"}}
 
 
 @pytest.mark.parametrize("raise_on", ["enter", "query"])

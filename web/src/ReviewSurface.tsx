@@ -1,15 +1,36 @@
 import { useState } from "react";
 
+import { ActivityFeed } from "./ActivityFeed";
 import { CodePane } from "./CodePane";
 import { FindingsPanel } from "./FindingsPanel";
 import { primaryOpenFile } from "./findingFocus";
 import { useSurfaceSocket } from "./useSurfaceSocket";
 import type { Finding, Range } from "./viewState";
 
+function StatusChip({ status }: { status: string | null }) {
+  const cls =
+    status === "ready"
+      ? "bg-emerald-900 text-emerald-200"
+      : status === "error"
+        ? "bg-red-900 text-red-200"
+        : status === "running"
+          ? "bg-sky-900 text-sky-200"
+          : "bg-zinc-800 text-zinc-400";
+  return (
+    <span className={`flex items-center gap-1.5 rounded px-2 py-0.5 text-xs ${cls}`}>
+      {status === "running" ? (
+        <span className="inline-block h-2 w-2 animate-spin rounded-full border border-current border-t-transparent" />
+      ) : null}
+      {status ?? "unknown"}
+    </span>
+  );
+}
+
 export function ReviewSurface({ surface }: { surface: string }) {
-  const { view, findings } = useSurfaceSocket(surface);
+  const { view, findings, status } = useSurfaceSocket(surface);
   const paneIndexes = Array.from({ length: view.panes }, (_, i) => i);
   const allFindings = Object.values(findings);
+  const openCount = allFindings.filter((f) => !f.disposition).length;
 
   const [activeFinding, setActiveFinding] = useState<Finding | null>(null);
   // The reveal carries a nonce so re-clicking the same finding (unchanged range)
@@ -34,6 +55,12 @@ export function ReviewSurface({ surface }: { surface: string }) {
         </a>
         <span className="font-semibold">Claude Visual Interface</span>
         <span className="text-zinc-500">surface: {surface}</span>
+        <span className="ml-auto flex items-center gap-2">
+          <StatusChip status={status} />
+          <span className="text-zinc-500">
+            {allFindings.length} findings · {openCount} open
+          </span>
+        </span>
       </header>
 
       <div className="flex min-h-0 flex-1">
@@ -53,11 +80,15 @@ export function ReviewSurface({ surface }: { surface: string }) {
             </div>
           ))}
         </main>
-        <FindingsPanel
-          findings={findings}
-          activeId={activeFinding?.id ?? null}
-          onSelect={selectFinding}
-        />
+        {/* Right: live activity feed stacked above the findings list. */}
+        <aside className="flex w-96 min-w-0 flex-col border-l border-zinc-800">
+          <ActivityFeed activity={view.activity} />
+          <FindingsPanel
+            findings={findings}
+            activeId={activeFinding?.id ?? null}
+            onSelect={selectFinding}
+          />
+        </aside>
       </div>
 
       <footer className="border-t border-zinc-800 px-4 py-1 text-xs text-zinc-500">

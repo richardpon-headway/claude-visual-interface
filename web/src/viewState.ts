@@ -6,6 +6,9 @@ export type Range = { start: number; end: number };
 export type OpenFile = { file: string; range: Range | null };
 export type Diff = { a: string; b: string };
 export type Selection = { file: string; range: Range };
+// One line of review narration (mirrors daemon ActivityEntry): Claude's text, a
+// tool call, or a run result.
+export type ActivityEntry = { kind: string; text: string };
 
 // Transient view state — mirrors daemon ViewState (store.snapshot).
 export type ViewState = {
@@ -15,6 +18,7 @@ export type ViewState = {
   highlights: Record<string, Range[]>; // file -> highlighted ranges
   diff: Diff | null;
   selection: Selection | null;
+  activity: ActivityEntry[]; // buffered review narration, oldest-first
 };
 
 // A persisted, code-anchored review finding (mirrors a daemon/findings.py row).
@@ -32,10 +36,12 @@ export type Finding = {
   disposition: string | null;
 };
 
-// The full client state for a surface: the live view plus its findings (keyed by id).
+// The full client state for a surface: the live view plus its findings (keyed by
+// id) and the session's run status (running / ready / error; null until known).
 export type SurfaceState = {
   view: ViewState;
   findings: Record<string, Finding>;
+  status: string | null;
 };
 
 // Messages the daemon pushes over the WebSocket. `snapshot` carries a full
@@ -47,7 +53,9 @@ export type WsMessage =
   | { type: "highlight_range"; surface: string; payload: { file: string; range: Range } }
   | { type: "show_diff"; surface: string; payload: { a: string; b: string } }
   | { type: "finding"; surface: string; payload: Finding }
-  | { type: "disposition"; surface: string; payload: { finding_id: string; value: string } };
+  | { type: "disposition"; surface: string; payload: { finding_id: string; value: string } }
+  | { type: "activity"; surface: string; payload: ActivityEntry }
+  | { type: "status"; surface: string; payload: { status: string } };
 
 const MESSAGE_TYPES = [
   "snapshot",
@@ -57,14 +65,16 @@ const MESSAGE_TYPES = [
   "show_diff",
   "finding",
   "disposition",
+  "activity",
+  "status",
 ];
 
 export function emptyViewState(surface: string): ViewState {
-  return { surface, panes: 1, open: {}, highlights: {}, diff: null, selection: null };
+  return { surface, panes: 1, open: {}, highlights: {}, diff: null, selection: null, activity: [] };
 }
 
 export function emptySurface(surface: string): SurfaceState {
-  return { view: emptyViewState(surface), findings: {} };
+  return { view: emptyViewState(surface), findings: {}, status: null };
 }
 
 // Parse a raw WebSocket payload into a known message, or null if it doesn't look
@@ -123,5 +133,9 @@ export function applyMessage(state: SurfaceState, msg: WsMessage): SurfaceState 
         findings: { ...state.findings, [existing.id]: { ...existing, disposition: msg.payload.value } },
       };
     }
+    case "activity":
+      return { ...state, view: { ...state.view, activity: [...state.view.activity, msg.payload] } };
+    case "status":
+      return { ...state, status: msg.payload.status };
   }
 }

@@ -43,6 +43,7 @@ describe("applyMessage — view events", () => {
       highlights: {},
       diff: null,
       selection: null,
+      activity: [],
     };
     let state = emptySurface("s");
     state = applyMessage(state, { type: "finding", surface: "s", payload: finding("f1") });
@@ -76,7 +77,41 @@ describe("applyMessage — view events", () => {
       highlights: {},
       diff: null,
       selection: null,
+      activity: [],
     });
+  });
+});
+
+describe("applyMessage — activity & status", () => {
+  it("appends activity entries in arrival order", () => {
+    let state = emptySurface("s");
+    state = applyMessage(state, { type: "activity", surface: "s", payload: { kind: "text", text: "reviewing" } });
+    state = applyMessage(state, { type: "activity", surface: "s", payload: { kind: "tool", text: "Bash" } });
+    expect(state.view.activity).toEqual([
+      { kind: "text", text: "reviewing" },
+      { kind: "tool", text: "Bash" },
+    ]);
+  });
+
+  it("sets the status", () => {
+    const state = applyMessage(emptySurface("s"), { type: "status", surface: "s", payload: { status: "ready" } });
+    expect(state.status).toBe("ready");
+  });
+
+  it("seeds activity from a snapshot but leaves status untouched", () => {
+    const incoming: ViewState = {
+      surface: "s",
+      panes: 1,
+      open: {},
+      highlights: {},
+      diff: null,
+      selection: null,
+      activity: [{ kind: "text", text: "buffered" }],
+    };
+    let state = applyMessage(emptySurface("s"), { type: "status", surface: "s", payload: { status: "running" } });
+    state = applyMessage(state, { type: "snapshot", surface: "s", payload: incoming });
+    expect(state.view.activity).toEqual([{ kind: "text", text: "buffered" }]);
+    expect(state.status).toBe("running"); // snapshot is view-only; status survives
   });
 });
 
