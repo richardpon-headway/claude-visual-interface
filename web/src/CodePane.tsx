@@ -1,9 +1,12 @@
+import { useEffect, useMemo, useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
+import type { OnMount } from "@monaco-editor/react";
 
-import type { OpenFile } from "./viewState";
+import { toDecorations } from "./decorations";
+import type { Finding, OpenFile, Range } from "./viewState";
 
-// Minimal extension → Monaco language map for the skeleton. The renderer phase
-// will replace this with proper detection.
+// Minimal extension → Monaco language map. The renderer phase will replace this
+// with proper detection.
 const LANGUAGES: Record<string, string> = {
   ts: "typescript",
   tsx: "typescript",
@@ -24,35 +27,127 @@ function languageFor(file: string): string {
   return LANGUAGES[ext] ?? "plaintext";
 }
 
-export function CodePane({ openFile }: { openFile: OpenFile | undefined }) {
-  if (!openFile) {
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-        no file open
-      </div>
-    );
-  }
+type FileState =
+  | { status: "loading" }
+  | { status: "text"; content: string }
+  | { status: "binary" }
+  | { status: "too_large" }
+  | { status: "missing" };
 
-  // File contents are not served yet (they arrive with the review checkout in a
-  // later slice); show the path so the push→render path is visible meanwhile.
-  const placeholder = `// ${openFile.file}\n// (file contents render in a later slice)\n`;
+const OVERLAY_MESSAGE: Record<Exclude<FileState["status"], "text">, string> = {
+  loading: "loading…",
+  binary: "binary file",
+  too_large: "file too large to display",
+  missing: "file not found",
+};
+
+type MonacoEditor = Parameters<OnMount>[0];
+type Monaco = Parameters<OnMount>[1];
+
+export function CodePane({
+  surface,
+  openFile,
+  findings,
+  highlights,
+}: {
+  surface: string;
+  openFile: OpenFile | undefined;
+  findings: Finding[];
+  highlights: Record<string, Range[]>;
+}) {
+  const file = openFile?.file;
+  const [state, setState] = useState<FileState>({ status: "loading" });
+
+  useEffect(() => {
+    if (!file) return;
+    let cancelled = false;
+    setState({ status: "loading" });
+    fetch(`/sessions/${encodeURIComponent(surface)}/file?path=${encodeURIComponent(file)}`)
+      .then(async (res) => {
+        if (cancelled) return;
+        if (!res.ok) {
+          setState({ status: "missing" });
+          return;
+        }
+        const data: unknown = await res.json();
+        const content = (data as { content?: unknown }).content;
+        const reason = (data as { reason?: unknown }).reason;
+        if (typeof content === "string") setState({ status: "text", content });
+        else if (reason === "binary") setState({ status: "binary" });
+        else if (reason === "too_large") setState({ status: "too_large" });
+        else setState({ status: "missing" });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ status: "missing" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [surface, file]);
+
+  const decorations = useMemo(
+    () => (file ? toDecorations(file, findings, highlights) : []),
+    [file, findings, highlights],
+  );
+
+  const editorRef = useRef<MonacoEditor | null>(null);
+  const monacoRef = useRef<Monaco | null>(null);
+  const [editorReady, setEditorReady] = useState(false);
+
+  // Apply decorations once the editor exists and real content is loaded; re-run
+  // when the editor mounts (editorReady), the content changes, or findings move.
+  useEffect(() => {
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!editor || !monaco || state.status !== "text") return;
+    const collection = editor.createDecorationsCollection(
+      decorations.map((d) => ({
+        range: new monaco.Range(d.startLine, 1, d.endLine, 1),
+        options: {
+          isWholeLine: true,
+          className: d.kind === "finding" ? "cvi-finding-line" : "cvi-highlight-line",
+        },
+      })),
+    );
+    return () => collection.clear();
+  }, [decorations, state, editorReady]);
+
+  if (!openFile || !file) {
+    return <Centered>no file open</Centered>;
+  }
 
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-zinc-800 px-3 py-1 font-mono text-xs text-zinc-400">
-        {openFile.file}
+        {file}
         {openFile.range ? ` (${openFile.range.start}–${openFile.range.end})` : ""}
       </div>
-      <div className="min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1">
         <Editor
           height="100%"
           theme="vs-dark"
-          path={openFile.file}
-          language={languageFor(openFile.file)}
-          value={placeholder}
+          path={file}
+          language={languageFor(file)}
+          value={state.status === "text" ? state.content : ""}
           options={{ readOnly: true, minimap: { enabled: false } }}
+          onMount={(editor, monaco) => {
+            editorRef.current = editor;
+            monacoRef.current = monaco;
+            setEditorReady(true);
+          }}
         />
+        {state.status !== "text" ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/80 text-sm text-zinc-500">
+            {OVERLAY_MESSAGE[state.status]}
+          </div>
+        ) : null}
       </div>
     </div>
+  );
+}
+
+function Centered({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-full items-center justify-center text-sm text-zinc-500">{children}</div>
   );
 }
