@@ -21,7 +21,12 @@ export function ReviewSurface({ surface }: { surface: string }) {
         <main className="flex min-h-0 flex-1">
           {paneIndexes.map((i) => (
             <div key={i} className="min-w-0 flex-1 border-r border-zinc-800 last:border-r-0">
-              <CodePane openFile={view.open[String(i)]} />
+              <CodePane
+                surface={surface}
+                openFile={view.open[String(i)]}
+                findings={Object.values(findings)}
+                highlights={view.highlights}
+              />
             </div>
           ))}
         </main>

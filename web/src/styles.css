@@ -9,3 +9,12 @@ body,
 #root {
   height: 100%;
 }
+
+/* Monaco whole-line decorations for findings (red tint) and view highlights (amber). */
+.cvi-finding-line {
+  background: rgba(248, 113, 113, 0.14);
+}
+
+.cvi-highlight-line {
+  background: rgba(250, 204, 21, 0.13);
+}
