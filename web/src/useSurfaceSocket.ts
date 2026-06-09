@@ -32,6 +32,20 @@ export function useSurfaceSocket(surface: string): SurfaceState {
         /* daemon unreachable or no findings yet — live events still flow */
       });
 
+    fetch(`/sessions/${encodeURIComponent(surface)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: unknown) => {
+        if (cancelled) return;
+        // Trust boundary: only adopt a string status. A live `status` event wins
+        // if the two race (prev.status set already), matching the findings merge.
+        const status = typeof data === "object" && data !== null ? (data as { status?: unknown }).status : null;
+        if (typeof status !== "string") return;
+        setState((prev) => (prev.status === null ? { ...prev, status } : prev));
+      })
+      .catch(() => {
+        /* daemon unreachable — the status chip stays unknown, live events still flow */
+      });
+
     const ws = new WebSocket(surfaceUrl(surface));
     ws.onmessage = (event) => {
       const msg = parseMessage(event.data);

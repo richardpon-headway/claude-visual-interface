@@ -83,6 +83,17 @@ async def restore_session(session_id: str) -> dict[str, bool]:
     return await _toggle_lifecycle(sessions.set_deleted, session_id, False)
 
 
+@app.get("/sessions/{session_id}")
+async def get_session(session_id: str) -> dict[str, Any]:
+    """A single session row, for a browser's initial load (it reads `status` to
+    seed the chip; live transitions then arrive as `status` events over the
+    WebSocket). 404 when the session doesn't exist."""
+    session = await asyncio.to_thread(sessions.get_session, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail=f"no session with id {session_id}")
+    return session
+
+
 @app.get("/sessions/{session_id}/file")
 async def get_session_file(session_id: str, path: str) -> dict[str, Any]:
     """Serve a file's contents from the session's worktree for the code pane.

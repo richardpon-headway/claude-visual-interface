@@ -129,3 +129,13 @@ def test_lifecycle_endpoint_404s_on_missing_session():
     with TestClient(app) as client:
         assert client.post("/sessions/ghost/archive").status_code == 404
         assert client.delete("/sessions/ghost").status_code == 404
+
+
+def test_get_session_returns_row_and_404s_on_missing():
+    _insert_session("s", updated_at="2026-01-01T00:00:00Z")
+    with TestClient(app) as client:
+        resp = client.get("/sessions/s")
+        assert resp.status_code == 200
+        assert resp.json()["id"] == "s"
+        assert resp.json()["status"] == "ready"
+        assert client.get("/sessions/ghost").status_code == 404

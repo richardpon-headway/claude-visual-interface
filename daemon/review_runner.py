@@ -25,7 +25,12 @@ from claude_agent_sdk import (
 )
 
 from daemon import findings, sessions
-from daemon.mcp_server import build_agent_options, open_file_on_surface
+from daemon.mcp_server import (
+    broadcast_status,
+    build_agent_options,
+    open_file_on_surface,
+    record_activity,
+)
 
 log = logging.getLogger(__name__)
 
@@ -48,15 +53,19 @@ def _review_prompt(session_id: str, base_ref: str) -> str:
     )
 
 
-def _log_activity(session_id: str, message: object) -> None:
-    """Relay session activity to the daemon terminal (headless but never invisible).
-    A live token stream to the browser is a later phase."""
+async def _log_activity(session_id: str, message: object) -> None:
+    """Relay session activity to the daemon terminal (headless but never invisible)
+    AND to the surface's live feed, so a watching browser sees what Claude is doing
+    as it happens. The terminal log stays authoritative; record_activity buffers +
+    broadcasts each line."""
     if isinstance(message, AssistantMessage):
         for block in message.content:
             if isinstance(block, TextBlock):
                 log.info("[review %s] %s", session_id, block.text)
+                await record_activity(session_id, "text", block.text)
             elif isinstance(block, ToolUseBlock):
                 log.info("[review %s] tool: %s", session_id, block.name)
+                await record_activity(session_id, "tool", block.name)
     elif isinstance(message, ResultMessage):
         log.info(
             "[review %s] result: subtype=%s is_error=%s",
@@ -64,6 +73,7 @@ def _log_activity(session_id: str, message: object) -> None:
             message.subtype,
             message.is_error,
         )
+        await record_activity(session_id, "result", f"{message.subtype}")
 
 
 async def _open_first_finding(session_id: str) -> None:
@@ -95,15 +105,17 @@ class AgentReviewRunner:
             async with ClaudeSDKClient(options=options) as client:
                 await client.query(_review_prompt(session_id, base_ref))
                 async for message in client.receive_response():
-                    _log_activity(session_id, message)
+                    await _log_activity(session_id, message)
             await _open_first_finding(session_id)
             await asyncio.to_thread(sessions.set_status, session_id, "ready")
+            await broadcast_status(session_id, "ready")
             log.info("review complete for session %s", session_id)
         except Exception:
             # Fail-open: a failed run marks the session and must not propagate out
             # of the fire-and-forget task or take down the daemon.
             log.warning("review failed for session %s", session_id, exc_info=True)
             await asyncio.to_thread(sessions.set_status, session_id, "error")
+            await broadcast_status(session_id, "error")
 
 
 # The active runner. Tests inject a fake via daemon.review_runner.runner.

@@ -5,10 +5,12 @@ from typing import Any
 
 from daemon.hub import hub
 from daemon.mcp_server import (
+    broadcast_status,
     get_selection,
     get_view_state,
     highlight_range,
     open_code,
+    record_activity,
     show_diff,
     split_pane,
 )
@@ -84,6 +86,35 @@ async def test_show_diff_broadcasts_event():
     assert store.get_or_create(surface).diff.a == "current"
     assert ws.received == [
         {"type": "show_diff", "surface": surface, "payload": {"a": "current", "b": "patch-1"}}
+    ]
+
+
+async def test_record_activity_buffers_and_broadcasts():
+    surface = "vc-activity"
+    ws = FakeWS()
+    hub.register(surface, ws)
+    try:
+        await record_activity(surface, "tool", "Bash")
+    finally:
+        hub.unregister(surface, ws)
+
+    assert [(e.kind, e.text) for e in store.get_or_create(surface).activity] == [("tool", "Bash")]
+    assert ws.received == [
+        {"type": "activity", "surface": surface, "payload": {"kind": "tool", "text": "Bash"}}
+    ]
+
+
+async def test_broadcast_status_broadcasts_without_storing():
+    surface = "vc-status"
+    ws = FakeWS()
+    hub.register(surface, ws)
+    try:
+        await broadcast_status(surface, "ready")
+    finally:
+        hub.unregister(surface, ws)
+
+    assert ws.received == [
+        {"type": "status", "surface": surface, "payload": {"status": "ready"}}
     ]
 
 

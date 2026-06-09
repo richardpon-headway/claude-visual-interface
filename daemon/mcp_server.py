@@ -74,6 +74,27 @@ async def open_file_on_surface(
     )
 
 
+async def record_activity(surface: str, kind: str, text: str) -> None:
+    """Buffer a line of review narration on a surface and push it to subscribers.
+    Mirrors open_file_on_surface: update the view store, then broadcast. Called by
+    the review runner so the browser sees what Claude is doing as it happens."""
+    store.append_activity(surface, kind, text)
+    await hub.broadcast(
+        surface,
+        {"type": "activity", "surface": surface, "payload": {"kind": kind, "text": text}},
+    )
+
+
+async def broadcast_status(surface: str, status: str) -> None:
+    """Push a session status change (running → ready / error) to subscribers so the
+    surface's status chip flips live. Status itself is persisted on the session row;
+    this is the transient nudge to connected browsers."""
+    await hub.broadcast(
+        surface,
+        {"type": "status", "surface": surface, "payload": {"status": status}},
+    )
+
+
 @tool(
     "open_code",
     "Open a file in the review's left pane, optionally scrolled to a line range and "

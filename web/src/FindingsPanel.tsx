@@ -61,7 +61,7 @@ export function FindingsPanel({
   const open = items.filter((f) => !f.disposition).length;
 
   return (
-    <aside className="flex w-96 min-w-0 flex-col border-l border-zinc-800">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="border-b border-zinc-800 px-3 py-2 text-sm font-semibold">
         Findings <span className="text-zinc-500">· {items.length} · {open} open</span>
       </div>
@@ -74,6 +74,6 @@ export function FindingsPanel({
           ))}
         </ul>
       )}
-    </aside>
+    </div>
   );
 }
