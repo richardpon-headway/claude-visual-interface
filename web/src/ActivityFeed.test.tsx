@@ -22,4 +22,10 @@ describe("ActivityFeed", () => {
     expect(screen.getByText("Bash")).toBeInTheDocument();
     expect(screen.getByText("tool")).toBeInTheDocument();
   });
+
+  it("labels a user turn distinctly", () => {
+    render(<ActivityFeed activity={[{ kind: "user", text: "open utils.py" }]} />);
+    expect(screen.getByText("open utils.py")).toBeInTheDocument();
+    expect(screen.getByText("you")).toBeInTheDocument();
+  });
 });

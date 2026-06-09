@@ -16,15 +16,10 @@ import asyncio
 import logging
 from typing import Protocol
 
-from claude_agent_sdk import (
-    AssistantMessage,
-    ClaudeSDKClient,
-    ResultMessage,
-    TextBlock,
-    ToolUseBlock,
-)
+from claude_agent_sdk import ClaudeSDKClient
 
 from daemon import findings, sessions
+from daemon.activity_relay import relay_message_activity
 from daemon.gitref import resolve_base_ref
 from daemon.mcp_server import (
     broadcast_status,
@@ -52,29 +47,6 @@ def _review_prompt(session_id: str, base_ref: str) -> str:
         "read-only review — do not edit any files. When you have reported every finding, "
         "stop."
     )
-
-
-async def _log_activity(session_id: str, message: object) -> None:
-    """Relay session activity to the daemon terminal (headless but never invisible)
-    AND to the surface's live feed, so a watching browser sees what Claude is doing
-    as it happens. The terminal log stays authoritative; record_activity buffers +
-    broadcasts each line."""
-    if isinstance(message, AssistantMessage):
-        for block in message.content:
-            if isinstance(block, TextBlock):
-                log.info("[review %s] %s", session_id, block.text)
-                await record_activity(session_id, "text", block.text)
-            elif isinstance(block, ToolUseBlock):
-                log.info("[review %s] tool: %s", session_id, block.name)
-                await record_activity(session_id, "tool", block.name)
-    elif isinstance(message, ResultMessage):
-        log.info(
-            "[review %s] result: subtype=%s is_error=%s",
-            session_id,
-            message.subtype,
-            message.is_error,
-        )
-        await record_activity(session_id, "result", f"{message.subtype}")
 
 
 async def _open_first_finding(session_id: str) -> None:
@@ -114,7 +86,7 @@ class AgentReviewRunner:
             async with ClaudeSDKClient(options=options) as client:
                 await client.query(_review_prompt(session_id, resolved_base))
                 async for message in client.receive_response():
-                    await _log_activity(session_id, message)
+                    await relay_message_activity(session_id, message)
             await _open_first_finding(session_id)
             await asyncio.to_thread(sessions.set_status, session_id, "ready")
             await broadcast_status(session_id, "ready")

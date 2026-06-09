@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { ActivityFeed } from "./ActivityFeed";
+import { ChatInput } from "./ChatInput";
 import { CodePane } from "./CodePane";
 import { FindingsPanel } from "./FindingsPanel";
 import { primaryOpenFile } from "./findingFocus";
@@ -27,7 +28,7 @@ function StatusChip({ status }: { status: string | null }) {
 }
 
 export function ReviewSurface({ surface }: { surface: string }) {
-  const { view, findings, status } = useSurfaceSocket(surface);
+  const [{ view, findings, status }, sendMessage] = useSurfaceSocket(surface);
   const paneIndexes = Array.from({ length: view.panes }, (_, i) => i);
   const allFindings = Object.values(findings);
   const openCount = allFindings.filter((f) => !f.disposition).length;
@@ -80,7 +81,7 @@ export function ReviewSurface({ surface }: { surface: string }) {
             </div>
           ))}
         </main>
-        {/* Right: live activity feed stacked above the findings list. */}
+        {/* Right: the conversation — activity/transcript over findings, chat box below. */}
         <aside className="flex w-96 min-w-0 flex-col border-l border-zinc-800">
           <ActivityFeed activity={view.activity} />
           <FindingsPanel
@@ -88,6 +89,7 @@ export function ReviewSurface({ surface }: { surface: string }) {
             activeId={activeFinding?.id ?? null}
             onSelect={selectFinding}
           />
+          <ChatInput onSend={sendMessage} />
         </aside>
       </div>
 

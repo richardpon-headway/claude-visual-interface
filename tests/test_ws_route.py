@@ -3,8 +3,9 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+from daemon import agent_session
 from daemon.hub import hub
-from daemon.main import _apply_inbound, app
+from daemon.main import _handle_inbound, app
 from daemon.view_state import store
 
 
@@ -28,19 +29,35 @@ def test_ws_sends_a_snapshot_on_connect_and_registers_then_cleans_up():
     assert hub.subscriber_count(surface) == 0
 
 
-def test_inbound_selection_frame_updates_the_store():
+async def test_inbound_selection_frame_updates_the_store():
     surface = "ws-sel"
     frame = {"type": "selection", "payload": {"file": "a.py", "range": {"start": 1, "end": 3}}}
-    _apply_inbound(surface, json.dumps(frame))
+    await _handle_inbound(surface, json.dumps(frame))
     assert store.snapshot(surface)["selection"] == {
         "file": "a.py",
         "range": {"start": 1, "end": 3},
     }
 
 
-def test_inbound_ignores_malformed_unknown_and_incomplete_frames():
+async def test_inbound_ignores_malformed_unknown_and_incomplete_frames():
     surface = "ws-sel-bad"
-    _apply_inbound(surface, "{not json")
-    _apply_inbound(surface, json.dumps({"type": "nope", "payload": {}}))
-    _apply_inbound(surface, json.dumps({"type": "selection", "payload": {"file": "a.py"}}))
+    await _handle_inbound(surface, "{not json")
+    await _handle_inbound(surface, json.dumps({"type": "nope", "payload": {}}))
+    await _handle_inbound(surface, json.dumps({"type": "selection", "payload": {"file": "a.py"}}))
     assert store.snapshot(surface)["selection"] is None
+
+
+async def test_inbound_message_frame_routes_to_the_agent_registry(monkeypatch):
+    surface = "ws-msg"
+    sent: list[tuple[str, str]] = []
+
+    async def fake_send(s, text):
+        sent.append((s, text))
+
+    monkeypatch.setattr(agent_session.agents, "send", fake_send)
+
+    await _handle_inbound(surface, json.dumps({"type": "message", "payload": {"text": "hi"}}))
+    # Blank / whitespace-only messages are ignored, not routed.
+    await _handle_inbound(surface, json.dumps({"type": "message", "payload": {"text": "  "}}))
+
+    assert sent == [(surface, "hi")]

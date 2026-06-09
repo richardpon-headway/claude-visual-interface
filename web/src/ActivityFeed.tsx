@@ -6,6 +6,8 @@ function kindLabel(kind: string): string {
       return "tool";
     case "result":
       return "result";
+    case "user":
+      return "you";
     default:
       return "";
   }
@@ -14,6 +16,18 @@ function kindLabel(kind: string): string {
 function ActivityRow({ entry }: { entry: ActivityEntry }) {
   const label = kindLabel(entry.kind);
   const isTool = entry.kind === "tool";
+  const isUser = entry.kind === "user";
+  // The user's own turns read as a distinct, accented bubble in the transcript.
+  if (isUser) {
+    return (
+      <li className="border-b border-zinc-900 px-3 py-1.5 text-xs">
+        <span className="mr-2 rounded bg-indigo-900 px-1.5 py-0.5 font-mono text-[10px] uppercase text-indigo-200">
+          you
+        </span>
+        <span className="text-zinc-100">{entry.text}</span>
+      </li>
+    );
+  }
   return (
     <li className="border-b border-zinc-900 px-3 py-1.5 text-xs">
       {label ? (
