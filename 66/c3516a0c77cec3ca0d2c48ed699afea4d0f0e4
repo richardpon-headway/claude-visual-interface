@@ -1,0 +1,65 @@
+tests/test_view_state.py
+  s_2d2a8100f95fdb::t_b24a19a72a2c15 1
+  s_2d2a8100f95fdb::t_9987d869ec7592 64,66-89
+web/src/ReviewSurface.tsx
+  s_2d2a8100f95fdb::t_daee55164e0f8a 3,10-28,30,33
+  s_2d2a8100f95fdb::t_700b4edcfc6562 58-63
+  s_2d2a8100f95fdb::t_b910f01bc7bbea 83-91
+daemon/view_state.py
+  s_2d2a8100f95fdb::t_2d7eb49714d509 114-119
+  s_2d2a8100f95fdb::t_b7c727c6abb223 43-53,64-66
+daemon/mcp_server.py
+  s_2d2a8100f95fdb::t_bf5f8f028f29d3 77-97
+daemon/main.py
+  s_2d2a8100f95fdb::t_9efeea0d0404e1 86-96
+tests/test_sessions.py
+  s_2d2a8100f95fdb::t_d09dfa9b165b24 132-141
+daemon/review_runner.py
+  s_2d2a8100f95fdb::t_1dc8113449b1c3 56-60,65,68,76
+  s_2d2a8100f95fdb::t_424e9110615faa 28-33
+  s_2d2a8100f95fdb::t_11f96795df07d3 108,111,118
+web/src/useSurfaceSocket.ts
+  s_2d2a8100f95fdb::t_b651ba690f04a7 35-48
+tests/test_view_control.py
+  s_2d2a8100f95fdb::t_0a99a37bdfbcdc 92-120
+  s_2d2a8100f95fdb::t_2cd99c1e3715dd 8,13
+web/src/ActivityFeed.test.tsx
+  s_2d2a8100f95fdb::t_c801d5f3b90213 1-25
+web/src/FindingsPanel.tsx
+  s_2d2a8100f95fdb::t_103c12756f3d95 64,77
+web/src/viewState.test.ts
+  s_2d2a8100f95fdb::t_6c025f51086c24 80,85-114
+  s_2d2a8100f95fdb::t_41461c1b9e199a 46
+web/src/viewState.ts
+  s_2d2a8100f95fdb::t_61c4e69d048a6a 73,77
+  s_2d2a8100f95fdb::t_bf2fec58c15afb 136-139
+  s_2d2a8100f95fdb::t_5f5ee2dbde3e1c 9-11,21
+  s_2d2a8100f95fdb::t_e04e41ec19c097 56-58,68-69
+  s_2d2a8100f95fdb::t_b756cc88178d08 39-40,44
+tests/test_review_runner.py
+  s_2d2a8100f95fdb::t_05375d1f47fe91 125
+  s_2d2a8100f95fdb::t_3c6a4eaaa7fd45 104-124,126-139,142-158
+  s_2d2a8100f95fdb::t_2747cb276e9924 12,16-24
+  s_2d2a8100f95fdb::t_0bd5cc1505af58 140-141
+web/src/ActivityFeed.tsx
+  s_2d2a8100f95fdb::t_ada12ac213989b 1-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "66c3516a0c77cec3ca0d2c48ed699afea4d0f0e4",
+  "prompts": {},
+  "sessions": {
+    "s_2d2a8100f95fdb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d07d54f-882d-4c6f-8ed2-861cc7aaa606",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
