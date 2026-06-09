@@ -25,6 +25,7 @@ from claude_agent_sdk import (
 )
 
 from daemon import findings, sessions
+from daemon.gitref import resolve_base_ref
 from daemon.mcp_server import (
     broadcast_status,
     build_agent_options,
@@ -101,9 +102,17 @@ class AgentReviewRunner:
             base_ref,
         )
         try:
+            resolved_base = await resolve_base_ref(worktree_path, base_ref)
+            log.info(
+                "[review %s] scoping diff to base %s (from %s)",
+                session_id,
+                resolved_base,
+                base_ref,
+            )
+            await record_activity(session_id, "text", f"scoping review to {resolved_base}")
             options = build_agent_options(cwd=worktree_path)
             async with ClaudeSDKClient(options=options) as client:
-                await client.query(_review_prompt(session_id, base_ref))
+                await client.query(_review_prompt(session_id, resolved_base))
                 async for message in client.receive_response():
                     await _log_activity(session_id, message)
             await _open_first_finding(session_id)

@@ -49,6 +49,7 @@ class FakeClient:
     def __init__(self, *, messages=(), raise_on=None):
         self._messages = messages
         self._raise_on = raise_on
+        self.queried: list[str] = []
 
     async def __aenter__(self):
         if self._raise_on == "enter":
@@ -59,6 +60,7 @@ class FakeClient:
         return False
 
     async def query(self, prompt):
+        self.queried.append(prompt)
         if self._raise_on == "query":
             raise RuntimeError("query failed")
 
@@ -101,6 +103,24 @@ async def test_successful_run_marks_session_ready(monkeypatch):
     assert sessions.get_session(SESSION)["status"] == "ready"
 
 
+async def test_run_resolves_the_base_ref_and_scopes_the_prompt(monkeypatch):
+    async def fake_resolve(worktree_path, base_ref):
+        return "origin/main"
+
+    client = FakeClient()
+    monkeypatch.setattr(review_runner, "resolve_base_ref", fake_resolve)
+    monkeypatch.setattr(review_runner, "ClaudeSDKClient", lambda options=None: client)
+    store.get_or_create(SESSION).activity.clear()  # the store is process-global
+
+    await AgentReviewRunner().run(session_id=SESSION, worktree_path="/tmp/wt", base_ref="main")
+
+    # The diff is scoped to the resolved (fresher) ref, not the caller's stale one.
+    assert "origin/main...HEAD" in client.queried[0]
+    assert ("text", "scoping review to origin/main") in [
+        (e.kind, e.text) for e in store.get_or_create(SESSION).activity
+    ]
+
+
 async def test_run_streams_activity_and_a_terminal_status_event(monkeypatch):
     messages = [
         AssistantMessage(
@@ -130,8 +150,10 @@ async def test_run_streams_activity_and_a_terminal_status_event(monkeypatch):
     finally:
         hub.unregister(SESSION, ws)
 
-    # The narration is buffered on the surface (rides a later connect snapshot).
+    # The narration is buffered on the surface (rides a later connect snapshot),
+    # led by the base-scoping line (/tmp/wt isn't a git repo, so the ref is as-is).
     assert [(e.kind, e.text) for e in store.get_or_create(SESSION).activity] == [
+        ("text", "scoping review to main"),
         ("text", "reviewing the diff"),
         ("tool", "Bash"),
         ("result", "success"),
