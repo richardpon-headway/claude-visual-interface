@@ -49,11 +49,13 @@ export function CodePane({
   openFile,
   findings,
   highlights,
+  reveal,
 }: {
   surface: string;
   openFile: OpenFile | undefined;
   findings: Finding[];
   highlights: Record<string, Range[]>;
+  reveal?: { range: Range; nonce: number } | null;
 }) {
   const file = openFile?.file;
   const [state, setState] = useState<FileState>({ status: "loading" });
@@ -111,6 +113,20 @@ export function CodePane({
     );
     return () => collection.clear();
   }, [decorations, state, editorReady]);
+
+  // Scroll to a revealed range (a clicked finding's anchor). The reveal carries
+  // a nonce so re-selecting the same finding re-fires this; `state` keeps it from
+  // firing before the file's content has loaded.
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || !reveal || state.status !== "text") return;
+    editor.revealRangeInCenter({
+      startLineNumber: reveal.range.start,
+      startColumn: 1,
+      endLineNumber: reveal.range.end,
+      endColumn: 1,
+    });
+  }, [reveal, state, editorReady]);
 
   if (!openFile || !file) {
     return <Centered>no file open</Centered>;
