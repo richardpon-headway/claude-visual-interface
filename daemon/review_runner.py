@@ -16,7 +16,7 @@ import asyncio
 import logging
 from typing import Protocol
 
-from claude_agent_sdk import ClaudeSDKClient
+from claude_agent_sdk import ClaudeSDKClient, ResultMessage
 
 from daemon import findings, sessions
 from daemon.activity_relay import relay_message_activity
@@ -83,10 +83,19 @@ class AgentReviewRunner:
             )
             await record_activity(session_id, "text", f"scoping review to {resolved_base}")
             options = build_agent_options(cwd=worktree_path)
+            agent_session_id: str | None = None
             async with ClaudeSDKClient(options=options) as client:
                 await client.query(_review_prompt(session_id, resolved_base))
                 async for message in client.receive_response():
                     await relay_message_activity(session_id, message)
+                    if isinstance(message, ResultMessage):
+                        # The SDK session id; stored so chat can resume this exact
+                        # conversation instead of starting blank.
+                        agent_session_id = message.session_id
+            if agent_session_id is not None:
+                await asyncio.to_thread(
+                    sessions.set_agent_session_id, session_id, agent_session_id
+                )
             await _open_first_finding(session_id)
             await asyncio.to_thread(sessions.set_status, session_id, "ready")
             await broadcast_status(session_id, "ready")

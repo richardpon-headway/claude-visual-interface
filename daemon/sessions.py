@@ -21,6 +21,7 @@ _COLUMNS = (
     "updated_at",
     "archived_at",
     "deleted_at",
+    "agent_session_id",
 )
 
 
@@ -123,6 +124,22 @@ def set_status(session_id: str, status: str) -> bool:
         cursor = conn.execute(
             "UPDATE session SET status = ?, updated_at = ? WHERE id = ?",
             (status, now, session_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def set_agent_session_id(session_id: str, agent_session_id: str) -> bool:
+    """Store the Claude Agent SDK session id the review ran under, so chat can
+    resume it. Returns False if no such session. Bumps updated_at."""
+    now = _now_iso()
+    conn = open_db()
+    try:
+        cursor = conn.execute(
+            "UPDATE session SET agent_session_id = ?, updated_at = ? WHERE id = ?",
+            (agent_session_id, now, session_id),
         )
         conn.commit()
         return cursor.rowcount > 0

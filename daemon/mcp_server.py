@@ -358,16 +358,20 @@ CVI_SURFACE_SYSTEM_PROMPT = (
 
 
 def build_agent_options(
-    cwd: str | Path | None = None, system_prompt: str | None = None
+    cwd: str | Path | None = None,
+    system_prompt: str | None = None,
+    resume: str | None = None,
 ) -> ClaudeAgentOptions:
     """Build the session-connection point: options that attach the CVI MCP server
     and pre-approve its primitives plus the read-only review tools. Pass `cwd` to
-    run the session against a review worktree, and `system_prompt` to steer an
-    interactive session (the one-shot runner leaves it None)."""
+    run the session against a review worktree, `system_prompt` to steer an
+    interactive session (the one-shot runner leaves it None), and `resume` with a
+    prior SDK session id to continue that conversation (chat resuming a review)."""
     return ClaudeAgentOptions(
         mcp_servers={SERVER_NAME: cvi_server},
         allowed_tools=[*ALLOWED_TOOLS, *REVIEW_TOOLS],
         can_use_tool=_approve_read_only_tools,
         cwd=cwd,
         system_prompt=system_prompt,
+        resume=resume,
     )

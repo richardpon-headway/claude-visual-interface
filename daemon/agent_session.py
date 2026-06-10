@@ -34,38 +34,66 @@ AGENT_IDLE_SECONDS = 1800
 class AgentSession:
     """One open Claude client bound to a surface, fed user turns via a queue."""
 
-    def __init__(self, registry: AgentSessionRegistry, surface: str, worktree: str) -> None:
+    def __init__(
+        self,
+        registry: AgentSessionRegistry,
+        surface: str,
+        worktree: str,
+        resume: str | None = None,
+    ) -> None:
         self._registry = registry
         self._surface = surface
         self._worktree = worktree
+        self._resume = resume
         self._queue: asyncio.Queue[str] = asyncio.Queue()
         self._task = asyncio.create_task(self._run())
 
     def enqueue(self, text: str) -> None:
         self._queue.put_nowait(text)
 
-    async def _run(self) -> None:
-        options = build_agent_options(
-            cwd=self._worktree, system_prompt=CVI_SURFACE_SYSTEM_PROMPT
+    def _options(self, resume: str | None) -> object:
+        return build_agent_options(
+            cwd=self._worktree, system_prompt=CVI_SURFACE_SYSTEM_PROMPT, resume=resume
         )
+
+    async def _run(self) -> None:
         try:
-            async with ClaudeSDKClient(options=options) as client:
-                while True:
-                    try:
-                        text = await asyncio.wait_for(self._queue.get(), AGENT_IDLE_SECONDS)
-                    except TimeoutError:
-                        log.info("agent session idle, closing (surface=%s)", self._surface)
-                        return
-                    await self._run_turn(client, text)
+            try:
+                await self._serve(self._resume)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # A failure on the resume path is most likely a stale/missing prior
+                # session — fall back to a fresh one (once) so chat still works,
+                # observably (P4). With no resume id, it's a genuine session error.
+                if self._resume is None:
+                    raise
+                log.warning(
+                    "could not resume session for surface %s; starting fresh",
+                    self._surface,
+                    exc_info=True,
+                )
+                await record_activity(
+                    self._surface, "result", "could not resume prior session; starting fresh"
+                )
+                await self._serve(None)
         except asyncio.CancelledError:
             raise
         except Exception:
-            # The whole session failed (e.g. connect failed). Surface it and let
-            # the session end; the next message lazily starts a fresh one.
             log.warning("agent session failed (surface=%s)", self._surface, exc_info=True)
             await record_activity(self._surface, "result", "session error")
         finally:
             self._registry._discard(self._surface)
+
+    async def _serve(self, resume: str | None) -> None:
+        async with ClaudeSDKClient(options=self._options(resume)) as client:
+            while True:
+                try:
+                    text = await asyncio.wait_for(self._queue.get(), AGENT_IDLE_SECONDS)
+                except TimeoutError:
+                    log.info("agent session idle, closing (surface=%s)", self._surface)
+                    return
+                await self._run_turn(client, text)
 
     async def _run_turn(self, client: ClaudeSDKClient, text: str) -> None:
         """Run one user turn. A failed turn is surfaced (P4) but keeps the session
@@ -105,7 +133,10 @@ class AgentSessionRegistry:
                 log.warning("no worktree for surface %s; cannot start chat", surface)
                 await record_activity(surface, "result", "no worktree for this surface")
                 return
-            self._sessions[surface] = AgentSession(self, surface, worktree)
+            # Resume the review's SDK session when one was recorded, so chat
+            # continues that conversation instead of starting blank.
+            resume = session.get("agent_session_id")
+            self._sessions[surface] = AgentSession(self, surface, worktree, resume=resume)
         await record_activity(surface, "user", text)
         self._sessions[surface].enqueue(text)
 

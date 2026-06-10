@@ -28,6 +28,7 @@ def test_migrations_create_session_schema(tmp_path):
         "updated_at",
         "archived_at",
         "deleted_at",
+        "agent_session_id",
     }
 
 
