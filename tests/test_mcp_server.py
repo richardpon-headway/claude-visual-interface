@@ -100,6 +100,11 @@ def test_build_agent_options_sets_the_review_worktree():
     assert options.cwd == "/tmp/worktree"
 
 
+def test_build_agent_options_passes_resume_session_id():
+    assert build_agent_options(resume="sdk-xyz").resume == "sdk-xyz"
+    assert build_agent_options().resume is None
+
+
 async def test_review_permission_gate_allows_read_only_tools_and_denies_writes():
     options = build_agent_options(cwd="/tmp/worktree")
     allow_read = await options.can_use_tool("Read", {}, None)

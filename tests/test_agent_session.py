@@ -21,13 +21,14 @@ def db(tmp_path, monkeypatch):
     apply_migrations_sync()
 
 
-def _seed_session(session_id, *, worktree_path):
+def _seed_session(session_id, *, worktree_path, agent_session_id=None):
     conn = open_db()
     try:
         conn.execute(
-            "INSERT INTO session (id, type, status, worktree_path, created_at, updated_at) "
-            "VALUES (?, 'review', 'ready', ?, 't', 't')",
-            (session_id, worktree_path),
+            "INSERT INTO session "
+            "(id, type, status, worktree_path, agent_session_id, created_at, updated_at) "
+            "VALUES (?, 'review', 'ready', ?, ?, 't', 't')",
+            (session_id, worktree_path, agent_session_id),
         )
         conn.commit()
     finally:
@@ -40,7 +41,8 @@ class FakeClient:
 
     instances: list["FakeClient"] = []
 
-    def __init__(self):
+    def __init__(self, options=None):
+        self.options = options
         self.queried: list[str] = []
         FakeClient.instances.append(self)
 
@@ -78,7 +80,7 @@ async def _wait_until(predicate, limit=1.0):
 @pytest.fixture(autouse=True)
 def fake_client(monkeypatch):
     FakeClient.instances.clear()
-    monkeypatch.setattr(agent_session, "ClaudeSDKClient", lambda options=None: FakeClient())
+    monkeypatch.setattr(agent_session, "ClaudeSDKClient", lambda options=None: FakeClient(options))
 
 
 async def test_first_message_starts_a_session_records_user_and_relays_reply():
@@ -147,3 +149,52 @@ async def test_no_worktree_records_a_notice_and_starts_nothing():
     notes = [e.text for e in store.get_or_create("no-wt").activity]
     assert any("no worktree" in n for n in notes)
     assert FakeClient.instances == []
+
+
+async def test_resumes_the_recorded_review_session():
+    _seed_session(SESSION, worktree_path="/tmp/wt", agent_session_id="sdk-xyz")
+    reg = AgentSessionRegistry()
+
+    await reg.send(SESSION, "why is finding 1 low?")
+    await _wait_until(lambda: len(FakeClient.instances) == 1)
+
+    # The chat client continues the review's conversation.
+    assert FakeClient.instances[0].options.resume == "sdk-xyz"
+    await reg.shutdown_all()
+
+
+async def test_starts_fresh_when_no_review_session_recorded():
+    _seed_session(SESSION, worktree_path="/tmp/wt")  # agent_session_id is NULL
+    reg = AgentSessionRegistry()
+
+    await reg.send(SESSION, "hello")
+    await _wait_until(lambda: len(FakeClient.instances) == 1)
+
+    assert FakeClient.instances[0].options.resume is None
+    await reg.shutdown_all()
+
+
+async def test_falls_back_to_fresh_when_resume_fails(monkeypatch):
+    _seed_session(SESSION, worktree_path="/tmp/wt", agent_session_id="stale-id")
+    store.get_or_create(SESSION).activity.clear()
+
+    class ResumeFailClient(FakeClient):
+        async def __aenter__(self):
+            if self.options is not None and self.options.resume is not None:
+                raise RuntimeError("no such session to resume")
+            return self
+
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: ResumeFailClient(options)
+    )
+    reg = AgentSessionRegistry()
+
+    await reg.send(SESSION, "still works?")
+    # The fresh retry (resume=None) serves the queued message.
+    await _wait_until(
+        lambda: any(c.options.resume is None and c.queried for c in FakeClient.instances)
+    )
+
+    notes = [e.text for e in store.get_or_create(SESSION).activity]
+    assert any("could not resume" in n for n in notes)
+    await reg.shutdown_all()

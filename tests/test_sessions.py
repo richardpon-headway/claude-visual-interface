@@ -108,6 +108,14 @@ def test_set_status_updates_and_reports_missing():
     assert sessions.set_status("ghost", "ready") is False
 
 
+def test_set_agent_session_id_stores_and_reports_missing():
+    _insert_session("s", updated_at="2026-01-01T00:00:00Z")
+    assert sessions.get_session("s")["agent_session_id"] is None  # unset at creation
+    assert sessions.set_agent_session_id("s", "sdk-xyz") is True
+    assert sessions.get_session("s")["agent_session_id"] == "sdk-xyz"
+    assert sessions.set_agent_session_id("ghost", "sdk-xyz") is False
+
+
 def test_archive_endpoint_removes_session_from_the_listing():
     _insert_session("s", updated_at="2026-01-01T00:00:00Z")
     with TestClient(app) as client:

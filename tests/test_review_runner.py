@@ -103,6 +103,35 @@ async def test_successful_run_marks_session_ready(monkeypatch):
     assert sessions.get_session(SESSION)["status"] == "ready"
 
 
+async def test_run_stores_the_agent_session_id(monkeypatch):
+    messages = [
+        ResultMessage(
+            subtype="success",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=1,
+            session_id="sdk-xyz",
+        ),
+    ]
+    monkeypatch.setattr(
+        review_runner, "ClaudeSDKClient", lambda options=None: FakeClient(messages=messages)
+    )
+
+    await AgentReviewRunner().run(session_id=SESSION, worktree_path="/tmp/wt", base_ref="main")
+
+    # Captured from the ResultMessage so chat can resume this exact conversation.
+    assert sessions.get_session(SESSION)["agent_session_id"] == "sdk-xyz"
+
+
+async def test_run_without_a_result_message_leaves_agent_session_id_unset(monkeypatch):
+    monkeypatch.setattr(review_runner, "ClaudeSDKClient", lambda options=None: FakeClient())
+
+    await AgentReviewRunner().run(session_id=SESSION, worktree_path="/tmp/wt", base_ref="main")
+
+    assert sessions.get_session(SESSION)["agent_session_id"] is None
+
+
 async def test_run_resolves_the_base_ref_and_scopes_the_prompt(monkeypatch):
     async def fake_resolve(worktree_path, base_ref):
         return "origin/main"
