@@ -26,6 +26,9 @@ describe("parseMessage", () => {
     expect(parseMessage(JSON.stringify({ type: "disposition", surface: "s", payload: {} }))?.type).toBe(
       "disposition",
     );
+    expect(parseMessage(JSON.stringify({ type: "render_html", surface: "s", payload: {} }))?.type).toBe(
+      "render_html",
+    );
   });
 
   it("rejects malformed JSON and unknown types", () => {
@@ -42,6 +45,7 @@ describe("applyMessage — view events", () => {
       open: {},
       highlights: {},
       diff: null,
+      artifact: null,
       selection: null,
       activity: [],
     };
@@ -69,6 +73,40 @@ describe("applyMessage — view events", () => {
     expect(Object.keys(state.view.open)).toEqual(["0"]);
   });
 
+  it("renders an html artifact onto the view", () => {
+    const next = applyMessage(emptySurface("s"), {
+      type: "render_html",
+      surface: "s",
+      payload: { html: "<p>hi</p>", title: "design" },
+    });
+    expect(next.view.artifact).toEqual({ html: "<p>hi</p>", title: "design" });
+  });
+
+  it("clears the artifact when code is opened", () => {
+    let state = applyMessage(emptySurface("s"), {
+      type: "render_html",
+      surface: "s",
+      payload: { html: "<p>hi</p>", title: null },
+    });
+    state = applyMessage(state, {
+      type: "open_code",
+      surface: "s",
+      payload: { file: "a.py", range: null, pane: 0 },
+    });
+    expect(state.view.artifact).toBeNull();
+    expect(state.view.open["0"]).toEqual({ file: "a.py", range: null });
+  });
+
+  it("clears the artifact when the pane is split", () => {
+    let state = applyMessage(emptySurface("s"), {
+      type: "render_html",
+      surface: "s",
+      payload: { html: "<p>hi</p>", title: null },
+    });
+    state = applyMessage(state, { type: "split_pane", surface: "s", payload: { n: 2 } });
+    expect(state.view.artifact).toBeNull();
+  });
+
   it("emptyViewState starts blank", () => {
     expect(emptyViewState("s")).toEqual({
       surface: "s",
@@ -76,6 +114,7 @@ describe("applyMessage — view events", () => {
       open: {},
       highlights: {},
       diff: null,
+      artifact: null,
       selection: null,
       activity: [],
     });
@@ -105,6 +144,7 @@ describe("applyMessage — activity & status", () => {
       open: {},
       highlights: {},
       diff: null,
+      artifact: null,
       selection: null,
       activity: [{ kind: "text", text: "buffered" }],
     };

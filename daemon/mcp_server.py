@@ -4,7 +4,7 @@ The daemon hosts a single in-process MCP server (via the Claude Agent SDK) that 
 session connects to. Its tools are a small, curated set of typed primitives — NOT
 arbitrary HTML — namespaced by direction:
 
-- view-control (transient): open_code / split_pane / highlight_range / show_diff
+- view-control (transient): open_code / split_pane / highlight_range / show_diff / render_html
 - state (persisted):         upsert_finding / set_disposition / anchor_message
 - pull (read):               get_selection / get_view_state
 
@@ -71,6 +71,18 @@ async def open_file_on_surface(
         surface,
         {"type": "open_code", "surface": surface,
          "payload": {"file": file, "range": line_range, "pane": pane}},
+    )
+
+
+async def render_html_on_surface(surface: str, html: str, title: str | None = None) -> None:
+    """Render a self-contained HTML page onto a surface's left pane: update the view
+    store and push the render_html event to subscribers. The canonical effect behind
+    the render_html primitive. Mirrors open_file_on_surface."""
+    store.render_html(surface, html, title)
+    await hub.broadcast(
+        surface,
+        {"type": "render_html", "surface": surface,
+         "payload": {"html": html, "title": title}},
     )
 
 
@@ -175,6 +187,29 @@ async def show_diff(args: dict[str, Any]) -> dict[str, Any]:
         surface, {"type": "show_diff", "surface": surface, "payload": {"a": a, "b": b}}
     )
     return _ok(f"showing diff {a} vs {b} on surface {surface}")
+
+
+@tool(
+    "render_html",
+    "Render a self-contained HTML page on the left pane of a surface — for anything "
+    "visual that isn't code: a design, diagram, table, report, or text-driven review. "
+    "A later render_html replaces the page; opening a code file switches the pane back "
+    "to the code view. Emit self-contained HTML/CSS/SVG only — no JavaScript and no "
+    "external/CDN resources (the page renders in a no-script sandbox).",
+    {
+        "type": "object",
+        "properties": {
+            "surface": {"type": "string", "description": "Surface UUID to route to"},
+            "html": {"type": "string", "description": "A complete, self-contained HTML document"},
+            "title": {"type": "string", "description": "Short label for the page (optional)"},
+        },
+        "required": ["surface", "html"],
+    },
+)
+async def render_html(args: dict[str, Any]) -> dict[str, Any]:
+    surface = args["surface"]
+    await render_html_on_surface(surface, args["html"], args.get("title"))
+    return _ok(f"rendered html on surface {surface}")
 
 
 # --- state primitives (persisted) -------------------------------------------------
@@ -305,6 +340,7 @@ TOOLS = [
     split_pane,
     highlight_range,
     show_diff,
+    render_html,
     upsert_finding,
     set_disposition,
     anchor_message,
@@ -352,7 +388,11 @@ CVI_SURFACE_SYSTEM_PROMPT = (
     "mcp__cvi__open_code to show a file (optionally at a line range), "
     "mcp__cvi__highlight_range to point at lines, and mcp__cvi__upsert_finding to "
     "record a review finding anchored to code. When the user asks you to look at or "
-    "show something, open it in the pane rather than only describing it. This is a "
+    "show something, open it in the pane rather than only describing it. For anything "
+    "visual that isn't code — a design, diagram, table, report, or a text-driven "
+    "review — use mcp__cvi__render_html to render a full HTML page on the left pane. "
+    "That page must be self-contained HTML/CSS/SVG only: no JavaScript and no "
+    "external/CDN resources, as it renders in a no-script sandbox. This is a "
     "read-only session — do not edit files."
 )
 
