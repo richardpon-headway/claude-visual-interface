@@ -1,0 +1,64 @@
+daemon/view_state.py
+  s_a53d185a44b1f1::t_4ddda38abb8a5b 104-106,113
+  s_a53d185a44b1f1::t_776e11f8ba340d 70-73
+  s_a53d185a44b1f1::t_d8329c1ec01a7c 37-44
+  s_a53d185a44b1f1::t_00670fd62ccdb3 124-126
+web/src/ArtifactPane.tsx
+  s_a53d185a44b1f1::t_3852ef5f57ec9b 1-21
+web/src/ArtifactPane.test.tsx
+  s_a53d185a44b1f1::t_1fb202cb3a770b 1-19
+web/src/viewState.test.ts
+  s_a53d185a44b1f1::t_c74de2755b4cb5 117
+  s_a53d185a44b1f1::t_be91dc7ff611c2 76-109
+  s_a53d185a44b1f1::t_c7e0d4582ba282 48
+  s_a53d185a44b1f1::t_5a33e2b75b28b6 29-31
+  s_a53d185a44b1f1::t_e44987cb0259f2 147
+tests/test_view_control.py
+  s_a53d185a44b1f1::t_5b7668afc1e5c4 14
+  s_a53d185a44b1f1::t_c9ea9381e7e9c1 93-127
+tests/test_mcp_server.py
+  s_a53d185a44b1f1::t_b1ce0c1c73828d 46
+  s_a53d185a44b1f1::t_5dfe594aa7e623 30
+web/src/viewState.ts
+  s_a53d185a44b1f1::t_e2730b1348bcd1 148-149
+  s_a53d185a44b1f1::t_ca22749e0a4262 121-129,136
+  s_a53d185a44b1f1::t_fa2deae1476d4f 70
+  s_a53d185a44b1f1::t_df14d943560e61 22
+  s_a53d185a44b1f1::t_555bc2f78207d6 58
+  s_a53d185a44b1f1::t_cf2c4eaaf8d2db 78-87
+  s_a53d185a44b1f1::t_70e4a5e115852d 8-9
+tests/test_dev_emit.py
+  s_a53d185a44b1f1::t_c84a2379215841 23-33
+web/src/ReviewSurface.tsx
+  s_a53d185a44b1f1::t_2dc5b3cbf7afd7 69-70,72-74,76-90
+  s_a53d185a44b1f1::t_fe459c0d227b6f 4
+tests/test_view_state.py
+  s_a53d185a44b1f1::t_4e08643b9e0853 97
+  s_a53d185a44b1f1::t_0e1d4788fa9d47 59-64
+  s_a53d185a44b1f1::t_d642d69b45f8dc 45-58,65-78
+daemon/mcp_server.py
+  s_a53d185a44b1f1::t_f53b226c13b57f 7
+  s_a53d185a44b1f1::t_fcd3cb43cd035e 77-88
+  s_a53d185a44b1f1::t_43c670b710accb 391-395
+  s_a53d185a44b1f1::t_8a0df4e21cfade 192-214
+  s_a53d185a44b1f1::t_9d32b89fcf6155 343
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "a780512a180cbcc21e014784de0c6a8a810c9b1e",
+  "prompts": {},
+  "sessions": {
+    "s_a53d185a44b1f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a0179f51-d47d-48ef-b055-09578b66fccc",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
