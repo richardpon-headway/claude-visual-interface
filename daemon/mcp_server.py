@@ -379,21 +379,36 @@ async def _approve_read_only_tools(
     return PermissionResultDeny(message="CVI review sessions are read-only")
 
 
-# Tells a conversational session it's operating a visual review surface and to
-# use the cvi primitives to drive the left pane. The one-shot runner omits this
-# (its review prompt is self-contained); the interactive chat session passes it.
-CVI_SURFACE_SYSTEM_PROMPT = (
+# The HTML-canvas contract both prompts share: render visuals as a full, self-
+# contained page in the no-script sandbox. Kept as one constant so the rule can't
+# drift between the chat and review framings.
+_RENDER_HTML_GUIDANCE = (
+    "For anything visual — a design, diagram, table, chart, or report — use "
+    "mcp__cvi__render_html to render a full HTML page on the left pane. That page "
+    "must be self-contained HTML/CSS/SVG only: no JavaScript and no external/CDN "
+    "resources, as it renders in a no-script sandbox. Render rather than only "
+    "describe when the user asks to see something."
+)
+
+# The general framing for a conversational session: a chat on the right with an
+# HTML canvas on the left. The default the chat agent passes for a non-review surface.
+CVI_CHAT_SYSTEM_PROMPT = (
+    "You are a Claude session with a visual surface. The user types in a right-hand "
+    "conversation pane and you reply there in text. You also have an HTML canvas on "
+    f"the left. {_RENDER_HTML_GUIDANCE} This is a read-only session — do not edit files."
+)
+
+# The review specialization: same canvas, plus the code-review primitives. The
+# one-shot runner omits this (its review prompt is self-contained); the chat agent
+# passes it when continuing a review conversation.
+CVI_REVIEW_SYSTEM_PROMPT = (
     "You are operating a visual code-review surface. The user watches a left code "
     "pane and a right conversation pane. Use the cvi tools to drive the left pane: "
     "mcp__cvi__open_code to show a file (optionally at a line range), "
     "mcp__cvi__highlight_range to point at lines, and mcp__cvi__upsert_finding to "
     "record a review finding anchored to code. When the user asks you to look at or "
-    "show something, open it in the pane rather than only describing it. For anything "
-    "visual that isn't code — a design, diagram, table, report, or a text-driven "
-    "review — use mcp__cvi__render_html to render a full HTML page on the left pane. "
-    "That page must be self-contained HTML/CSS/SVG only: no JavaScript and no "
-    "external/CDN resources, as it renders in a no-script sandbox. This is a "
-    "read-only session — do not edit files."
+    f"show something, open it in the pane rather than only describing it. {_RENDER_HTML_GUIDANCE} "
+    "This is a read-only session — do not edit files."
 )
 
 

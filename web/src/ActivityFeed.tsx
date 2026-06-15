@@ -50,7 +50,7 @@ export function ActivityFeed({ activity }: { activity: ActivityEntry[] }) {
         Activity <span className="text-zinc-500">· {activity.length}</span>
       </div>
       {activity.length === 0 ? (
-        <div className="p-3 text-sm text-zinc-500">waiting for the review to start…</div>
+        <div className="p-3 text-sm text-zinc-500">no activity yet</div>
       ) : (
         <ul className="min-h-0 flex-1 overflow-auto">
           {activity.map((entry, i) => (

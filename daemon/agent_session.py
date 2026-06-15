@@ -9,9 +9,12 @@ that holds the client open and drains an input queue; the WebSocket handler only
 enqueues text. That also serializes turns for free — a message that arrives mid-turn
 waits behind the current one.
 
-Sessions start lazily on the first message, are keyed by surface (reusing the
-session row's worktree as cwd), survive browser reconnects, and are reaped on idle
-or daemon shutdown. Read-only this slice (the options' permission gate denies edits).
+Sessions start lazily on the first message, are keyed by surface, survive browser
+reconnects, and are reaped on idle or daemon shutdown. A review surface runs against
+its worktree (as cwd) with the review prompt; a general chat surface has no worktree
+(cwd is None) and gets the general chat prompt. The only thing that can't chat is a
+surface with no session row at all. Read-only (the options' permission gate denies
+edits).
 """
 
 from __future__ import annotations
@@ -23,7 +26,12 @@ from claude_agent_sdk import ClaudeSDKClient
 
 from daemon import sessions
 from daemon.activity_relay import relay_message_activity
-from daemon.mcp_server import CVI_SURFACE_SYSTEM_PROMPT, build_agent_options, record_activity
+from daemon.mcp_server import (
+    CVI_CHAT_SYSTEM_PROMPT,
+    CVI_REVIEW_SYSTEM_PROMPT,
+    build_agent_options,
+    record_activity,
+)
 
 log = logging.getLogger(__name__)
 
@@ -38,12 +46,14 @@ class AgentSession:
         self,
         registry: AgentSessionRegistry,
         surface: str,
-        worktree: str,
+        worktree: str | None,
+        system_prompt: str,
         resume: str | None = None,
     ) -> None:
         self._registry = registry
         self._surface = surface
         self._worktree = worktree
+        self._system_prompt = system_prompt
         self._resume = resume
         self._queue: asyncio.Queue[str] = asyncio.Queue()
         self._task = asyncio.create_task(self._run())
@@ -53,7 +63,7 @@ class AgentSession:
 
     def _options(self, resume: str | None) -> object:
         return build_agent_options(
-            cwd=self._worktree, system_prompt=CVI_SURFACE_SYSTEM_PROMPT, resume=resume
+            cwd=self._worktree, system_prompt=self._system_prompt, resume=resume
         )
 
     async def _run(self) -> None:
@@ -125,18 +135,27 @@ class AgentSessionRegistry:
 
     async def send(self, surface: str, text: str) -> None:
         """Route a user message to the surface's session, starting one if needed.
-        A surface with no worktree can't chat — recorded observably, not silently."""
+        A surface with no session row can't chat — recorded observably, not silently.
+        A chat session has no worktree (cwd None); a review session runs against its
+        worktree and continues its conversation via the recorded SDK session id."""
         if surface not in self._sessions:
             session = await asyncio.to_thread(sessions.get_session, surface)
-            worktree = session.get("worktree_path") if session else None
-            if not worktree:
-                log.warning("no worktree for surface %s; cannot start chat", surface)
-                await record_activity(surface, "result", "no worktree for this surface")
+            if session is None:
+                log.warning("no session for surface %s; cannot start chat", surface)
+                await record_activity(surface, "result", "no session for this surface")
                 return
+            worktree = session.get("worktree_path")  # None for a worktree-free chat
+            system_prompt = (
+                CVI_REVIEW_SYSTEM_PROMPT
+                if session.get("type") == "review"
+                else CVI_CHAT_SYSTEM_PROMPT
+            )
             # Resume the review's SDK session when one was recorded, so chat
             # continues that conversation instead of starting blank.
             resume = session.get("agent_session_id")
-            self._sessions[surface] = AgentSession(self, surface, worktree, resume=resume)
+            self._sessions[surface] = AgentSession(
+                self, surface, worktree, system_prompt=system_prompt, resume=resume
+            )
         await record_activity(surface, "user", text)
         self._sessions[surface].enqueue(text)
 

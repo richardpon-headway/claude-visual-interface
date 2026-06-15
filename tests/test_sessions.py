@@ -40,6 +40,44 @@ def _insert_finding(session_id, finding_id, *, disposition=None):
         conn.close()
 
 
+def test_create_chat_session_is_worktree_free_and_ready():
+    session_id = sessions.create_chat_session()
+    row = sessions.get_session(session_id)
+    assert row["type"] == "chat"
+    assert row["status"] == "ready"
+    assert row["title"] == "New chat"  # default label so the list row isn't a raw uuid
+    assert row["worktree_path"] is None
+    assert row["base_ref"] is None
+
+
+def test_create_chat_session_honors_a_title():
+    session_id = sessions.create_chat_session("scratchpad")
+    assert sessions.get_session(session_id)["title"] == "scratchpad"
+
+
+def test_create_review_session_still_sets_worktree_and_running():
+    session_id = sessions.create_review_session(worktree_path="/tmp/wt", base_ref="main")
+    row = sessions.get_session(session_id)
+    assert row["type"] == "review"
+    assert row["status"] == "running"
+    assert row["worktree_path"] == "/tmp/wt"
+
+
+def test_create_chat_endpoint_returns_a_ready_chat_session():
+    with TestClient(app) as client:
+        resp = client.post("/chats")
+        assert resp.status_code == 200
+        session_id = resp.json()["session_id"]
+    row = sessions.get_session(session_id)
+    assert (row["type"], row["status"]) == ("chat", "ready")
+
+
+def test_create_chat_endpoint_honors_a_title():
+    with TestClient(app) as client:
+        session_id = client.post("/chats", json={"title": "scratchpad"}).json()["session_id"]
+    assert sessions.get_session(session_id)["title"] == "scratchpad"
+
+
 def test_lists_newest_activity_first():
     _insert_session("older", updated_at="2026-01-01T00:00:00Z")
     _insert_session("newer", updated_at="2026-02-01T00:00:00Z")
