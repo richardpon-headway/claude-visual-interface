@@ -21,14 +21,14 @@ def db(tmp_path, monkeypatch):
     apply_migrations_sync()
 
 
-def _seed_session(session_id, *, worktree_path, agent_session_id=None):
+def _seed_session(session_id, *, worktree_path, session_type="review", agent_session_id=None):
     conn = open_db()
     try:
         conn.execute(
             "INSERT INTO session "
             "(id, type, status, worktree_path, agent_session_id, created_at, updated_at) "
-            "VALUES (?, 'review', 'ready', ?, ?, 't', 't')",
-            (session_id, worktree_path, agent_session_id),
+            "VALUES (?, ?, 'ready', ?, ?, 't', 't')",
+            (session_id, session_type, worktree_path, agent_session_id),
         )
         conn.commit()
     finally:
@@ -138,17 +138,57 @@ async def test_shutdown_all_closes_a_live_session():
     assert reg.active_surfaces() == []
 
 
-async def test_no_worktree_records_a_notice_and_starts_nothing():
-    _seed_session("no-wt", worktree_path=None)
-    store.get_or_create("no-wt").activity.clear()
+async def test_chat_session_with_no_worktree_starts_and_chats():
+    # A general chat has no worktree — it starts anyway and runs with cwd=None.
+    _seed_session("chat-no-wt", worktree_path=None, session_type="chat")
+    store.get_or_create("chat-no-wt").activity.clear()
     reg = AgentSessionRegistry()
 
-    await reg.send("no-wt", "hello?")
+    await reg.send("chat-no-wt", "make me a dashboard")
+    await _wait_until(
+        lambda: any(e.kind == "result" for e in store.get_or_create("chat-no-wt").activity)
+    )
+
+    kinds = [(e.kind, e.text) for e in store.get_or_create("chat-no-wt").activity]
+    assert ("user", "make me a dashboard") in kinds
+    assert ("text", "on it") in kinds
+    assert FakeClient.instances[0].options.cwd is None
+    await reg.shutdown_all()
+
+
+async def test_unknown_surface_records_a_notice_and_starts_nothing():
+    # No session row at all — the one thing that genuinely can't chat.
+    store.get_or_create("ghost").activity.clear()
+    reg = AgentSessionRegistry()
+
+    await reg.send("ghost", "hello?")
 
     assert reg.active_surfaces() == []
-    notes = [e.text for e in store.get_or_create("no-wt").activity]
-    assert any("no worktree" in n for n in notes)
+    notes = [e.text for e in store.get_or_create("ghost").activity]
+    assert any("no session" in n for n in notes)
     assert FakeClient.instances == []
+
+
+async def test_chat_session_uses_the_general_prompt():
+    _seed_session("chat-p", worktree_path=None, session_type="chat")
+    reg = AgentSessionRegistry()
+
+    await reg.send("chat-p", "hi")
+    await _wait_until(lambda: len(FakeClient.instances) == 1)
+
+    assert FakeClient.instances[0].options.system_prompt == agent_session.CVI_CHAT_SYSTEM_PROMPT
+    await reg.shutdown_all()
+
+
+async def test_review_session_uses_the_review_prompt():
+    _seed_session("review-p", worktree_path="/tmp/wt", session_type="review")
+    reg = AgentSessionRegistry()
+
+    await reg.send("review-p", "why is finding 1 low?")
+    await _wait_until(lambda: len(FakeClient.instances) == 1)
+
+    assert FakeClient.instances[0].options.system_prompt == agent_session.CVI_REVIEW_SYSTEM_PROMPT
+    await reg.shutdown_all()
 
 
 async def test_resumes_the_recorded_review_session():

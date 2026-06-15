@@ -1,7 +1,15 @@
 import pytest
 
 from daemon.db import apply_migrations_sync, open_db
-from daemon.mcp_server import ALLOWED_TOOLS, SERVER_NAME, TOOLS, build_agent_options, cvi_server
+from daemon.mcp_server import (
+    ALLOWED_TOOLS,
+    CVI_CHAT_SYSTEM_PROMPT,
+    CVI_REVIEW_SYSTEM_PROMPT,
+    SERVER_NAME,
+    TOOLS,
+    build_agent_options,
+    cvi_server,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -62,6 +70,16 @@ def test_server_registers_the_full_primitive_vocabulary():
     assert {t.name for t in TOOLS} == EXPECTED_PRIMITIVES
     assert cvi_server["type"] == "sdk"
     assert cvi_server["name"] == SERVER_NAME
+
+
+def test_chat_and_review_prompts_differ_and_both_drive_the_html_canvas():
+    assert CVI_CHAT_SYSTEM_PROMPT != CVI_REVIEW_SYSTEM_PROMPT
+    # The general chat prompt is not review-framed but still drives render_html.
+    assert "code-review surface" not in CVI_CHAT_SYSTEM_PROMPT
+    assert "render_html" in CVI_CHAT_SYSTEM_PROMPT
+    assert "no JavaScript" in CVI_CHAT_SYSTEM_PROMPT
+    # The review prompt keeps the code-review framing.
+    assert "code-review surface" in CVI_REVIEW_SYSTEM_PROMPT
 
 
 def test_pull_primitives_are_marked_read_only():

@@ -29,6 +29,33 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _insert_session(
+    *,
+    type: str,
+    status: str,
+    title: str | None = None,
+    repo: str | None = None,
+    branch: str | None = None,
+    worktree_path: str | None = None,
+    base_ref: str | None = None,
+) -> str:
+    """Insert a session row of the given type/status; return its new id. Shared by
+    create_review_session and create_chat_session so the INSERT can't drift."""
+    conn = open_db()
+    try:
+        session_id = str(uuid.uuid4())
+        now = _now_iso()
+        conn.execute(
+            "INSERT INTO session (id, type, title, status, repo, branch, worktree_path, "
+            "base_ref, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (session_id, type, title, status, repo, branch, worktree_path, base_ref, now, now),
+        )
+        conn.commit()
+        return session_id
+    finally:
+        conn.close()
+
+
 def create_review_session(
     *,
     worktree_path: str,
@@ -38,30 +65,21 @@ def create_review_session(
     title: str | None = None,
 ) -> str:
     """Create a `type='review'` session in the `running` state; return its id."""
-    conn = open_db()
-    try:
-        session_id = str(uuid.uuid4())
-        now = _now_iso()
-        conn.execute(
-            "INSERT INTO session (id, type, title, status, repo, branch, worktree_path, "
-            "base_ref, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                session_id,
-                "review",
-                title,
-                "running",
-                repo,
-                branch,
-                worktree_path,
-                base_ref,
-                now,
-                now,
-            ),
-        )
-        conn.commit()
-        return session_id
-    finally:
-        conn.close()
+    return _insert_session(
+        type="review",
+        status="running",
+        title=title,
+        repo=repo,
+        branch=branch,
+        worktree_path=worktree_path,
+        base_ref=base_ref,
+    )
+
+
+def create_chat_session(title: str | None = None) -> str:
+    """Create a worktree-free `type='chat'` session, ready to converse; return its
+    id. No worktree/base_ref — a general chat isn't anchored to a checkout."""
+    return _insert_session(type="chat", status="ready", title=title or "New chat")
 
 
 def list_sessions(*, include_archived: bool = False) -> list[dict[str, Any]]:

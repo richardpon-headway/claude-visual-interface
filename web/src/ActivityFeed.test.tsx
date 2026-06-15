@@ -4,9 +4,9 @@ import { describe, expect, it } from "vitest";
 import { ActivityFeed } from "./ActivityFeed";
 
 describe("ActivityFeed", () => {
-  it("shows a waiting placeholder when there's no activity", () => {
+  it("shows a placeholder when there's no activity", () => {
     render(<ActivityFeed activity={[]} />);
-    expect(screen.getByText(/waiting for the review/i)).toBeInTheDocument();
+    expect(screen.getByText(/no activity yet/i)).toBeInTheDocument();
   });
 
   it("renders each entry and labels tool calls", () => {

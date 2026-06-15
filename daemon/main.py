@@ -147,6 +147,20 @@ async def create_review(req: ReviewRequest) -> dict[str, str]:
     return {"session_id": session_id}
 
 
+class ChatRequest(BaseModel):
+    title: str | None = None
+
+
+@app.post("/chats")
+async def create_chat(req: ChatRequest | None = None) -> dict[str, str]:
+    """Create a worktree-free chat session and return its id. The body is optional
+    (a titleless 'New chat'); the browser navigates to the surface and the
+    conversation starts on the first message over the WebSocket."""
+    title = req.title if req else None
+    session_id = await asyncio.to_thread(sessions.create_chat_session, title)
+    return {"session_id": session_id}
+
+
 class EmitRequest(BaseModel):
     tool: str
     args: dict[str, Any] = Field(default_factory=dict)

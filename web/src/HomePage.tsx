@@ -85,10 +85,24 @@ export function HomePage() {
 
   const visible = filterSessions(sessions, query);
 
+  async function newChat() {
+    const res = await fetch("/chats", { method: "POST" });
+    if (!res.ok) return;
+    const { session_id } = (await res.json()) as { session_id: string };
+    window.location.href = `/s/${encodeURIComponent(session_id)}`;
+  }
+
   return (
     <div className="mx-auto flex h-full max-w-3xl flex-col">
       <header className="flex items-center gap-3 px-4 py-3">
         <span className="font-semibold">Claude Visual Interface</span>
+        <button
+          type="button"
+          onClick={newChat}
+          className="rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-200 hover:bg-zinc-800"
+        >
+          New chat
+        </button>
         <label className="ml-auto flex items-center gap-1 text-xs text-zinc-400">
           <input
             type="checkbox"
