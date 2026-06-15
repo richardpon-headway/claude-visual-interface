@@ -27,6 +27,7 @@ EXPECTED_PRIMITIVES = {
     "split_pane",
     "highlight_range",
     "show_diff",
+    "render_html",
     # state
     "upsert_finding",
     "set_disposition",
@@ -42,6 +43,7 @@ VALID_ARGS = {
     "split_pane": {"surface": "mcp-test", "n": 2},
     "highlight_range": {"surface": "mcp-test", "file": "a.py", "range": {"start": 1, "end": 3}},
     "show_diff": {"surface": "mcp-test", "a": "current", "b": "patch-1"},
+    "render_html": {"surface": "mcp-test", "html": "<p>hi</p>"},
     "upsert_finding": {"session_id": "mcp-test", "file": "a.py", "title": "t", "body": "b"},
     "set_disposition": {"finding_id": "f", "value": "dismiss"},
     "anchor_message": {"message_id": "m", "file": "a.py", "range": {"start": 1, "end": 2}},

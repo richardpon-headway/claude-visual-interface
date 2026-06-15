@@ -11,6 +11,7 @@ from daemon.mcp_server import (
     highlight_range,
     open_code,
     record_activity,
+    render_html,
     show_diff,
     split_pane,
 )
@@ -87,6 +88,41 @@ async def test_show_diff_broadcasts_event():
     assert ws.received == [
         {"type": "show_diff", "surface": surface, "payload": {"a": "current", "b": "patch-1"}}
     ]
+
+
+async def test_render_html_updates_store_and_broadcasts():
+    surface = "vc-html"
+    ws = FakeWS()
+    hub.register(surface, ws)
+    try:
+        await render_html.handler(
+            {"surface": surface, "html": "<p>hi</p>", "title": "design"}
+        )
+    finally:
+        hub.unregister(surface, ws)
+
+    artifact = store.get_or_create(surface).artifact
+    assert (artifact.html, artifact.title) == ("<p>hi</p>", "design")
+    assert ws.received == [
+        {
+            "type": "render_html",
+            "surface": surface,
+            "payload": {"html": "<p>hi</p>", "title": "design"},
+        }
+    ]
+
+
+async def test_render_html_defaults_title_when_omitted():
+    surface = "vc-html-notitle"
+    ws = FakeWS()
+    hub.register(surface, ws)
+    try:
+        await render_html.handler({"surface": surface, "html": "<p>hi</p>"})
+    finally:
+        hub.unregister(surface, ws)
+
+    assert store.get_or_create(surface).artifact.title is None
+    assert ws.received[0]["payload"] == {"html": "<p>hi</p>", "title": None}
 
 
 async def test_record_activity_buffers_and_broadcasts():

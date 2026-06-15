@@ -34,6 +34,15 @@ class Diff:
 
 
 @dataclass
+class Artifact:
+    # A self-contained HTML page the session rendered onto the left pane (e.g. a
+    # design, diagram, report, or text-driven review). Transient, like the rest of
+    # the view state; rendered in a sandboxed iframe by the browser.
+    html: str
+    title: str | None = None
+
+
+@dataclass
 class Selection:
     file: str
     range: Range
@@ -58,6 +67,10 @@ class ViewState:
     open: dict[int, OpenFile] = field(default_factory=dict)
     highlights: dict[str, list[Range]] = field(default_factory=dict)
     diff: Diff | None = None
+    # An HTML page rendered onto the left pane instead of the code views. When set
+    # the browser shows the artifact; opening code (open_code / split_pane) clears
+    # it to return the pane to the code view.
+    artifact: Artifact | None = None
     # What the user has selected on the left pane (emitted by the browser, read
     # back by the pull primitives). The pane emits selections only — no input.
     selection: Selection | None = None
@@ -88,13 +101,16 @@ class ViewStore:
     def open_code(
         self, surface: str, file: str, line_range: dict[str, int] | None, pane: int
     ) -> None:
-        self.get_or_create(surface).open[pane] = OpenFile(file=file, range=_to_range(line_range))
+        state = self.get_or_create(surface)
+        state.open[pane] = OpenFile(file=file, range=_to_range(line_range))
+        state.artifact = None  # showing code returns the left pane to the code view
 
     def split_pane(self, surface: str, n: int) -> None:
         state = self.get_or_create(surface)
         state.panes = n
         # Drop open files for panes that no longer exist after the split shrank.
         state.open = {pane: f for pane, f in state.open.items() if pane < n}
+        state.artifact = None  # establishing a code layout clears any artifact
 
     def highlight_range(self, surface: str, file: str, line_range: dict[str, int]) -> None:
         state = self.get_or_create(surface)
@@ -104,6 +120,9 @@ class ViewStore:
 
     def show_diff(self, surface: str, a: str, b: str) -> None:
         self.get_or_create(surface).diff = Diff(a=a, b=b)
+
+    def render_html(self, surface: str, html: str, title: str | None) -> None:
+        self.get_or_create(surface).artifact = Artifact(html=html, title=title)
 
     def set_selection(self, surface: str, file: str, line_range: dict[str, int]) -> None:
         selected = _to_range(line_range)

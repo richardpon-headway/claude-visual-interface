@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { ActivityFeed } from "./ActivityFeed";
+import { ArtifactPane } from "./ArtifactPane";
 import { ChatInput } from "./ChatInput";
 import { CodePane } from "./CodePane";
 import { FindingsPanel } from "./FindingsPanel";
@@ -65,21 +66,28 @@ export function ReviewSurface({ surface }: { surface: string }) {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        {/* Left: code panes. Right: findings (the conversation lands here later). */}
+        {/* Left: an HTML artifact when one is set, else the code panes. Right:
+            findings + the conversation. */}
         <main className="flex min-h-0 flex-1">
-          {paneIndexes.map((i) => (
-            <div key={i} className="min-w-0 flex-1 border-r border-zinc-800 last:border-r-0">
-              <CodePane
-                surface={surface}
-                openFile={
-                  i === 0 ? primaryOpenFile(activeFinding, view.open["0"]) : view.open[String(i)]
-                }
-                findings={allFindings}
-                highlights={view.highlights}
-                reveal={i === 0 ? reveal : undefined}
-              />
+          {view.artifact ? (
+            <div className="min-w-0 flex-1">
+              <ArtifactPane artifact={view.artifact} />
             </div>
-          ))}
+          ) : (
+            paneIndexes.map((i) => (
+              <div key={i} className="min-w-0 flex-1 border-r border-zinc-800 last:border-r-0">
+                <CodePane
+                  surface={surface}
+                  openFile={
+                    i === 0 ? primaryOpenFile(activeFinding, view.open["0"]) : view.open[String(i)]
+                  }
+                  findings={allFindings}
+                  highlights={view.highlights}
+                  reveal={i === 0 ? reveal : undefined}
+                />
+              </div>
+            ))
+          )}
         </main>
         {/* Right: the conversation — activity/transcript over findings, chat box below. */}
         <aside className="flex w-96 min-w-0 flex-col border-l border-zinc-800">

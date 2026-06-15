@@ -42,6 +42,40 @@ def test_show_diff_sets_the_current_diff():
     )
 
 
+def test_render_html_sets_the_artifact():
+    store = ViewStore()
+    store.render_html("s", "<p>hi</p>", "design")
+    artifact = store.get_or_create("s").artifact
+    assert artifact is not None
+    assert (artifact.html, artifact.title) == ("<p>hi</p>", "design")
+
+
+def test_render_html_defaults_title_to_none():
+    store = ViewStore()
+    store.render_html("s", "<p>hi</p>", None)
+    assert store.get_or_create("s").artifact.title is None
+
+
+def test_artifact_rides_the_snapshot():
+    store = ViewStore()
+    store.render_html("s", "<p>hi</p>", "design")
+    assert store.snapshot("s")["artifact"] == {"html": "<p>hi</p>", "title": "design"}
+
+
+def test_open_code_clears_the_artifact():
+    store = ViewStore()
+    store.render_html("s", "<p>hi</p>", "design")
+    store.open_code("s", "a.py", None, pane=0)
+    assert store.get_or_create("s").artifact is None
+
+
+def test_split_pane_clears_the_artifact():
+    store = ViewStore()
+    store.render_html("s", "<p>hi</p>", "design")
+    store.split_pane("s", 2)
+    assert store.get_or_create("s").artifact is None
+
+
 def test_set_selection_records_and_clears():
     store = ViewStore()
     store.set_selection("s", "a.py", {"start": 3, "end": 8})
@@ -60,6 +94,7 @@ def test_snapshot_is_json_shaped_and_starts_empty():
         "open": {},
         "highlights": {},
         "diff": None,
+        "artifact": None,
         "selection": None,
         "activity": [],
     }
