@@ -16,6 +16,7 @@ export default defineConfig({
       "/health": { target: DAEMON, changeOrigin: false },
       "/sessions": { target: DAEMON, changeOrigin: false },
       "/reviews": { target: DAEMON, changeOrigin: false },
+      "/chats": { target: DAEMON, changeOrigin: false },
     },
   },
   test: {

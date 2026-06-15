@@ -87,7 +87,10 @@ export function HomePage() {
 
   async function newChat() {
     const res = await fetch("/chats", { method: "POST" });
-    if (!res.ok) return;
+    if (!res.ok) {
+      console.warn(`could not create chat: ${res.status}`);
+      return;
+    }
     const { session_id } = (await res.json()) as { session_id: string };
     window.location.href = `/s/${encodeURIComponent(session_id)}`;
   }
