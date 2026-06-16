@@ -29,6 +29,7 @@ from daemon.activity_relay import relay_message_activity
 from daemon.mcp_server import (
     CVI_CHAT_SYSTEM_PROMPT,
     CVI_REVIEW_SYSTEM_PROMPT,
+    broadcast_thinking,
     build_agent_options,
     record_activity,
 )
@@ -122,7 +123,9 @@ class AgentSession:
 
     async def _run_turn(self, client: ClaudeSDKClient, text: str) -> None:
         """Run one user turn. A failed turn is surfaced (P4) but keeps the session
-        alive for the next message."""
+        alive for the next message. The thinking flag brackets the turn (cleared in
+        the finally) so the indicator never sticks on after success, error, or cancel."""
+        await broadcast_thinking(self._surface, True)
         try:
             await client.query(text)
             async for message in client.receive_response():
@@ -132,6 +135,8 @@ class AgentSession:
         except Exception:
             log.warning("agent turn failed (surface=%s)", self._surface, exc_info=True)
             await record_activity(self._surface, "result", "turn error")
+        finally:
+            await broadcast_thinking(self._surface, False)
 
     async def aclose(self) -> None:
         self._task.cancel()

@@ -77,6 +77,10 @@ class ViewState:
     # Recent review narration, buffered so a browser connecting mid-review sees
     # what's happened so far (rides the connect snapshot).
     activity: list[ActivityEntry] = field(default_factory=list)
+    # Whether an agent turn is currently in flight on this surface. Transient and
+    # snapshot-carried (no DB home) so a browser connecting mid-turn sees the
+    # thinking indicator.
+    thinking: bool = False
 
 
 def _to_range(raw: dict[str, int] | None) -> Range | None:
@@ -129,6 +133,9 @@ class ViewStore:
         self.get_or_create(surface).selection = (
             Selection(file=file, range=selected) if selected is not None else None
         )
+
+    def set_thinking(self, surface: str, active: bool) -> None:
+        self.get_or_create(surface).thinking = active
 
     def append_activity(self, surface: str, kind: str, text: str) -> None:
         activity = self.get_or_create(surface).activity

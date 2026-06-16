@@ -29,6 +29,9 @@ describe("parseMessage", () => {
     expect(parseMessage(JSON.stringify({ type: "render_html", surface: "s", payload: {} }))?.type).toBe(
       "render_html",
     );
+    expect(parseMessage(JSON.stringify({ type: "thinking", surface: "s", payload: {} }))?.type).toBe(
+      "thinking",
+    );
   });
 
   it("rejects malformed JSON and unknown types", () => {
@@ -48,6 +51,7 @@ describe("applyMessage — view events", () => {
       artifact: null,
       selection: null,
       activity: [],
+      thinking: false,
     };
     let state = emptySurface("s");
     state = applyMessage(state, { type: "finding", surface: "s", payload: finding("f1") });
@@ -117,6 +121,7 @@ describe("applyMessage — view events", () => {
       artifact: null,
       selection: null,
       activity: [],
+      thinking: false,
     });
   });
 });
@@ -137,6 +142,13 @@ describe("applyMessage — activity & status", () => {
     expect(state.status).toBe("ready");
   });
 
+  it("flips the thinking flag", () => {
+    let state = applyMessage(emptySurface("s"), { type: "thinking", surface: "s", payload: { active: true } });
+    expect(state.view.thinking).toBe(true);
+    state = applyMessage(state, { type: "thinking", surface: "s", payload: { active: false } });
+    expect(state.view.thinking).toBe(false);
+  });
+
   it("seeds activity from a snapshot but leaves status untouched", () => {
     const incoming: ViewState = {
       surface: "s",
@@ -147,6 +159,7 @@ describe("applyMessage — activity & status", () => {
       artifact: null,
       selection: null,
       activity: [{ kind: "text", text: "buffered" }],
+      thinking: false,
     };
     let state = applyMessage(emptySurface("s"), { type: "status", surface: "s", payload: { status: "running" } });
     state = applyMessage(state, { type: "snapshot", surface: "s", payload: incoming });

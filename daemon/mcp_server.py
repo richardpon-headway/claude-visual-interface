@@ -107,6 +107,17 @@ async def broadcast_status(surface: str, status: str) -> None:
     )
 
 
+async def broadcast_thinking(surface: str, active: bool) -> None:
+    """Flip the surface's in-flight 'thinking' flag and push it to subscribers so the
+    chat shows/hides its thinking indicator. Unlike status, this has no DB home, so
+    it's stored on the ViewState to ride the connect snapshot (mirrors activity)."""
+    store.set_thinking(surface, active)
+    await hub.broadcast(
+        surface,
+        {"type": "thinking", "surface": surface, "payload": {"active": active}},
+    )
+
+
 @tool(
     "open_code",
     "Open a file in the review's left pane, optionally scrolled to a line range and "
