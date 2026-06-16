@@ -7,10 +7,29 @@ import asyncio
 import pytest
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
 
-from daemon import agent_session
+from daemon import agent_session, sessions, titles
 from daemon.agent_session import AgentSessionRegistry
 from daemon.db import apply_migrations_sync, open_db
+from daemon.hub import hub
 from daemon.view_state import store
+
+
+class FakeWS:
+    """A hub subscriber that records the events broadcast to a surface."""
+
+    def __init__(self) -> None:
+        self.received: list = []
+
+    async def send_json(self, data) -> None:
+        self.received.append(data)
+
+
+class _NoTitleGen:
+    """The default titling generator in tests: never produces a title, so existing
+    tests incur no title side-effects and open no second SDK client."""
+
+    async def generate(self, message):
+        return None
 
 SESSION = "chat-session"
 
@@ -87,6 +106,8 @@ async def _wait_until(predicate, limit=1.0):
 def fake_client(monkeypatch):
     FakeClient.instances.clear()
     monkeypatch.setattr(agent_session, "ClaudeSDKClient", lambda options=None: FakeClient(options))
+    # Neutralize auto-titling by default; titling tests inject their own generator.
+    monkeypatch.setattr(titles, "generator", _NoTitleGen())
 
 
 async def test_first_message_starts_a_session_records_user_and_relays_reply():
@@ -516,4 +537,167 @@ async def test_falls_back_to_fresh_when_resume_fails(monkeypatch):
 
     notes = [e.text for e in store.get_or_create(SESSION).activity]
     assert any("could not resume" in n for n in notes)
+    await reg.shutdown_all()
+
+
+class _FixedTitleGen:
+    """Always returns a fixed title; counts calls."""
+
+    def __init__(self, title="Generated Title"):
+        self._title = title
+        self.calls = 0
+
+    async def generate(self, message):
+        self.calls += 1
+        return self._title
+
+
+class _FlakyTitleGen:
+    """Fails (returns None) on the first call, succeeds after."""
+
+    def __init__(self, title="Second Try"):
+        self._title = title
+        self.calls = 0
+
+    async def generate(self, message):
+        self.calls += 1
+        return None if self.calls == 1 else self._title
+
+
+class _GatedTitleGen:
+    """Blocks each call on a per-message gate so two attempts can be held in flight
+    at once — to exercise the race-safe 'keep the first successful' guarantee."""
+
+    def __init__(self):
+        self.gates: dict[str, asyncio.Event] = {}
+        self.done: set[str] = set()
+        self.calls = 0
+
+    def gate(self, message: str) -> asyncio.Event:
+        return self.gates.setdefault(message, asyncio.Event())
+
+    async def generate(self, message):
+        self.calls += 1
+        await self.gate(message).wait()
+        self.done.add(message)
+        return f"title:{message}"
+
+
+async def test_first_text_message_titles_an_untitled_chat(monkeypatch):
+    chat = sessions.create_chat_session()  # type chat, title "New chat"
+    monkeypatch.setattr(titles, "generator", _FixedTitleGen("Fix the parser"))
+    reg = AgentSessionRegistry()
+    ws = FakeWS()
+    hub.register(chat, ws)
+    try:
+        await reg.send(chat, "help me fix the parser")
+        await _wait_until(lambda: sessions.get_session(chat)["title"] == "Fix the parser")
+    finally:
+        hub.unregister(chat, ws)
+
+    # The new title is pushed live to the surface.
+    assert {"type": "title", "surface": chat, "payload": {"title": "Fix the parser"}} in ws.received
+    await reg.shutdown_all()
+
+
+async def test_image_only_first_turn_defers_titling_to_the_next_text_message(monkeypatch):
+    chat = sessions.create_chat_session()
+    gen = _FixedTitleGen("Picture chat")
+    monkeypatch.setattr(titles, "generator", gen)
+    reg = AgentSessionRegistry()
+
+    # An image-only first turn has no text basis — titling is skipped, not attempted.
+    await reg.send(chat, "", image=agent_session.ImageInput(media_type="image/png", data="QUJD"))
+    await _wait_until(lambda: len(FakeClient.instances) == 1)
+    assert gen.calls == 0
+    assert sessions.get_session(chat)["title"] == "New chat"
+
+    # The next message with text titles it.
+    await reg.send(chat, "what is in this picture")
+    await _wait_until(lambda: sessions.get_session(chat)["title"] == "Picture chat")
+    await reg.shutdown_all()
+
+
+async def test_failed_titling_retries_on_the_next_message(monkeypatch):
+    chat = sessions.create_chat_session()
+    gen = _FlakyTitleGen("Second Try")
+    monkeypatch.setattr(titles, "generator", gen)
+    reg = AgentSessionRegistry()
+
+    await reg.send(chat, "first")
+    await _wait_until(lambda: gen.calls == 1)
+    assert sessions.get_session(chat)["title"] == "New chat"  # first attempt failed
+
+    await reg.send(chat, "second")
+    await _wait_until(lambda: sessions.get_session(chat)["title"] == "Second Try")
+    await reg.shutdown_all()
+
+
+async def test_titling_stops_after_the_first_success(monkeypatch):
+    chat = sessions.create_chat_session()
+    gen = _FixedTitleGen("Done")
+    monkeypatch.setattr(titles, "generator", gen)
+    reg = AgentSessionRegistry()
+
+    await reg.send(chat, "one")
+    await _wait_until(lambda: sessions.get_session(chat)["title"] == "Done")
+    await reg.send(chat, "two")
+    await reg.send(chat, "three")
+    # Drain the turns so an erroneous extra title attempt would have run by now.
+    await _wait_until(lambda: FakeClient.instances[0].queried == ["one", "two", "three"])
+
+    assert gen.calls == 1  # flag flipped after success; no further attempts
+    await reg.shutdown_all()
+
+
+async def test_keeps_the_first_successful_title_under_concurrency(monkeypatch):
+    chat = sessions.create_chat_session()
+    gen = _GatedTitleGen()
+    monkeypatch.setattr(titles, "generator", gen)
+    reg = AgentSessionRegistry()
+    ws = FakeWS()
+    hub.register(chat, ws)
+    try:
+        # Two messages before any title resolves → two concurrent attempts in flight.
+        await reg.send(chat, "a")
+        await reg.send(chat, "b")
+        await _wait_until(lambda: gen.calls == 2)
+
+        # Let "a" win; it titles the chat.
+        gen.gate("a").set()
+        await _wait_until(lambda: sessions.get_session(chat)["title"] == "title:a")
+
+        # "b" finishes second — its conditional write no-ops and it must not clobber.
+        gen.gate("b").set()
+        await _wait_until(lambda: "b" in gen.done)
+        assert sessions.get_session(chat)["title"] == "title:a"
+        title_frames = [m for m in ws.received if m["type"] == "title"]
+        assert title_frames == [{"type": "title", "surface": chat, "payload": {"title": "title:a"}}]
+    finally:
+        hub.unregister(chat, ws)
+    await reg.shutdown_all()
+
+
+async def test_review_session_is_not_auto_titled(monkeypatch):
+    _seed_session("rev", worktree_path="/tmp/wt", session_type="review")  # title NULL
+    gen = _FixedTitleGen()
+    monkeypatch.setattr(titles, "generator", gen)
+    reg = AgentSessionRegistry()
+
+    await reg.send("rev", "hello")
+    await _wait_until(lambda: len(FakeClient.instances) == 1)
+    assert gen.calls == 0  # reviews aren't chat-titled
+    await reg.shutdown_all()
+
+
+async def test_chat_with_an_explicit_title_is_not_auto_titled(monkeypatch):
+    chat = sessions.create_chat_session("My Title")
+    gen = _FixedTitleGen()
+    monkeypatch.setattr(titles, "generator", gen)
+    reg = AgentSessionRegistry()
+
+    await reg.send(chat, "hello")
+    await _wait_until(lambda: len(FakeClient.instances) == 1)
+    assert gen.calls == 0
+    assert sessions.get_session(chat)["title"] == "My Title"
     await reg.shutdown_all()

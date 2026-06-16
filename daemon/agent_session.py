@@ -28,12 +28,13 @@ from typing import Any
 
 from claude_agent_sdk import AssistantMessage, ClaudeSDKClient, ResultMessage
 
-from daemon import sessions
+from daemon import sessions, titles
 from daemon.activity_relay import relay_message_activity
 from daemon.mcp_server import (
     CVI_CHAT_SYSTEM_PROMPT,
     CVI_REVIEW_SYSTEM_PROMPT,
     broadcast_thinking,
+    broadcast_title,
     build_agent_options,
     record_activity,
 )
@@ -118,12 +119,17 @@ class AgentSession:
         worktree: str | None,
         system_prompt: str,
         resume: str | None = None,
+        needs_title: bool = False,
     ) -> None:
         self._registry = registry
         self._surface = surface
         self._worktree = worktree
         self._system_prompt = system_prompt
         self._resume = resume
+        # True while this chat is still on the default title; flipped off once any
+        # titling attempt resolves, so we stop spawning title calls per message.
+        self._needs_title = needs_title
+        self._title_tasks: set[asyncio.Task[None]] = set()
         self._queue: asyncio.Queue[ChatTurn] = asyncio.Queue()
         # The live client while a connection is open, so a concurrent caller can
         # interrupt the in-flight turn. `_turn_active` gates interrupt to a running
@@ -278,7 +284,37 @@ class AgentSession:
         except Exception:
             log.warning("interrupt failed (surface=%s)", self._surface, exc_info=True)
 
+    def maybe_title(self, text: str) -> None:
+        """If this chat still needs a title and the message has text to title from,
+        kick off a background titling attempt. Fire-and-forget — never blocks the
+        turn. Image-only turns (no text) are skipped, so titling falls to a later
+        message; failed attempts leave the flag set and retry on the next message."""
+        if not (self._needs_title and text):
+            return
+        task = asyncio.create_task(self._run_titling(text))
+        self._title_tasks.add(task)
+        task.add_done_callback(self._title_tasks.discard)
+
+    async def _run_titling(self, text: str) -> None:
+        try:
+            title = await titles.generator.generate(text)
+            if not title:
+                return  # leave _needs_title set — retried on the next message
+            # The title is resolved now (this attempt or a concurrent one), so stop
+            # spawning more. The conditional write keeps the first successful attempt:
+            # only the one that actually changed the row broadcasts the live update.
+            self._needs_title = False
+            changed = await asyncio.to_thread(sessions.set_generated_title, self._surface, title)
+            if changed:
+                await broadcast_title(self._surface, title)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.warning("titling failed (surface=%s)", self._surface, exc_info=True)
+
     async def aclose(self) -> None:
+        for task in self._title_tasks:
+            task.cancel()
         self._task.cancel()
         try:
             await self._task
@@ -314,12 +350,25 @@ class AgentSessionRegistry:
             # Resume the review's SDK session when one was recorded, so chat
             # continues that conversation instead of starting blank.
             resume = session.get("agent_session_id")
+            # An untitled chat gets auto-titled from its messages. Re-derived from the
+            # DB each time the session is (re)created, so it self-heals across idle
+            # reaping / daemon restart.
+            needs_title = session.get("type") == "chat" and session.get("title") in (
+                None,
+                sessions.DEFAULT_CHAT_TITLE,
+            )
             self._sessions[surface] = AgentSession(
-                self, surface, worktree, system_prompt=system_prompt, resume=resume
+                self,
+                surface,
+                worktree,
+                system_prompt=system_prompt,
+                resume=resume,
+                needs_title=needs_title,
             )
         # Mark an attached image in the feed without dumping base64.
         marker = f"[image] {text}".rstrip() if image is not None else text
         await record_activity(surface, "user", marker)
+        self._sessions[surface].maybe_title(text)
         self._sessions[surface].enqueue(ChatTurn(text=text, image=image))
 
     async def interrupt(self, surface: str) -> None:

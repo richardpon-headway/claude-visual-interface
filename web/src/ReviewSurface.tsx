@@ -32,7 +32,7 @@ function StatusChip({ status }: { status: string | null }) {
 }
 
 export function ReviewSurface({ surface }: { surface: string }) {
-  const [{ view, findings, status }, sendMessage, stop] = useSurfaceSocket(surface);
+  const [{ view, findings, status, title }, sendMessage, stop] = useSurfaceSocket(surface);
   // The agent is working when a chat turn is in flight or a kickoff run is active.
   const busy = view.thinking || status === "running";
   const paneIndexes = Array.from({ length: view.panes }, (_, i) => i);
@@ -61,7 +61,7 @@ export function ReviewSurface({ surface }: { surface: string }) {
           ← sessions
         </a>
         <span className="font-semibold">Claude Visual Interface</span>
-        <span className="text-zinc-500">surface: {surface}</span>
+        <span className="text-zinc-500">{title ?? surface}</span>
         <span className="ml-auto flex items-center gap-2">
           <StatusChip status={status} />
           <span className="text-zinc-500">

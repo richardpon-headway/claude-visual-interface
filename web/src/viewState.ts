@@ -41,11 +41,13 @@ export type Finding = {
 };
 
 // The full client state for a surface: the live view plus its findings (keyed by
-// id) and the session's run status (running / ready / error; null until known).
+// id), the session's run status (running / ready / error; null until known), and
+// its title (null until known; auto-generated for chats).
 export type SurfaceState = {
   view: ViewState;
   findings: Record<string, Finding>;
   status: string | null;
+  title: string | null;
 };
 
 // Messages the daemon pushes over the WebSocket. `snapshot` carries a full
@@ -61,7 +63,8 @@ export type WsMessage =
   | { type: "disposition"; surface: string; payload: { finding_id: string; value: string } }
   | { type: "activity"; surface: string; payload: ActivityEntry }
   | { type: "status"; surface: string; payload: { status: string } }
-  | { type: "thinking"; surface: string; payload: { active: boolean } };
+  | { type: "thinking"; surface: string; payload: { active: boolean } }
+  | { type: "title"; surface: string; payload: { title: string } };
 
 const MESSAGE_TYPES = [
   "snapshot",
@@ -75,6 +78,7 @@ const MESSAGE_TYPES = [
   "activity",
   "status",
   "thinking",
+  "title",
 ];
 
 export function emptyViewState(surface: string): ViewState {
@@ -92,7 +96,7 @@ export function emptyViewState(surface: string): ViewState {
 }
 
 export function emptySurface(surface: string): SurfaceState {
-  return { view: emptyViewState(surface), findings: {}, status: null };
+  return { view: emptyViewState(surface), findings: {}, status: null, title: null };
 }
 
 // Parse a raw WebSocket payload into a known message, or null if it doesn't look
@@ -167,5 +171,7 @@ export function applyMessage(state: SurfaceState, msg: WsMessage): SurfaceState 
       return { ...state, status: msg.payload.status };
     case "thinking":
       return { ...state, view: { ...state.view, thinking: msg.payload.active } };
+    case "title":
+      return { ...state, title: msg.payload.title };
   }
 }

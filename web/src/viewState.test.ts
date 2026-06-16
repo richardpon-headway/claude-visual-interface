@@ -32,6 +32,9 @@ describe("parseMessage", () => {
     expect(parseMessage(JSON.stringify({ type: "thinking", surface: "s", payload: {} }))?.type).toBe(
       "thinking",
     );
+    expect(parseMessage(JSON.stringify({ type: "title", surface: "s", payload: {} }))?.type).toBe(
+      "title",
+    );
   });
 
   it("rejects malformed JSON and unknown types", () => {
@@ -140,6 +143,15 @@ describe("applyMessage — activity & status", () => {
   it("sets the status", () => {
     const state = applyMessage(emptySurface("s"), { type: "status", surface: "s", payload: { status: "ready" } });
     expect(state.status).toBe("ready");
+  });
+
+  it("sets the title", () => {
+    const state = applyMessage(emptySurface("s"), {
+      type: "title",
+      surface: "s",
+      payload: { title: "Fix the parser" },
+    });
+    expect(state.title).toBe("Fix the parser");
   });
 
   it("flips the thinking flag", () => {
