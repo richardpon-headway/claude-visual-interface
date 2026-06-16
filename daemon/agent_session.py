@@ -201,6 +201,12 @@ class AgentSession:
         A genuinely failed turn is still surfaced (P4) but keeps the session alive
         for the next message. The thinking flag brackets the whole turn (cleared in
         the finally) so the indicator never sticks on after success, error, or cancel."""
+        # Record the user's turn at execution time, not enqueue time, so the
+        # transcript always pairs this prompt with the reply that follows it. A
+        # message sent while a prior turn is still streaming stays queued (invisible)
+        # until its turn runs, instead of landing above the prior turn's answer.
+        marker = f"[image] {turn.text}".rstrip() if turn.image is not None else turn.text
+        await record_activity(self._surface, "user", marker)
         await broadcast_thinking(self._surface, True)
         self._turn_active = True
         self._interrupting = False
@@ -365,10 +371,10 @@ class AgentSessionRegistry:
                 resume=resume,
                 needs_title=needs_title,
             )
-        # Mark an attached image in the feed without dumping base64.
-        marker = f"[image] {text}".rstrip() if image is not None else text
-        await record_activity(surface, "user", marker)
         self._sessions[surface].maybe_title(text)
+        # The turn's user line is recorded when the turn runs (see _run_turn), not
+        # here, so a message queued behind an in-flight turn can't appear above that
+        # turn's answer.
         self._sessions[surface].enqueue(ChatTurn(text=text, image=image))
 
     async def interrupt(self, surface: str) -> None:

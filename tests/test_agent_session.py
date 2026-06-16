@@ -145,6 +145,53 @@ async def test_turns_are_serialized_in_order():
     await reg.shutdown_all()
 
 
+async def test_user_turn_is_recorded_at_execution_time_not_on_enqueue(monkeypatch):
+    # A message sent while a prior turn is still streaming must not jump ahead of
+    # that turn's answer — the transcript pairs each prompt with its own reply.
+    _seed_session(SESSION, worktree_path=None, session_type="chat")
+    store.get_or_create(SESSION).activity.clear()
+    release = asyncio.Event()
+
+    class GatedClient(FakeClient):
+        async def receive_response(self):
+            last = self.queried[-1]
+            yield AssistantMessage(content=[TextBlock(text=f"answer to {last}")], model="test")
+            if last == "first":
+                await release.wait()  # hold the first turn open so a 2nd can queue
+            yield ResultMessage(
+                subtype="success",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id=SESSION,
+            )
+
+    monkeypatch.setattr(agent_session, "ClaudeSDKClient", lambda options=None: GatedClient(options))
+    reg = AgentSessionRegistry()
+
+    def kinds():
+        return [(e.kind, e.text) for e in store.get_or_create(SESSION).activity]
+
+    await reg.send(SESSION, "first")
+    await _wait_until(lambda: ("text", "answer to first") in kinds())
+    # The second message is enqueued mid-turn — its YOU line must not appear yet.
+    await reg.send(SESSION, "second")
+    assert ("user", "second") not in kinds()
+
+    release.set()
+    await _wait_until(lambda: kinds().count(("result", "success")) == 2)
+    assert kinds() == [
+        ("user", "first"),
+        ("text", "answer to first"),
+        ("result", "success"),
+        ("user", "second"),
+        ("text", "answer to second"),
+        ("result", "success"),
+    ]
+    await reg.shutdown_all()
+
+
 async def test_idle_timeout_closes_and_deregisters(monkeypatch):
     _seed_session(SESSION, worktree_path="/tmp/wt")
     monkeypatch.setattr(agent_session, "AGENT_IDLE_SECONDS", 0.05)
