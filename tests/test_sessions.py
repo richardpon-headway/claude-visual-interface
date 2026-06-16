@@ -154,6 +154,26 @@ def test_set_agent_session_id_stores_and_reports_missing():
     assert sessions.set_agent_session_id("ghost", "sdk-xyz") is False
 
 
+def test_set_generated_title_sets_only_while_untitled():
+    chat = sessions.create_chat_session()  # title == "New chat"
+    assert sessions.set_generated_title(chat, "Fix the parser") is True
+    assert sessions.get_session(chat)["title"] == "Fix the parser"
+
+    # A later attempt can't clobber the now-set title (the race / overwrite guard).
+    assert sessions.set_generated_title(chat, "Something else") is False
+    assert sessions.get_session(chat)["title"] == "Fix the parser"
+
+
+def test_set_generated_title_fills_a_null_title():
+    _insert_session("s", updated_at="2026-01-01T00:00:00Z")  # title is NULL
+    assert sessions.set_generated_title("s", "A title") is True
+    assert sessions.get_session("s")["title"] == "A title"
+
+
+def test_set_generated_title_reports_missing_session():
+    assert sessions.set_generated_title("ghost", "x") is False
+
+
 def test_archive_endpoint_removes_session_from_the_listing():
     _insert_session("s", updated_at="2026-01-01T00:00:00Z")
     with TestClient(app) as client:

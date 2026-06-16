@@ -44,11 +44,15 @@ export function useSurfaceSocket(surface: string): [SurfaceState, SendMessage, S
       .then((res) => (res.ok ? res.json() : null))
       .then((data: unknown) => {
         if (cancelled) return;
-        // Trust boundary: only adopt a string status. A live `status` event wins
-        // if the two race (prev.status set already), matching the findings merge.
-        const status = typeof data === "object" && data !== null ? (data as { status?: unknown }).status : null;
-        if (typeof status !== "string") return;
-        setState((prev) => (prev.status === null ? { ...prev, status } : prev));
+        // Trust boundary: only adopt string status/title. A live `status`/`title`
+        // event wins if the two race (the field is set already), matching findings.
+        const row = typeof data === "object" && data !== null ? (data as { status?: unknown; title?: unknown }) : {};
+        setState((prev) => {
+          let next = prev;
+          if (typeof row.status === "string" && prev.status === null) next = { ...next, status: row.status };
+          if (typeof row.title === "string" && prev.title === null) next = { ...next, title: row.title };
+          return next;
+        });
       })
       .catch(() => {
         /* daemon unreachable — the status chip stays unknown, live events still flow */

@@ -7,6 +7,7 @@ from daemon.hub import hub
 from daemon.mcp_server import (
     broadcast_status,
     broadcast_thinking,
+    broadcast_title,
     get_selection,
     get_view_state,
     highlight_range,
@@ -152,6 +153,20 @@ async def test_broadcast_status_broadcasts_without_storing():
 
     assert ws.received == [
         {"type": "status", "surface": surface, "payload": {"status": "ready"}}
+    ]
+
+
+async def test_broadcast_title_broadcasts_without_storing():
+    surface = "vc-title"
+    ws = FakeWS()
+    hub.register(surface, ws)
+    try:
+        await broadcast_title(surface, "Fix the parser")
+    finally:
+        hub.unregister(surface, ws)
+
+    assert ws.received == [
+        {"type": "title", "surface": surface, "payload": {"title": "Fix the parser"}}
     ]
 
 

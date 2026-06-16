@@ -107,6 +107,17 @@ async def broadcast_status(surface: str, status: str) -> None:
     )
 
 
+async def broadcast_title(surface: str, title: str) -> None:
+    """Push a generated session title to subscribers so the surface header updates
+    live. Like broadcast_status, this is pure-broadcast: the title is persisted on the
+    session row and seeded into a connecting browser via GET /sessions/{id}, so it
+    doesn't ride the ViewState connect snapshot."""
+    await hub.broadcast(
+        surface,
+        {"type": "title", "surface": surface, "payload": {"title": title}},
+    )
+
+
 async def broadcast_thinking(surface: str, active: bool) -> None:
     """Flip the surface's in-flight 'thinking' flag and push it to subscribers so the
     chat shows/hides its thinking indicator. Unlike status, this has no DB home, so

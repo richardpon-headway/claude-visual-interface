@@ -8,6 +8,12 @@ from typing import Any
 
 from daemon.db import open_db
 
+# The placeholder title a chat is born with, until auto-titling replaces it. Single
+# source of truth: create_chat_session writes it, and the auto-title guards
+# (set_generated_title's WHERE, agent_session's needs_title) match against it — they
+# must not drift.
+DEFAULT_CHAT_TITLE = "New chat"
+
 _COLUMNS = (
     "id",
     "type",
@@ -79,7 +85,7 @@ def create_review_session(
 def create_chat_session(title: str | None = None) -> str:
     """Create a worktree-free `type='chat'` session, ready to converse; return its
     id. No worktree/base_ref — a general chat isn't anchored to a checkout."""
-    return _insert_session(type="chat", status="ready", title=title or "New chat")
+    return _insert_session(type="chat", status="ready", title=title or DEFAULT_CHAT_TITLE)
 
 
 def list_sessions(*, include_archived: bool = False) -> list[dict[str, Any]]:
@@ -142,6 +148,26 @@ def set_status(session_id: str, status: str) -> bool:
         cursor = conn.execute(
             "UPDATE session SET status = ?, updated_at = ? WHERE id = ?",
             (status, now, session_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def set_generated_title(session_id: str, title: str) -> bool:
+    """Apply an auto-generated title, but only while the chat is still untitled (the
+    default placeholder or NULL). The conditional WHERE makes this atomic: of several
+    concurrent titling attempts, the first to commit wins and later ones match nothing
+    — so a winner can't be clobbered, and a user-set title is never overwritten.
+    Returns True only when this call actually set the title. Bumps updated_at."""
+    now = _now_iso()
+    conn = open_db()
+    try:
+        cursor = conn.execute(
+            "UPDATE session SET title = ?, updated_at = ? "
+            "WHERE id = ? AND (title IS NULL OR title = ?)",
+            (title, now, session_id, DEFAULT_CHAT_TITLE),
         )
         conn.commit()
         return cursor.rowcount > 0
