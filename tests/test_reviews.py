@@ -3,10 +3,10 @@ import asyncio
 import pytest
 from fastapi.testclient import TestClient
 
-from daemon import review_runner, sessions
+from daemon import review_runner, reviews, sessions
 from daemon.db import apply_migrations_sync
 from daemon.main import app
-from daemon.reviews import start_review
+from daemon.reviews import cancel, start_review
 
 
 @pytest.fixture(autouse=True)
@@ -52,3 +52,33 @@ async def test_start_review_hands_off_to_the_runner(monkeypatch):
     assert fake.calls == [
         {"session_id": session_id, "worktree_path": "/tmp/wt", "base_ref": "dev"}
     ]
+
+
+class BlockingRunner:
+    """A runner that blocks until cancelled, to exercise Stop."""
+
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+
+    async def run(self, *, session_id: str, worktree_path: str, base_ref: str) -> None:
+        self.started.set()
+        await asyncio.Event().wait()  # never completes on its own
+
+
+async def test_cancel_aborts_an_in_flight_run(monkeypatch):
+    monkeypatch.setattr(review_runner, "runner", BlockingRunner())
+
+    session_id = await start_review(worktree_path="/tmp/wt", base_ref="main")
+    await asyncio.wait_for(review_runner.runner.started.wait(), 1.0)
+    task = reviews._running[session_id]
+
+    assert cancel(session_id) is True
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert task.cancelled()
+    await asyncio.sleep(0)  # let the done-callback deregister the task
+    assert session_id not in reviews._running
+
+    # Cancelling again — nothing is running now — is a no-op.
+    assert cancel(session_id) is False
+    assert cancel("never-started") is False

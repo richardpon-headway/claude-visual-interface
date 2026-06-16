@@ -18,7 +18,9 @@ function StatusChip({ status }: { status: string | null }) {
         ? "bg-red-900 text-red-200"
         : status === "running"
           ? "bg-sky-900 text-sky-200"
-          : "bg-zinc-800 text-zinc-400";
+          : status === "stopped"
+            ? "bg-amber-900 text-amber-200"
+            : "bg-zinc-800 text-zinc-400";
   return (
     <span className={`flex items-center gap-1.5 rounded px-2 py-0.5 text-xs ${cls}`}>
       {status === "running" ? (
@@ -30,7 +32,9 @@ function StatusChip({ status }: { status: string | null }) {
 }
 
 export function ReviewSurface({ surface }: { surface: string }) {
-  const [{ view, findings, status }, sendMessage] = useSurfaceSocket(surface);
+  const [{ view, findings, status }, sendMessage, stop] = useSurfaceSocket(surface);
+  // The agent is working when a chat turn is in flight or a kickoff run is active.
+  const busy = view.thinking || status === "running";
   const paneIndexes = Array.from({ length: view.panes }, (_, i) => i);
   const allFindings = Object.values(findings);
   const openCount = allFindings.filter((f) => !f.disposition).length;
@@ -99,6 +103,15 @@ export function ReviewSurface({ surface }: { surface: string }) {
             onSelect={selectFinding}
           />
           <ThinkingIndicator active={view.thinking} />
+          {busy ? (
+            <button
+              type="button"
+              onClick={stop}
+              className="mx-2 mb-1 rounded border border-zinc-700 px-3 py-1 text-sm text-zinc-200 hover:bg-zinc-800"
+            >
+              Stop
+            </button>
+          ) : null}
           <ChatInput onSend={sendMessage} />
         </aside>
       </div>

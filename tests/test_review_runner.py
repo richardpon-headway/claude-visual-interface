@@ -2,6 +2,7 @@
 with a fake Agent SDK client. The real review (Claude actually calling the tools)
 needs the Claude Code CLI + auth + a worktree and is verified locally."""
 
+import asyncio
 import json
 
 import pytest
@@ -217,6 +218,40 @@ async def test_failed_run_marks_session_error_without_raising(monkeypatch, raise
     await AgentReviewRunner().run(session_id=SESSION, worktree_path="/tmp/wt", base_ref="main")
 
     assert sessions.get_session(SESSION)["status"] == "error"
+
+
+async def test_cancelled_run_marks_session_stopped(monkeypatch):
+    started = asyncio.Event()
+
+    class BlockingClient(FakeClient):
+        async def receive_response(self):
+            started.set()
+            await asyncio.Event().wait()  # block mid-run until cancelled
+            yield  # pragma: no cover
+
+    monkeypatch.setattr(
+        review_runner, "ClaudeSDKClient", lambda options=None: BlockingClient()
+    )
+    ws = FakeWS()
+    hub.register(SESSION, ws)
+    try:
+        task = asyncio.create_task(
+            AgentReviewRunner().run(session_id=SESSION, worktree_path="/tmp/wt", base_ref="main")
+        )
+        await asyncio.wait_for(started.wait(), 1.0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    finally:
+        hub.unregister(SESSION, ws)
+
+    # Stop lands on a distinct terminal state, not 'error' (it was deliberate).
+    assert sessions.get_session(SESSION)["status"] == "stopped"
+    assert ws.received[-1] == {
+        "type": "status",
+        "surface": SESSION,
+        "payload": {"status": "stopped"},
+    }
 
 
 def _seed(session_id, *findings):

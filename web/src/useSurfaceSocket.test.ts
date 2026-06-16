@@ -52,4 +52,11 @@ describe("useSurfaceSocket", () => {
       }),
     ]);
   });
+
+  it("stop sends a stop frame over the socket", () => {
+    const { result } = renderHook(() => useSurfaceSocket("s1"));
+    act(() => result.current[2]());
+
+    expect(FakeWebSocket.last?.sent).toEqual([JSON.stringify({ type: "stop" })]);
+  });
 });

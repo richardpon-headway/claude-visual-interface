@@ -100,6 +100,14 @@ class AgentReviewRunner:
             await asyncio.to_thread(sessions.set_status, session_id, "ready")
             await broadcast_status(session_id, "ready")
             log.info("review complete for session %s", session_id)
+        except asyncio.CancelledError:
+            # Stop: the run was cancelled mid-flight. Mark a distinct terminal
+            # state (not 'error' — this was deliberate) and re-raise so the task
+            # finishes as cancelled.
+            log.info("review stopped for session %s", session_id)
+            await asyncio.to_thread(sessions.set_status, session_id, "stopped")
+            await broadcast_status(session_id, "stopped")
+            raise
         except Exception:
             # Fail-open: a failed run marks the session and must not propagate out
             # of the fire-and-forget task or take down the daemon.
