@@ -1,36 +1,77 @@
 import { useState } from "react";
 
-import type { SendMessage } from "./useSurfaceSocket";
+import type { ImageAttachment, SendMessage } from "./useSurfaceSocket";
 
 // The chat box at the bottom of the right pane. Submitting sends a turn to the
 // surface's agent; the message echoes back into the transcript as a `user` entry.
+// Pasting an image attaches it to the next message (shown as a thumbnail chip).
 export function ChatInput({ onSend }: { onSend: SendMessage }) {
   const [text, setText] = useState("");
+  const [image, setImage] = useState<ImageAttachment | null>(null);
+
+  function handlePaste(e: React.ClipboardEvent) {
+    const item = Array.from(e.clipboardData.items).find(
+      (it) => it.kind === "file" && it.type.startsWith("image/"),
+    );
+    const file = item?.getAsFile();
+    if (!file) return;
+    e.preventDefault();
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") return;
+      // Strip the `data:<mime>;base64,` prefix — the daemon/SDK want raw base64.
+      const comma = result.indexOf(",");
+      if (comma >= 0) setImage({ media_type: file.type, data: result.slice(comma + 1) });
+    };
+    reader.readAsDataURL(file);
+  }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = text.trim();
-    if (!trimmed) return;
-    onSend(trimmed);
+    if (!trimmed && !image) return;
+    onSend(trimmed, image ?? undefined);
     setText("");
+    setImage(null);
   }
 
   return (
-    <form onSubmit={submit} className="flex gap-2 border-t border-zinc-800 p-2">
-      <input
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="Ask the agent — e.g. “review the diff”…"
-        aria-label="Message the agent"
-        className="min-w-0 flex-1 rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-sm"
-      />
-      <button
-        type="submit"
-        disabled={!text.trim()}
-        className="rounded border border-zinc-700 px-3 py-1 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-40"
-      >
-        Send
-      </button>
+    <form onSubmit={submit} className="flex flex-col gap-2 border-t border-zinc-800 p-2">
+      {image ? (
+        <div className="flex items-center gap-2">
+          <img
+            src={`data:${image.media_type};base64,${image.data}`}
+            alt="attachment"
+            className="h-10 w-10 rounded border border-zinc-700 object-cover"
+          />
+          <button
+            type="button"
+            onClick={() => setImage(null)}
+            aria-label="Remove image"
+            className="rounded border border-zinc-700 px-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
+      <div className="flex gap-2">
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onPaste={handlePaste}
+          placeholder="Ask the agent — paste a screenshot, or “review the diff”…"
+          aria-label="Message the agent"
+          className="min-w-0 flex-1 rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-sm"
+        />
+        <button
+          type="submit"
+          disabled={!text.trim() && !image}
+          className="rounded border border-zinc-700 px-3 py-1 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-40"
+        >
+          Send
+        </button>
+      </div>
     </form>
   );
 }

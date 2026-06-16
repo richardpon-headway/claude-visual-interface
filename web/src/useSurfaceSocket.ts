@@ -8,7 +8,10 @@ function surfaceUrl(surface: string): string {
   return `${proto}//${window.location.host}/ws/${encodeURIComponent(surface)}`;
 }
 
-export type SendMessage = (text: string) => void;
+// A pasted image: MIME type + raw base64 (no data-URL prefix), matching the SDK
+// image block the daemon builds.
+export type ImageAttachment = { media_type: string; data: string };
+export type SendMessage = (text: string, image?: ImageAttachment) => void;
 
 /**
  * Subscribe to a surface. Returns its full state — the live view plus findings —
@@ -64,10 +67,10 @@ export function useSurfaceSocket(surface: string): [SurfaceState, SendMessage] {
     };
   }, [surface]);
 
-  const sendMessage = useCallback<SendMessage>((text) => {
+  const sendMessage = useCallback<SendMessage>((text, image) => {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "message", payload: { text } }));
+      ws.send(JSON.stringify({ type: "message", payload: { text, ...(image ? { image } : {}) } }));
     }
   }, []);
 

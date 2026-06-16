@@ -4,8 +4,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from daemon import agent_session
+from daemon.agent_session import ImageInput
 from daemon.hub import hub
-from daemon.main import _handle_inbound, app
+from daemon.main import _handle_inbound, _parse_image, app
 from daemon.view_state import store
 
 
@@ -49,15 +50,50 @@ async def test_inbound_ignores_malformed_unknown_and_incomplete_frames():
 
 async def test_inbound_message_frame_routes_to_the_agent_registry(monkeypatch):
     surface = "ws-msg"
-    sent: list[tuple[str, str]] = []
+    sent: list[tuple[str, str, object]] = []
 
-    async def fake_send(s, text):
-        sent.append((s, text))
+    async def fake_send(s, text, image=None):
+        sent.append((s, text, image))
 
     monkeypatch.setattr(agent_session.agents, "send", fake_send)
 
     await _handle_inbound(surface, json.dumps({"type": "message", "payload": {"text": "hi"}}))
-    # Blank / whitespace-only messages are ignored, not routed.
+    # Blank / whitespace-only text with no image is ignored, not routed.
     await _handle_inbound(surface, json.dumps({"type": "message", "payload": {"text": "  "}}))
 
-    assert sent == [(surface, "hi")]
+    assert sent == [(surface, "hi", None)]
+
+
+async def test_inbound_message_frame_routes_a_pasted_image(monkeypatch):
+    surface = "ws-img"
+    sent: list[tuple[str, str, object]] = []
+
+    async def fake_send(s, text, image=None):
+        sent.append((s, text, image))
+
+    monkeypatch.setattr(agent_session.agents, "send", fake_send)
+
+    async def message(text, image):
+        frame = {"type": "message", "payload": {"text": text, "image": image}}
+        await _handle_inbound(surface, json.dumps(frame))
+
+    img = {"media_type": "image/png", "data": "QUJD"}
+    await message("look", img)
+    await message("", img)  # image with blank text still routes (image-only turn)
+    await message("", {"media_type": "text/plain", "data": "QUJD"})  # malformed → dropped
+
+    assert sent == [
+        (surface, "look", ImageInput(media_type="image/png", data="QUJD")),
+        (surface, "", ImageInput(media_type="image/png", data="QUJD")),
+    ]
+
+
+def test_parse_image_accepts_valid_and_fails_closed_on_malformed():
+    assert _parse_image(None) is None
+    assert _parse_image({"media_type": "image/png", "data": "QUJD"}) == ImageInput(
+        "image/png", "QUJD"
+    )
+    assert _parse_image({"media_type": "text/plain", "data": "QUJD"}) is None  # not image/*
+    assert _parse_image({"media_type": "image/png", "data": ""}) is None  # empty data
+    assert _parse_image({"data": "QUJD"}) is None  # missing media_type
+    assert _parse_image("nope") is None  # not an object

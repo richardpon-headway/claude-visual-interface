@@ -21,6 +21,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from typing import Any
 
 from claude_agent_sdk import ClaudeSDKClient
 
@@ -38,6 +41,46 @@ log = logging.getLogger(__name__)
 
 # Close an open session after this long with no new message and no active turn.
 AGENT_IDLE_SECONDS = 1800
+
+
+@dataclass
+class ImageInput:
+    # A pasted image: its MIME type and raw base64 (no data-URL prefix).
+    media_type: str
+    data: str
+
+
+@dataclass
+class ChatTurn:
+    # One user turn: text plus an optional pasted image.
+    text: str
+    image: ImageInput | None = None
+
+
+async def _user_message_stream(turn: ChatTurn) -> AsyncIterator[dict[str, Any]]:
+    """Yield the single multimodal user message for ClaudeSDKClient.query's streaming
+    form (text-only turns take the plain-string fast path instead). The dict mirrors
+    what the SDK builds for a string prompt — carries parent_tool_use_id; the SDK
+    fills in session_id."""
+    blocks: list[dict[str, Any]] = []
+    if turn.text:
+        blocks.append({"type": "text", "text": turn.text})
+    if turn.image is not None:
+        blocks.append(
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": turn.image.media_type,
+                    "data": turn.image.data,
+                },
+            }
+        )
+    yield {
+        "type": "user",
+        "message": {"role": "user", "content": blocks},
+        "parent_tool_use_id": None,
+    }
 
 
 def with_surface_id(prompt: str, surface: str) -> str:
@@ -69,11 +112,11 @@ class AgentSession:
         self._worktree = worktree
         self._system_prompt = system_prompt
         self._resume = resume
-        self._queue: asyncio.Queue[str] = asyncio.Queue()
+        self._queue: asyncio.Queue[ChatTurn] = asyncio.Queue()
         self._task = asyncio.create_task(self._run())
 
-    def enqueue(self, text: str) -> None:
-        self._queue.put_nowait(text)
+    def enqueue(self, turn: ChatTurn) -> None:
+        self._queue.put_nowait(turn)
 
     def _options(self, resume: str | None) -> object:
         return build_agent_options(
@@ -115,19 +158,22 @@ class AgentSession:
         async with ClaudeSDKClient(options=self._options(resume)) as client:
             while True:
                 try:
-                    text = await asyncio.wait_for(self._queue.get(), AGENT_IDLE_SECONDS)
+                    turn = await asyncio.wait_for(self._queue.get(), AGENT_IDLE_SECONDS)
                 except TimeoutError:
                     log.info("agent session idle, closing (surface=%s)", self._surface)
                     return
-                await self._run_turn(client, text)
+                await self._run_turn(client, turn)
 
-    async def _run_turn(self, client: ClaudeSDKClient, text: str) -> None:
+    async def _run_turn(self, client: ClaudeSDKClient, turn: ChatTurn) -> None:
         """Run one user turn. A failed turn is surfaced (P4) but keeps the session
         alive for the next message. The thinking flag brackets the turn (cleared in
         the finally) so the indicator never sticks on after success, error, or cancel."""
         await broadcast_thinking(self._surface, True)
         try:
-            await client.query(text)
+            if turn.image is None:
+                await client.query(turn.text)  # text-only: the plain-string fast path
+            else:
+                await client.query(_user_message_stream(turn))
             async for message in client.receive_response():
                 await relay_message_activity(self._surface, message)
         except asyncio.CancelledError:
@@ -153,11 +199,12 @@ class AgentSessionRegistry:
     def __init__(self) -> None:
         self._sessions: dict[str, AgentSession] = {}
 
-    async def send(self, surface: str, text: str) -> None:
-        """Route a user message to the surface's session, starting one if needed.
-        A surface with no session row can't chat — recorded observably, not silently.
-        A chat session has no worktree (cwd None); a review session runs against its
-        worktree and continues its conversation via the recorded SDK session id."""
+    async def send(self, surface: str, text: str, image: ImageInput | None = None) -> None:
+        """Route a user message (text plus an optional pasted image) to the surface's
+        session, starting one if needed. A surface with no session row can't chat —
+        recorded observably, not silently. A chat session has no worktree (cwd None);
+        a review session runs against its worktree and continues its conversation via
+        the recorded SDK session id."""
         if surface not in self._sessions:
             session = await asyncio.to_thread(sessions.get_session, surface)
             if session is None:
@@ -176,8 +223,10 @@ class AgentSessionRegistry:
             self._sessions[surface] = AgentSession(
                 self, surface, worktree, system_prompt=system_prompt, resume=resume
             )
-        await record_activity(surface, "user", text)
-        self._sessions[surface].enqueue(text)
+        # Mark an attached image in the feed without dumping base64.
+        marker = f"[image] {text}".rstrip() if image is not None else text
+        await record_activity(surface, "user", marker)
+        self._sessions[surface].enqueue(ChatTurn(text=text, image=image))
 
     def _discard(self, surface: str) -> None:
         self._sessions.pop(surface, None)

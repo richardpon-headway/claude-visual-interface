@@ -53,7 +53,13 @@ class FakeClient:
         return False
 
     async def query(self, prompt):
-        self.queried.append(prompt)
+        # A string is the text-only fast path; a multimodal turn arrives as an async
+        # iterable of message dicts — drain it so the test can inspect the blocks.
+        if isinstance(prompt, str):
+            self.queried.append(prompt)
+        else:
+            async for msg in prompt:
+                self.queried.append(msg)
 
     async def receive_response(self):
         yield AssistantMessage(content=[TextBlock(text="on it")], model="test")
@@ -153,6 +159,49 @@ async def test_chat_session_with_no_worktree_starts_and_chats():
     assert ("user", "make me a dashboard") in kinds
     assert ("text", "on it") in kinds
     assert FakeClient.instances[0].options.cwd is None
+    await reg.shutdown_all()
+
+
+async def test_image_turn_sends_an_image_block_and_marks_the_feed():
+    _seed_session("img", worktree_path=None, session_type="chat")
+    store.get_or_create("img").activity.clear()
+    reg = AgentSessionRegistry()
+
+    image = agent_session.ImageInput(media_type="image/png", data="QUJD")
+    await reg.send("img", "what is this?", image=image)
+    await _wait_until(
+        lambda: any(e.kind == "result" for e in store.get_or_create("img").activity)
+    )
+
+    # The query carried a single multimodal user message with text + image blocks.
+    sent = FakeClient.instances[0].queried
+    assert len(sent) == 1
+    blocks = sent[0]["message"]["content"]
+    assert {"type": "text", "text": "what is this?"} in blocks
+    image_block = next(b for b in blocks if b["type"] == "image")
+    assert image_block["source"] == {"type": "base64", "media_type": "image/png", "data": "QUJD"}
+
+    # The feed marks the image without dumping base64.
+    kinds = [(e.kind, e.text) for e in store.get_or_create("img").activity]
+    assert ("user", "[image] what is this?") in kinds
+    assert "QUJD" not in str(kinds)
+    await reg.shutdown_all()
+
+
+async def test_image_only_turn_marks_the_feed_and_sends_just_the_image():
+    _seed_session("img2", worktree_path=None, session_type="chat")
+    store.get_or_create("img2").activity.clear()
+    reg = AgentSessionRegistry()
+
+    await reg.send("img2", "", image=agent_session.ImageInput(media_type="image/png", data="QUJD"))
+    await _wait_until(
+        lambda: any(e.kind == "result" for e in store.get_or_create("img2").activity)
+    )
+
+    blocks = FakeClient.instances[0].queried[0]["message"]["content"]
+    assert [b["type"] for b in blocks] == ["image"]  # no empty text block
+    kinds = [(e.kind, e.text) for e in store.get_or_create("img2").activity]
+    assert ("user", "[image]") in kinds
     await reg.shutdown_all()
 
 
