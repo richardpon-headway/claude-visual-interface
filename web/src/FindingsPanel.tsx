@@ -59,13 +59,17 @@ export function FindingsPanel({
 }) {
   const items = Object.values(findings);
   const open = items.filter((f) => !f.disposition).length;
+  const hasItems = items.length > 0;
 
+  // Only claim flexible space (and scroll) when there are findings; when empty,
+  // sit at content height so the panel doesn't stretch into a big empty box and
+  // the transcript above takes the room instead.
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className={`flex min-h-0 flex-col ${hasItems ? "flex-1" : "shrink-0"}`}>
       <div className="border-b border-zinc-800 px-3 py-2 text-sm font-semibold">
         Findings <span className="text-zinc-500">· {items.length} · {open} open</span>
       </div>
-      {items.length === 0 ? (
+      {!hasItems ? (
         <div className="p-3 text-sm text-zinc-500">no findings yet</div>
       ) : (
         <ul className="min-h-0 flex-1 overflow-auto">
