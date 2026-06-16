@@ -41,13 +41,25 @@ export function ChatInput({ onSend }: { onSend: SendMessage }) {
     if (file) attachImageFile(file);
   }
 
-  function submit(e: React.FormEvent) {
-    e.preventDefault();
+  function send() {
     const trimmed = text.trim();
     if (!trimmed && !image) return;
     onSend(trimmed, image ?? undefined);
     setText("");
     setImage(null);
+  }
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    send();
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    // Enter sends; Shift+Enter inserts a newline (the textarea's default).
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
   }
 
   return (
@@ -78,14 +90,16 @@ export function ChatInput({ onSend }: { onSend: SendMessage }) {
           </button>
         </div>
       ) : null}
-      <div className="flex gap-2">
-        <input
+      <div className="flex items-end gap-2">
+        <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
           onPaste={handlePaste}
-          placeholder="Ask the agent — paste a screenshot, or “review the diff”…"
+          onKeyDown={handleKeyDown}
+          rows={4}
+          placeholder="Ask the agent — paste a screenshot, or “review the diff”… (Shift+Enter for newline)"
           aria-label="Message the agent"
-          className="min-w-0 flex-1 rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-sm"
+          className="min-w-0 flex-1 resize-none rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-sm"
         />
         <button
           type="submit"

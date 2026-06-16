@@ -16,6 +16,22 @@ describe("ChatInput", () => {
     expect((input as HTMLInputElement).value).toBe("");
   });
 
+  it("sends on Enter but inserts a newline on Shift+Enter", () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+    const input = screen.getByRole("textbox", { name: /message the agent/i });
+
+    // Shift+Enter doesn't submit — it's a newline (the textarea's default).
+    fireEvent.change(input, { target: { value: "line one" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    expect(onSend).not.toHaveBeenCalled();
+
+    // Plain Enter submits the trimmed text and clears the box.
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onSend).toHaveBeenCalledWith("line one", undefined);
+    expect((input as HTMLTextAreaElement).value).toBe("");
+  });
+
   it("does not send blank input", () => {
     const onSend = vi.fn();
     render(<ChatInput onSend={onSend} />);
