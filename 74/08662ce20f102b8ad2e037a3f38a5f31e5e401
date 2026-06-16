@@ -1,0 +1,25 @@
+daemon/agent_session.py
+  s_a53d185a44b1f1::t_b5ce2310bd355c 42-54
+  s_a53d185a44b1f1::t_faad8c4a4d752b 79-81
+tests/test_agent_session.py
+  s_a53d185a44b1f1::t_b9ebdde180695d 172,179-181,185,192-194,198-203
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "7408662ce20f102b8ad2e037a3f38a5f31e5e401",
+  "prompts": {},
+  "sessions": {
+    "s_a53d185a44b1f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a0179f51-d47d-48ef-b055-09578b66fccc",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
