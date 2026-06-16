@@ -5,6 +5,9 @@ import { useEffect, useState } from "react";
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const WORDS = ["Thinking", "Pondering", "Cogitating", "Noodling", "Mulling", "Ruminating"];
 const TICK_MS = 120;
+// The whimsical word changes only every few seconds (the spinner still ticks fast),
+// matching the Claude CLI's cadence.
+const WORD_INTERVAL_MS = 4000;
 
 export function ThinkingIndicator({ active }: { active: boolean }) {
   // Elapsed ms since `active` flipped true; a single interval drives the spinner,
@@ -22,15 +25,17 @@ export function ThinkingIndicator({ active }: { active: boolean }) {
   if (!active) return null;
 
   const frame = FRAMES[Math.floor(elapsed / TICK_MS) % FRAMES.length];
-  const word = WORDS[Math.floor(elapsed / 1500) % WORDS.length];
+  const word = WORDS[Math.floor(elapsed / WORD_INTERVAL_MS) % WORDS.length];
   const seconds = Math.floor(elapsed / 1000);
 
+  // Inline content only — the parent (ReviewSurface) provides the bordered row so
+  // the Stop button can sit on the same line.
   return (
-    <div className="flex items-center gap-2 border-t border-zinc-800 px-3 py-1.5 text-xs text-zinc-400">
+    <span className="flex items-center gap-2">
       <span className="font-mono text-sky-300">{frame}</span>
       <span>
         {word}… <span className="text-zinc-500">({seconds}s)</span>
       </span>
-    </div>
+    </span>
   );
 }
