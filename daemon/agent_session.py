@@ -39,6 +39,19 @@ log = logging.getLogger(__name__)
 AGENT_IDLE_SECONDS = 1800
 
 
+def with_surface_id(prompt: str, surface: str) -> str:
+    """Append the agent's surface id to its system prompt so cvi tool calls target
+    the right surface. Mirrors what the review runner bakes into _review_prompt:
+    without it the chat agent guesses the surface (e.g. 'default') and renders into
+    a surface no browser is watching."""
+    return (
+        f"{prompt}\n\nYour surface id is `{surface}`. Pass it as the `surface` "
+        "argument to every cvi tool (render_html, open_code, highlight_range, etc.). "
+        'This id is fixed for the whole session — do not guess it, do not use "default", '
+        "and do not query the daemon for it."
+    )
+
+
 class AgentSession:
     """One open Claude client bound to a surface, fed user turns via a queue."""
 
@@ -63,7 +76,9 @@ class AgentSession:
 
     def _options(self, resume: str | None) -> object:
         return build_agent_options(
-            cwd=self._worktree, system_prompt=self._system_prompt, resume=resume
+            cwd=self._worktree,
+            system_prompt=with_surface_id(self._system_prompt, self._surface),
+            resume=resume,
         )
 
     async def _run(self) -> None:
