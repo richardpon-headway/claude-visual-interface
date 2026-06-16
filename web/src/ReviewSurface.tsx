@@ -103,7 +103,7 @@ export function ReviewSurface({ surface }: { surface: string }) {
             onSelect={selectFinding}
           />
           {busy ? (
-            <div className="flex items-center gap-2 border-t border-zinc-800 px-3 py-1.5 text-xs text-zinc-400">
+            <div className="flex shrink-0 items-center gap-2 border-t border-zinc-800 px-3 py-1.5 text-xs text-zinc-400">
               <ThinkingIndicator active={view.thinking} />
               <button
                 type="button"
