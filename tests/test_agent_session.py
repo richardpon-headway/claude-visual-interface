@@ -375,6 +375,67 @@ async def test_transient_error_after_content_streamed_is_not_retried(monkeypatch
     await reg.shutdown_all()
 
 
+class BlockingClient(FakeClient):
+    """Streams one assistant message, then blocks mid-turn until interrupted —
+    interrupt() unblocks it with a (suppressed) terminal abort result."""
+
+    def __init__(self, options=None):
+        super().__init__(options)
+        self.released = asyncio.Event()
+        self.interrupt_called = False
+
+    async def receive_response(self):
+        yield AssistantMessage(content=[TextBlock(text="working")], model="test")
+        await self.released.wait()
+        yield ResultMessage(
+            subtype="error_during_execution",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=True,
+            num_turns=1,
+            session_id=SESSION,
+        )
+
+    async def interrupt(self):
+        self.interrupt_called = True
+        self.released.set()
+
+
+async def test_interrupt_stops_the_turn_and_keeps_the_session_open(monkeypatch):
+    _seed_session(SESSION, worktree_path=None, session_type="chat")
+    store.get_or_create(SESSION).activity.clear()
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: BlockingClient(options)
+    )
+    reg = AgentSessionRegistry()
+
+    await reg.send(SESSION, "long task")
+    # Wait until the turn is in flight (thinking on, first message relayed).
+    await _wait_until(lambda: store.get_or_create(SESSION).thinking is True)
+
+    await reg.interrupt(SESSION)
+    await _wait_until(lambda: store.get_or_create(SESSION).thinking is False)
+
+    client = FakeClient.instances[0]
+    assert isinstance(client, BlockingClient)
+    assert client.interrupt_called is True
+    kinds = [(e.kind, e.text) for e in store.get_or_create(SESSION).activity]
+    assert ("text", "working") in kinds
+    assert ("result", "stopped") in kinds
+    # The aborted turn's own terminal result is suppressed, not relayed.
+    assert not any(text == "error_during_execution" for _, text in kinds)
+    # The session stays open for the next message.
+    assert reg.active_surfaces() == [SESSION]
+    await reg.shutdown_all()
+
+
+async def test_interrupt_is_a_noop_when_no_turn_is_running():
+    # Nothing started for the surface — interrupt must not raise or start anything.
+    reg = AgentSessionRegistry()
+    await reg.interrupt("idle-surface")
+    assert reg.active_surfaces() == []
+
+
 async def test_chat_session_uses_the_general_prompt_with_its_surface_id():
     _seed_session("chat-p", worktree_path=None, session_type="chat")
     reg = AgentSessionRegistry()

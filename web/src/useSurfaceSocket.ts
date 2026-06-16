@@ -12,14 +12,16 @@ function surfaceUrl(surface: string): string {
 // image block the daemon builds.
 export type ImageAttachment = { media_type: string; data: string };
 export type SendMessage = (text: string, image?: ImageAttachment) => void;
+export type StopAgent = () => void;
 
 /**
  * Subscribe to a surface. Returns its full state — the live view plus findings —
- * and a `sendMessage` that pushes a chat turn to the surface's agent over the same
- * socket. On (re)subscribe it fetches the current findings + status once over HTTP,
- * then stays current from WebSocket events. Re-subscribes when `surface` changes.
+ * a `sendMessage` that pushes a chat turn to the surface's agent over the same
+ * socket, and a `stop` that aborts whatever the agent is currently doing. On
+ * (re)subscribe it fetches the current findings + status once over HTTP, then
+ * stays current from WebSocket events. Re-subscribes when `surface` changes.
  */
-export function useSurfaceSocket(surface: string): [SurfaceState, SendMessage] {
+export function useSurfaceSocket(surface: string): [SurfaceState, SendMessage, StopAgent] {
   const [state, setState] = useState<SurfaceState>(() => emptySurface(surface));
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -74,5 +76,12 @@ export function useSurfaceSocket(surface: string): [SurfaceState, SendMessage] {
     }
   }, []);
 
-  return [state, sendMessage];
+  const stop = useCallback<StopAgent>(() => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "stop" }));
+    }
+  }, []);
+
+  return [state, sendMessage, stop];
 }

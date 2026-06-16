@@ -12,10 +12,11 @@ import asyncio
 
 from daemon import review_runner, sessions
 
-# Strong references to in-flight runs; create_task only holds a weak ref, so an
-# untracked task could be garbage-collected mid-run. The done-callback removes
-# each task once it finishes.
-_running: set[asyncio.Task[None]] = set()
+# Strong references to in-flight runs, keyed by session id so a run can be found
+# and cancelled (Stop). create_task only holds a weak ref, so an untracked task
+# could be garbage-collected mid-run. The done-callback removes each task once it
+# finishes.
+_running: dict[str, asyncio.Task[None]] = {}
 
 
 async def start_review(
@@ -39,6 +40,17 @@ async def start_review(
             session_id=session_id, worktree_path=worktree_path, base_ref=base_ref
         )
     )
-    _running.add(task)
-    task.add_done_callback(_running.discard)
+    _running[session_id] = task
+    task.add_done_callback(lambda _t: _running.pop(session_id, None))
     return session_id
+
+
+def cancel(session_id: str) -> bool:
+    """Cancel an in-flight run for this session, if one is running. The runner
+    catches the cancellation and marks the session 'stopped'. A no-op (returns
+    False) when nothing is running for the session."""
+    task = _running.get(session_id)
+    if task is None or task.done():
+        return False
+    task.cancel()
+    return True

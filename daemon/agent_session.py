@@ -125,6 +125,13 @@ class AgentSession:
         self._system_prompt = system_prompt
         self._resume = resume
         self._queue: asyncio.Queue[ChatTurn] = asyncio.Queue()
+        # The live client while a connection is open, so a concurrent caller can
+        # interrupt the in-flight turn. `_turn_active` gates interrupt to a running
+        # turn; `_interrupting` tells the relay loop to stop relaying once the SDK
+        # aborts (so the interrupt's terminal result doesn't litter the feed).
+        self._client: ClaudeSDKClient | None = None
+        self._turn_active = False
+        self._interrupting = False
         self._task = asyncio.create_task(self._run())
 
     def enqueue(self, turn: ChatTurn) -> None:
@@ -168,13 +175,17 @@ class AgentSession:
 
     async def _serve(self, resume: str | None) -> None:
         async with ClaudeSDKClient(options=self._options(resume)) as client:
-            while True:
-                try:
-                    turn = await asyncio.wait_for(self._queue.get(), AGENT_IDLE_SECONDS)
-                except TimeoutError:
-                    log.info("agent session idle, closing (surface=%s)", self._surface)
-                    return
-                await self._run_turn(client, turn)
+            self._client = client
+            try:
+                while True:
+                    try:
+                        turn = await asyncio.wait_for(self._queue.get(), AGENT_IDLE_SECONDS)
+                    except TimeoutError:
+                        log.info("agent session idle, closing (surface=%s)", self._surface)
+                        return
+                    await self._run_turn(client, turn)
+            finally:
+                self._client = None
 
     async def _run_turn(self, client: ClaudeSDKClient, turn: ChatTurn) -> None:
         """Run one user turn, retrying transient API failures with exponential
@@ -185,6 +196,8 @@ class AgentSession:
         for the next message. The thinking flag brackets the whole turn (cleared in
         the finally) so the indicator never sticks on after success, error, or cancel."""
         await broadcast_thinking(self._surface, True)
+        self._turn_active = True
+        self._interrupting = False
         try:
             for attempt in range(1, _MAX_TURN_ATTEMPTS + 1):
                 relayed_content, retry_status = await self._attempt_turn(client, turn)
@@ -216,6 +229,7 @@ class AgentSession:
             log.warning("agent turn failed (surface=%s)", self._surface, exc_info=True)
             await record_activity(self._surface, "result", "turn error")
         finally:
+            self._turn_active = False
             await broadcast_thinking(self._surface, False)
 
     async def _attempt_turn(
@@ -234,6 +248,11 @@ class AgentSession:
             await client.query(_user_message_stream(turn))
         relayed_content = False
         async for message in client.receive_response():
+            # An interrupt aborts the turn; stop relaying so the SDK's terminal
+            # abort result doesn't show up in the feed (the clean "stopped" line
+            # is recorded by interrupt() instead).
+            if self._interrupting:
+                return relayed_content, None
             if (
                 isinstance(message, ResultMessage)
                 and message.is_error
@@ -244,6 +263,20 @@ class AgentSession:
             if isinstance(message, AssistantMessage):
                 relayed_content = True
         return relayed_content, None
+
+    async def interrupt(self) -> None:
+        """Stop the in-flight turn without closing the session, so the next message
+        still works. The SDK interrupt ends the active receive loop; _run_turn's
+        finally clears the thinking flag. A no-op when no turn is running."""
+        client = self._client
+        if client is None or not self._turn_active:
+            return
+        self._interrupting = True
+        try:
+            await client.interrupt()
+            await record_activity(self._surface, "result", "stopped")
+        except Exception:
+            log.warning("interrupt failed (surface=%s)", self._surface, exc_info=True)
 
     async def aclose(self) -> None:
         self._task.cancel()
@@ -288,6 +321,13 @@ class AgentSessionRegistry:
         marker = f"[image] {text}".rstrip() if image is not None else text
         await record_activity(surface, "user", marker)
         self._sessions[surface].enqueue(ChatTurn(text=text, image=image))
+
+    async def interrupt(self, surface: str) -> None:
+        """Stop an in-flight turn on the surface, leaving the session open for the
+        next message. A no-op when the surface has no live session."""
+        session = self._sessions.get(surface)
+        if session is not None:
+            await session.interrupt()
 
     def _discard(self, surface: str) -> None:
         self._sessions.pop(surface, None)

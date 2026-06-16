@@ -223,20 +223,32 @@ def _parse_image(raw: Any) -> ImageInput | None:
     return None
 
 
+async def _stop_surface(surface: str) -> None:
+    """Stop whatever the agent is doing on this surface: interrupt a live chat turn
+    and/or cancel an in-flight kickoff run. At most one is active per surface, and
+    both are no-ops when idle, so a stray Stop is harmless."""
+    await agents.interrupt(surface)
+    reviews.cancel(surface)
+
+
 async def _handle_inbound(surface: str, raw: str) -> None:
     """Apply a browser→daemon frame. `selection` records the left-pane selection;
-    `message` routes a chat turn to the surface's live agent session. Anything
-    malformed or unknown is ignored (the socket stays open)."""
+    `message` routes a chat turn to the surface's live agent session; `stop` aborts
+    the agent's current work on the surface. Anything malformed or unknown is
+    ignored (the socket stays open)."""
     try:
         msg = json.loads(raw)
     except (ValueError, TypeError):
         return
     if not isinstance(msg, dict):
         return
+    msg_type = msg.get("type")
+    if msg_type == "stop":  # no payload — applies to whatever is running
+        await _stop_surface(surface)
+        return
     payload = msg.get("payload")
     if not isinstance(payload, dict):
         return
-    msg_type = msg.get("type")
     if msg_type == "selection":
         file = payload.get("file")
         line_range = payload.get("range")
