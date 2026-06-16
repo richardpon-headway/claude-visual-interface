@@ -40,4 +40,16 @@ describe("useSurfaceSocket", () => {
       JSON.stringify({ type: "message", payload: { text: "review the diff" } }),
     ]);
   });
+
+  it("includes the image in the frame when one is attached", () => {
+    const { result } = renderHook(() => useSurfaceSocket("s1"));
+    act(() => result.current[1]("look", { media_type: "image/png", data: "QUJD" }));
+
+    expect(FakeWebSocket.last?.sent).toEqual([
+      JSON.stringify({
+        type: "message",
+        payload: { text: "look", image: { media_type: "image/png", data: "QUJD" } },
+      }),
+    ]);
+  });
 });

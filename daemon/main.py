@@ -19,7 +19,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from daemon import files, findings, reviews, sessions
-from daemon.agent_session import agents
+from daemon.agent_session import ImageInput, agents
 from daemon.db import apply_migrations
 from daemon.hub import hub
 from daemon.mcp_server import SERVER_NAME, TOOLS
@@ -200,6 +200,29 @@ async def ws_surface(websocket: WebSocket, surface: str) -> None:
         hub.unregister(surface, websocket)
 
 
+def _parse_image(raw: Any) -> ImageInput | None:
+    """Validate an optional pasted image from a `message` frame — untrusted external
+    input. Returns None when absent, and fails closed (None + a warning) when
+    malformed: requires a string `media_type` starting `image/` and a non-empty
+    string `data` (raw base64)."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        log.warning("ignoring image payload: not an object")
+        return None
+    media_type = raw.get("media_type")
+    data = raw.get("data")
+    if (
+        isinstance(media_type, str)
+        and media_type.startswith("image/")
+        and isinstance(data, str)
+        and data
+    ):
+        return ImageInput(media_type=media_type, data=data)
+    log.warning("ignoring image payload: bad media_type or data")
+    return None
+
+
 async def _handle_inbound(surface: str, raw: str) -> None:
     """Apply a browser→daemon frame. `selection` records the left-pane selection;
     `message` routes a chat turn to the surface's live agent session. Anything
@@ -220,9 +243,11 @@ async def _handle_inbound(surface: str, raw: str) -> None:
         if isinstance(file, str) and isinstance(line_range, dict):
             store.set_selection(surface, file, line_range)
     elif msg_type == "message":
-        text = payload.get("text")
-        if isinstance(text, str) and text.strip():
-            await agents.send(surface, text)
+        raw_text = payload.get("text")
+        text = raw_text.strip() if isinstance(raw_text, str) else ""
+        image = _parse_image(payload.get("image"))
+        if text or image is not None:
+            await agents.send(surface, text, image=image)
 
 
 def main() -> None:

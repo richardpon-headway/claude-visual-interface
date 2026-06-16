@@ -12,7 +12,7 @@ describe("ChatInput", () => {
     fireEvent.change(input, { target: { value: "  review the diff  " } });
     fireEvent.click(screen.getByRole("button", { name: /send/i }));
 
-    expect(onSend).toHaveBeenCalledWith("review the diff");
+    expect(onSend).toHaveBeenCalledWith("review the diff", undefined);
     expect((input as HTMLInputElement).value).toBe("");
   });
 
@@ -24,5 +24,47 @@ describe("ChatInput", () => {
     });
     fireEvent.submit(screen.getByRole("textbox", { name: /message the agent/i }).closest("form")!);
     expect(onSend).not.toHaveBeenCalled();
+  });
+
+  function pasteImage(input: HTMLElement) {
+    const file = new File([new Uint8Array([1, 2, 3])], "shot.png", { type: "image/png" });
+    fireEvent.paste(input, {
+      clipboardData: { items: [{ kind: "file", type: "image/png", getAsFile: () => file }] },
+    });
+  }
+
+  it("attaches a pasted image, sends it with the text, then clears", async () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+    const input = screen.getByRole("textbox", { name: /message the agent/i });
+
+    pasteImage(input);
+    // FileReader.readAsDataURL is async — wait for the attachment chip.
+    expect(await screen.findByRole("button", { name: /remove image/i })).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "what is this" } });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    expect(onSend).toHaveBeenCalledTimes(1);
+    const [text, image] = onSend.mock.calls[0];
+    expect(text).toBe("what is this");
+    expect(image.media_type).toBe("image/png");
+    expect(image.data.length).toBeGreaterThan(0); // raw base64, prefix stripped
+    expect((input as HTMLInputElement).value).toBe("");
+    expect(screen.queryByRole("button", { name: /remove image/i })).toBeNull();
+  });
+
+  it("sends an image-only message (no caption)", async () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+    const input = screen.getByRole("textbox", { name: /message the agent/i });
+
+    pasteImage(input);
+    await screen.findByRole("button", { name: /remove image/i });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onSend.mock.calls[0][0]).toBe(""); // empty text
+    expect(onSend.mock.calls[0][1].media_type).toBe("image/png");
   });
 });
