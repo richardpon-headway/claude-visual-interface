@@ -97,7 +97,17 @@ def test_snapshot_is_json_shaped_and_starts_empty():
         "artifact": None,
         "selection": None,
         "activity": [],
+        "thinking": False,
     }
+
+
+def test_set_thinking_flips_the_flag_and_rides_the_snapshot():
+    store = ViewStore()
+    assert store.snapshot("s")["thinking"] is False
+    store.set_thinking("s", True)
+    assert store.snapshot("s")["thinking"] is True
+    store.set_thinking("s", False)
+    assert store.get_or_create("s").thinking is False
 
 
 def test_append_activity_accumulates_and_rides_the_snapshot():

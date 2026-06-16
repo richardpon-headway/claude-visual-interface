@@ -169,6 +169,53 @@ async def test_unknown_surface_records_a_notice_and_starts_nothing():
     assert FakeClient.instances == []
 
 
+async def test_turn_sets_thinking_during_and_clears_after(monkeypatch):
+    _seed_session("think", worktree_path=None, session_type="chat")
+    seen: dict[str, bool] = {}
+
+    class ThinkingProbeClient(FakeClient):
+        async def query(self, prompt):
+            seen["during"] = store.get_or_create("think").thinking
+            await super().query(prompt)
+
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: ThinkingProbeClient(options)
+    )
+    reg = AgentSessionRegistry()
+
+    await reg.send("think", "hi")
+    # Wait until the turn started (during recorded) AND the finally cleared the flag.
+    await _wait_until(
+        lambda: "during" in seen and store.get_or_create("think").thinking is False
+    )
+
+    assert seen["during"] is True  # thinking was on while the turn ran
+    assert store.get_or_create("think").thinking is False  # cleared after
+    await reg.shutdown_all()
+
+
+async def test_thinking_clears_when_a_turn_errors(monkeypatch):
+    _seed_session("think-err", worktree_path=None, session_type="chat")
+
+    class BoomClient(FakeClient):
+        async def query(self, prompt):
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: BoomClient(options)
+    )
+    reg = AgentSessionRegistry()
+
+    await reg.send("think-err", "hi")
+    await _wait_until(
+        lambda: any("turn error" in e.text for e in store.get_or_create("think-err").activity)
+        and store.get_or_create("think-err").thinking is False
+    )
+
+    assert store.get_or_create("think-err").thinking is False
+    await reg.shutdown_all()
+
+
 async def test_chat_session_uses_the_general_prompt_with_its_surface_id():
     _seed_session("chat-p", worktree_path=None, session_type="chat")
     reg = AgentSessionRegistry()

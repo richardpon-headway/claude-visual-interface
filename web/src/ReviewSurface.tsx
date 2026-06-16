@@ -5,6 +5,7 @@ import { ArtifactPane } from "./ArtifactPane";
 import { ChatInput } from "./ChatInput";
 import { CodePane } from "./CodePane";
 import { FindingsPanel } from "./FindingsPanel";
+import { ThinkingIndicator } from "./ThinkingIndicator";
 import { primaryOpenFile } from "./findingFocus";
 import { useSurfaceSocket } from "./useSurfaceSocket";
 import type { Finding, Range } from "./viewState";
@@ -97,6 +98,7 @@ export function ReviewSurface({ surface }: { surface: string }) {
             activeId={activeFinding?.id ?? null}
             onSelect={selectFinding}
           />
+          <ThinkingIndicator active={view.thinking} />
           <ChatInput onSend={sendMessage} />
         </aside>
       </div>

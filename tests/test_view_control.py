@@ -6,6 +6,7 @@ from typing import Any
 from daemon.hub import hub
 from daemon.mcp_server import (
     broadcast_status,
+    broadcast_thinking,
     get_selection,
     get_view_state,
     highlight_range,
@@ -151,6 +152,21 @@ async def test_broadcast_status_broadcasts_without_storing():
 
     assert ws.received == [
         {"type": "status", "surface": surface, "payload": {"status": "ready"}}
+    ]
+
+
+async def test_broadcast_thinking_sets_the_flag_and_broadcasts():
+    surface = "vc-thinking"
+    ws = FakeWS()
+    hub.register(surface, ws)
+    try:
+        await broadcast_thinking(surface, True)
+    finally:
+        hub.unregister(surface, ws)
+
+    assert store.get_or_create(surface).thinking is True
+    assert ws.received == [
+        {"type": "thinking", "surface": surface, "payload": {"active": True}}
     ]
 
 

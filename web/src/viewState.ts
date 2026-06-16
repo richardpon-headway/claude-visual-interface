@@ -22,6 +22,7 @@ export type ViewState = {
   artifact: Artifact | null; // an HTML page shown instead of the code views, or null
   selection: Selection | null;
   activity: ActivityEntry[]; // buffered review narration, oldest-first
+  thinking: boolean; // an agent turn is in flight (drives the thinking indicator)
 };
 
 // A persisted, code-anchored review finding (mirrors a daemon/findings.py row).
@@ -59,7 +60,8 @@ export type WsMessage =
   | { type: "finding"; surface: string; payload: Finding }
   | { type: "disposition"; surface: string; payload: { finding_id: string; value: string } }
   | { type: "activity"; surface: string; payload: ActivityEntry }
-  | { type: "status"; surface: string; payload: { status: string } };
+  | { type: "status"; surface: string; payload: { status: string } }
+  | { type: "thinking"; surface: string; payload: { active: boolean } };
 
 const MESSAGE_TYPES = [
   "snapshot",
@@ -72,6 +74,7 @@ const MESSAGE_TYPES = [
   "disposition",
   "activity",
   "status",
+  "thinking",
 ];
 
 export function emptyViewState(surface: string): ViewState {
@@ -84,6 +87,7 @@ export function emptyViewState(surface: string): ViewState {
     artifact: null,
     selection: null,
     activity: [],
+    thinking: false,
   };
 }
 
@@ -161,5 +165,7 @@ export function applyMessage(state: SurfaceState, msg: WsMessage): SurfaceState 
       return { ...state, view: { ...state.view, activity: [...state.view.activity, msg.payload] } };
     case "status":
       return { ...state, status: msg.payload.status };
+    case "thinking":
+      return { ...state, view: { ...state.view, thinking: msg.payload.active } };
   }
 }
