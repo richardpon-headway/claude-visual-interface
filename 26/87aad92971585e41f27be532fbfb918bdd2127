@@ -1,0 +1,25 @@
+web/src/ThinkingIndicator.tsx
+  s_1a0096a62c009e::t_de6b69385ae218 8-10
+  s_1a0096a62c009e::t_0a7d7899cb1c9e 28,31-32,34,39
+web/src/ReviewSurface.tsx
+  s_1a0096a62c009e::t_2abf2062a83918 106-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "2687aad92971585e41f27be532fbfb918bdd2127",
+  "prompts": {},
+  "sessions": {
+    "s_1a0096a62c009e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4cb239e5-c99c-4cf4-a459-b5a50935712e",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
