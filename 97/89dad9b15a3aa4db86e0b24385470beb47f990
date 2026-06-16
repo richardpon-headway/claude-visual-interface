@@ -1,0 +1,59 @@
+daemon/mcp_server.py
+  s_1a0096a62c009e::t_08241ece723c8c 110-120
+daemon/agent_session.py
+  s_1a0096a62c009e::t_05a8370451eb22 353-359,361-366,371
+  s_1a0096a62c009e::t_80af5aa7b4eb7e 299-313
+  s_1a0096a62c009e::t_ae06513f5d9729 287-298,314,316-317
+  s_1a0096a62c009e::t_9b35ea0dbcf18b 31,37
+  s_1a0096a62c009e::t_a1f564a1e0caed 122,129-132
+web/src/useSurfaceSocket.ts
+  s_1a0096a62c009e::t_aea77980c45f97 47-55
+tests/test_agent_session.py
+  s_1a0096a62c009e::t_c10e96e6e8b78a 10,13,16-32
+  s_1a0096a62c009e::t_fc916d7d7ae388 541-703
+  s_1a0096a62c009e::t_98b42549940be1 109-110
+web/src/viewState.ts
+  s_1a0096a62c009e::t_8661a4ab579180 174-175
+  s_1a0096a62c009e::t_2574cfd858416e 66-67
+  s_1a0096a62c009e::t_2c783c830f9206 81
+  s_1a0096a62c009e::t_4d2f988b52281e 99
+  s_1a0096a62c009e::t_77ab9107a7b675 44-45,50
+tests/test_titles.py
+  s_1a0096a62c009e::t_41d7f32199892b 1-83
+daemon/sessions.py
+  s_1a0096a62c009e::t_a320dadb4e39ba 158-177
+  s_1a0096a62c009e::t_5e960d4815654d 11-16
+  s_1a0096a62c009e::t_57752b431b2cf6 88
+daemon/titles.py
+  s_1a0096a62c009e::t_1965060e0bdd9a 1-70
+tests/test_view_control.py
+  s_1a0096a62c009e::t_b6f4b49a0f003b 10
+  s_1a0096a62c009e::t_b81a204149ca31 159-172
+tests/test_sessions.py
+  s_1a0096a62c009e::t_8e49b6cb12a5fc 157-176
+web/src/ReviewSurface.tsx
+  s_1a0096a62c009e::t_1352ade8a10228 35
+  s_1a0096a62c009e::t_102e10cd9c88f2 64
+web/src/viewState.test.ts
+  s_1a0096a62c009e::t_dc636a885ad6cb 35-37
+  s_1a0096a62c009e::t_c49f8558eac5e7 148-156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "9789dad9b15a3aa4db86e0b24385470beb47f990",
+  "prompts": {},
+  "sessions": {
+    "s_1a0096a62c009e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4cb239e5-c99c-4cf4-a459-b5a50935712e",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
