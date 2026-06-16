@@ -67,4 +67,58 @@ describe("ChatInput", () => {
     expect(onSend.mock.calls[0][0]).toBe(""); // empty text
     expect(onSend.mock.calls[0][1].media_type).toBe("image/png");
   });
+
+  function getForm() {
+    return screen.getByRole("textbox", { name: /message the agent/i }).closest("form")!;
+  }
+
+  it("attaches a dropped image, sends it with the text, then clears", async () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+    const input = screen.getByRole("textbox", { name: /message the agent/i });
+
+    const file = new File([new Uint8Array([1, 2, 3])], "shot.png", { type: "image/png" });
+    fireEvent.drop(getForm(), { dataTransfer: { files: [file] } });
+    // FileReader.readAsDataURL is async — wait for the attachment chip.
+    expect(await screen.findByRole("button", { name: /remove image/i })).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "what is this" } });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    expect(onSend).toHaveBeenCalledTimes(1);
+    const [text, image] = onSend.mock.calls[0];
+    expect(text).toBe("what is this");
+    expect(image.media_type).toBe("image/png");
+    expect(image.data.length).toBeGreaterThan(0); // raw base64, prefix stripped
+    expect(screen.queryByRole("button", { name: /remove image/i })).toBeNull();
+  });
+
+  it("ignores a dropped non-image file", () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+
+    const file = new File(["hello"], "notes.txt", { type: "text/plain" });
+    fireEvent.drop(getForm(), { dataTransfer: { files: [file] } });
+
+    expect(screen.queryByRole("button", { name: /remove image/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("highlights the form while dragging and clears on drop or leave", () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+    const form = getForm();
+
+    fireEvent.dragOver(form);
+    expect(form.className).toContain("ring-zinc-500");
+
+    fireEvent.dragLeave(form);
+    expect(form.className).not.toContain("ring-zinc-500");
+
+    fireEvent.dragOver(form);
+    expect(form.className).toContain("ring-zinc-500");
+    fireEvent.drop(form, { dataTransfer: { files: [] } });
+    expect(form.className).not.toContain("ring-zinc-500");
+  });
 });
