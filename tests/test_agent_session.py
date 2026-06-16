@@ -265,6 +265,116 @@ async def test_thinking_clears_when_a_turn_errors(monkeypatch):
     await reg.shutdown_all()
 
 
+class FlakyClient(FakeClient):
+    """Fails the first ``fail_times`` attempts with a transient API-error result
+    (no content streamed), then replies normally — stands in for a momentary 529."""
+
+    def __init__(self, options=None, fail_times=1, status=529):
+        super().__init__(options)
+        self._remaining_failures = fail_times
+        self._status = status
+
+    async def receive_response(self):
+        if self._remaining_failures > 0:
+            self._remaining_failures -= 1
+            yield ResultMessage(
+                subtype="success",  # the CLI reports api errors with subtype "success"
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=True,
+                num_turns=1,
+                session_id=SESSION,
+                api_error_status=self._status,
+            )
+            return
+        async for message in super().receive_response():
+            yield message
+
+
+async def test_transient_api_error_is_retried_then_succeeds(monkeypatch):
+    _seed_session("flaky", worktree_path=None, session_type="chat")
+    store.get_or_create("flaky").activity.clear()
+    monkeypatch.setattr(agent_session, "_RETRY_BASE_DELAY", 0.0)
+    monkeypatch.setattr(agent_session, "_RETRY_MAX_DELAY", 0.0)
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: FlakyClient(options, fail_times=1)
+    )
+    reg = AgentSessionRegistry()
+
+    await reg.send("flaky", "hi")
+    await _wait_until(
+        lambda: any(e.kind == "result" for e in store.get_or_create("flaky").activity)
+    )
+
+    kinds = [(e.kind, e.text) for e in store.get_or_create("flaky").activity]
+    # The 529 was swallowed; the user sees only the eventual success.
+    assert ("text", "on it") in kinds
+    assert ("result", "success") in kinds
+    assert not any("API error" in text for _, text in kinds)
+    # The turn was re-queried after the transient failure.
+    assert FakeClient.instances[0].queried == ["hi", "hi"]
+    await reg.shutdown_all()
+
+
+async def test_transient_api_error_surfaced_after_retries_exhausted(monkeypatch):
+    _seed_session("downed", worktree_path=None, session_type="chat")
+    store.get_or_create("downed").activity.clear()
+    monkeypatch.setattr(agent_session, "_RETRY_BASE_DELAY", 0.0)
+    monkeypatch.setattr(agent_session, "_RETRY_MAX_DELAY", 0.0)
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: FlakyClient(options, fail_times=99)
+    )
+    reg = AgentSessionRegistry()
+
+    await reg.send("downed", "hi")
+    await _wait_until(
+        lambda: any("API error" in e.text for e in store.get_or_create("downed").activity)
+    )
+
+    kinds = [(e.kind, e.text) for e in store.get_or_create("downed").activity]
+    assert ("result", "API error 529") in kinds
+    # Tried exactly _MAX_TURN_ATTEMPTS times, then gave up.
+    assert FakeClient.instances[0].queried == ["hi"] * agent_session._MAX_TURN_ATTEMPTS
+    assert store.get_or_create("downed").thinking is False
+    await reg.shutdown_all()
+
+
+async def test_transient_error_after_content_streamed_is_not_retried(monkeypatch):
+    # Once content has streamed, a retry would duplicate it — so surface the error
+    # instead of re-running.
+    _seed_session("mid", worktree_path=None, session_type="chat")
+    store.get_or_create("mid").activity.clear()
+
+    class MidStreamErrorClient(FakeClient):
+        async def receive_response(self):
+            yield AssistantMessage(content=[TextBlock(text="partial")], model="test")
+            yield ResultMessage(
+                subtype="success",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=True,
+                num_turns=1,
+                session_id=SESSION,
+                api_error_status=529,
+            )
+
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: MidStreamErrorClient(options)
+    )
+    reg = AgentSessionRegistry()
+
+    await reg.send("mid", "hi")
+    await _wait_until(
+        lambda: any("API error" in e.text for e in store.get_or_create("mid").activity)
+    )
+
+    kinds = [(e.kind, e.text) for e in store.get_or_create("mid").activity]
+    assert ("text", "partial") in kinds
+    assert ("result", "API error 529") in kinds
+    assert FakeClient.instances[0].queried == ["hi"]  # not re-queried
+    await reg.shutdown_all()
+
+
 async def test_chat_session_uses_the_general_prompt_with_its_surface_id():
     _seed_session("chat-p", worktree_path=None, session_type="chat")
     reg = AgentSessionRegistry()
