@@ -21,11 +21,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
-from claude_agent_sdk import ClaudeSDKClient
+from claude_agent_sdk import AssistantMessage, ClaudeSDKClient, ResultMessage
 
 from daemon import sessions
 from daemon.activity_relay import relay_message_activity
@@ -41,6 +42,17 @@ log = logging.getLogger(__name__)
 
 # Close an open session after this long with no new message and no active turn.
 AGENT_IDLE_SECONDS = 1800
+
+# A transient API failure surfaces as a terminal ResultMessage with is_error=True
+# and one of these HTTP statuses in api_error_status (overload/server/rate-limit).
+# The interactive CLI retries these transparently; CVI must too, or a momentary
+# 529 ("Overloaded") becomes a visible, terminal turn error.
+_RETRYABLE_API_STATUSES = frozenset({408, 429, 500, 502, 503, 504, 529})
+# Total attempts per turn (1 initial + retries), and exponential backoff with
+# full jitter between them (seconds), capped so a hung overload can't stall a turn.
+_MAX_TURN_ATTEMPTS = 4
+_RETRY_BASE_DELAY = 1.0
+_RETRY_MAX_DELAY = 30.0
 
 
 @dataclass
@@ -165,17 +177,39 @@ class AgentSession:
                 await self._run_turn(client, turn)
 
     async def _run_turn(self, client: ClaudeSDKClient, turn: ChatTurn) -> None:
-        """Run one user turn. A failed turn is surfaced (P4) but keeps the session
-        alive for the next message. The thinking flag brackets the turn (cleared in
+        """Run one user turn, retrying transient API failures with exponential
+        backoff + jitter so a momentary overload (529) doesn't surface as a turn
+        error — matching how the interactive CLI swallows and retries them.
+
+        A genuinely failed turn is still surfaced (P4) but keeps the session alive
+        for the next message. The thinking flag brackets the whole turn (cleared in
         the finally) so the indicator never sticks on after success, error, or cancel."""
         await broadcast_thinking(self._surface, True)
         try:
-            if turn.image is None:
-                await client.query(turn.text)  # text-only: the plain-string fast path
-            else:
-                await client.query(_user_message_stream(turn))
-            async for message in client.receive_response():
-                await relay_message_activity(self._surface, message)
+            for attempt in range(1, _MAX_TURN_ATTEMPTS + 1):
+                relayed_content, retry_status = await self._attempt_turn(client, turn)
+                if retry_status is None:
+                    return  # completed: success, or an error already relayed
+                # Once content has streamed we can't cleanly re-run (it would
+                # duplicate); and the final attempt has no retry left. Either way,
+                # surface the failure rather than retry.
+                if relayed_content or attempt == _MAX_TURN_ATTEMPTS:
+                    await record_activity(
+                        self._surface, "result", f"API error {retry_status}"
+                    )
+                    return
+                delay = min(_RETRY_MAX_DELAY, _RETRY_BASE_DELAY * 2 ** (attempt - 1))
+                delay += random.uniform(0, delay)  # full jitter
+                log.warning(
+                    "transient API error %s (surface=%s); retrying in %.1fs "
+                    "(attempt %d/%d)",
+                    retry_status,
+                    self._surface,
+                    delay,
+                    attempt,
+                    _MAX_TURN_ATTEMPTS,
+                )
+                await asyncio.sleep(delay)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -183,6 +217,33 @@ class AgentSession:
             await record_activity(self._surface, "result", "turn error")
         finally:
             await broadcast_thinking(self._surface, False)
+
+    async def _attempt_turn(
+        self, client: ClaudeSDKClient, turn: ChatTurn
+    ) -> tuple[bool, int | None]:
+        """Run one query attempt, relaying messages as they stream. Returns
+        ``(relayed_content, retry_status)``: ``retry_status`` is the HTTP status of
+        a transient API error worth retrying (the errored result is *suppressed*
+        from the feed so a retry stays silent), or ``None`` when the turn finished —
+        success, or an error already surfaced via the relay. ``relayed_content`` is
+        True once any assistant message has streamed, marking the point past which a
+        retry would duplicate output."""
+        if turn.image is None:
+            await client.query(turn.text)  # text-only: the plain-string fast path
+        else:
+            await client.query(_user_message_stream(turn))
+        relayed_content = False
+        async for message in client.receive_response():
+            if (
+                isinstance(message, ResultMessage)
+                and message.is_error
+                and message.api_error_status in _RETRYABLE_API_STATUSES
+            ):
+                return relayed_content, message.api_error_status
+            await relay_message_activity(self._surface, message)
+            if isinstance(message, AssistantMessage):
+                relayed_content = True
+        return relayed_content, None
 
     async def aclose(self) -> None:
         self._task.cancel()
