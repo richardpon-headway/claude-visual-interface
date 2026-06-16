@@ -1,0 +1,49 @@
+daemon/agent_session.py
+  s_a53d185a44b1f1::t_08f67b3f6de98f 226-229
+  s_a53d185a44b1f1::t_bfc86dc8dacb7c 202-207
+  s_a53d185a44b1f1::t_8e28a36e2a9f78 115,118-119
+  s_a53d185a44b1f1::t_bcaeff14826e99 24-26
+  s_a53d185a44b1f1::t_c24ba918324838 46-85
+  s_a53d185a44b1f1::t_84293fc687fd3a 161,165,167,173-176
+daemon/main.py
+  s_a53d185a44b1f1::t_fccf0755f44a7d 22
+  s_a53d185a44b1f1::t_ed6841c6e90540 246-250
+  s_a53d185a44b1f1::t_bc3b7fc3a69724 203-225
+tests/test_agent_session.py
+  s_a53d185a44b1f1::t_728b2bd2eb570d 165-207
+  s_a53d185a44b1f1::t_50a28d692a6353 56-62
+web/src/useSurfaceSocket.test.ts
+  s_a53d185a44b1f1::t_d7646d7d085c0f 43-54
+web/src/useSurfaceSocket.ts
+  s_a53d185a44b1f1::t_a34c335a3b67f4 70,73
+  s_a53d185a44b1f1::t_0a995bbf1e4539 11-14
+web/src/ChatInput.tsx
+  s_a53d185a44b1f1::t_6ed05adc4e7fdb 3,7,10-28,33-34,36,40-74
+tests/test_ws_route.py
+  s_a53d185a44b1f1::t_9ca11680dc1706 7,9
+  s_a53d185a44b1f1::t_11b6395f204c9d 76-79,81-83
+  s_a53d185a44b1f1::t_ee2882efbe533a 93-95
+  s_a53d185a44b1f1::t_2e4a2667dd1778 53,55-56,61,64-75,80,84-92,96-99
+web/src/ChatInput.test.tsx
+  s_a53d185a44b1f1::t_4867f14d36a8f9 28-69
+  s_a53d185a44b1f1::t_33c9c6c8b66703 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "7a17604539af4d6941fb2dcf5c3a35452dbf58e9",
+  "prompts": {},
+  "sessions": {
+    "s_a53d185a44b1f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a0179f51-d47d-48ef-b055-09578b66fccc",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
