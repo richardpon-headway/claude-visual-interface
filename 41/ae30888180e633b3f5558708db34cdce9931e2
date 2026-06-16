@@ -1,0 +1,26 @@
+web/src/ReviewSurface.tsx
+  s_1a0096a62c009e::t_40f5be29cbe23d 106
+web/src/ChatInput.tsx
+  s_1a0096a62c009e::t_cc869465d8cc43 74
+web/src/ActivityFeed.tsx
+  s_1a0096a62c009e::t_75e6220cf58b66 48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "41ae30888180e633b3f5558708db34cdce9931e2",
+  "prompts": {},
+  "sessions": {
+    "s_1a0096a62c009e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4cb239e5-c99c-4cf4-a459-b5a50935712e",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
