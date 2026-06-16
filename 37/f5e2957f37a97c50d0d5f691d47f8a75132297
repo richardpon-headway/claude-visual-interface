@@ -1,0 +1,25 @@
+daemon/activity_relay.py
+  s_a53d185a44b1f1::t_7e6f20781fa6ab 19-50,60-62
+tests/test_activity_relay.py
+  s_a53d185a44b1f1::t_9d0d81946ed993 1-51,54-69
+  s_a53d185a44b1f1::t_0d5908ec44127a 52-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "37f5e2957f37a97c50d0d5f691d47f8a75132297",
+  "prompts": {},
+  "sessions": {
+    "s_a53d185a44b1f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a0179f51-d47d-48ef-b055-09578b66fccc",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
