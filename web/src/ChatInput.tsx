@@ -71,7 +71,7 @@ export function ChatInput({ onSend }: { onSend: SendMessage }) {
       }}
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
-      className={`flex flex-col gap-2 border-t border-zinc-800 p-2 ${dragging ? "ring-1 ring-inset ring-zinc-500" : ""}`}
+      className={`flex shrink-0 flex-col gap-2 border-t border-zinc-800 p-2 ${dragging ? "ring-1 ring-inset ring-zinc-500" : ""}`}
     >
       {image ? (
         <div className="flex items-center gap-2">
