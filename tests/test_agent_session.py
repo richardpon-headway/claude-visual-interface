@@ -169,26 +169,38 @@ async def test_unknown_surface_records_a_notice_and_starts_nothing():
     assert FakeClient.instances == []
 
 
-async def test_chat_session_uses_the_general_prompt():
+async def test_chat_session_uses_the_general_prompt_with_its_surface_id():
     _seed_session("chat-p", worktree_path=None, session_type="chat")
     reg = AgentSessionRegistry()
 
     await reg.send("chat-p", "hi")
     await _wait_until(lambda: len(FakeClient.instances) == 1)
 
-    assert FakeClient.instances[0].options.system_prompt == agent_session.CVI_CHAT_SYSTEM_PROMPT
+    prompt = FakeClient.instances[0].options.system_prompt
+    assert prompt.startswith(agent_session.CVI_CHAT_SYSTEM_PROMPT)
+    assert "chat-p" in prompt  # the agent is told the surface to render to
     await reg.shutdown_all()
 
 
-async def test_review_session_uses_the_review_prompt():
+async def test_review_session_uses_the_review_prompt_with_its_surface_id():
     _seed_session("review-p", worktree_path="/tmp/wt", session_type="review")
     reg = AgentSessionRegistry()
 
     await reg.send("review-p", "why is finding 1 low?")
     await _wait_until(lambda: len(FakeClient.instances) == 1)
 
-    assert FakeClient.instances[0].options.system_prompt == agent_session.CVI_REVIEW_SYSTEM_PROMPT
+    prompt = FakeClient.instances[0].options.system_prompt
+    assert prompt.startswith(agent_session.CVI_REVIEW_SYSTEM_PROMPT)
+    assert "review-p" in prompt
     await reg.shutdown_all()
+
+
+def test_with_surface_id_appends_the_id_and_instruction():
+    out = agent_session.with_surface_id("BASE PROMPT", "surface-123")
+    assert out.startswith("BASE PROMPT")
+    assert "surface-123" in out
+    assert "every cvi tool" in out
+    assert "default" in out  # explicitly warns the agent off guessing "default"
 
 
 async def test_resumes_the_recorded_review_session():
