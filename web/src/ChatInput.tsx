@@ -4,18 +4,15 @@ import type { ImageAttachment, SendMessage } from "./useSurfaceSocket";
 
 // The chat box at the bottom of the right pane. Submitting sends a turn to the
 // surface's agent; the message echoes back into the transcript as a `user` entry.
-// Pasting an image attaches it to the next message (shown as a thumbnail chip).
+// Pasting or dropping an image attaches it to the next message (thumbnail chip).
 export function ChatInput({ onSend }: { onSend: SendMessage }) {
   const [text, setText] = useState("");
   const [image, setImage] = useState<ImageAttachment | null>(null);
+  const [dragging, setDragging] = useState(false);
 
-  function handlePaste(e: React.ClipboardEvent) {
-    const item = Array.from(e.clipboardData.items).find(
-      (it) => it.kind === "file" && it.type.startsWith("image/"),
-    );
-    const file = item?.getAsFile();
-    if (!file) return;
-    e.preventDefault();
+  // Shared by paste and drop: read an image File into the attachment chip.
+  function attachImageFile(file: File) {
+    if (!file.type.startsWith("image/")) return;
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result;
@@ -25,6 +22,23 @@ export function ChatInput({ onSend }: { onSend: SendMessage }) {
       if (comma >= 0) setImage({ media_type: file.type, data: result.slice(comma + 1) });
     };
     reader.readAsDataURL(file);
+  }
+
+  function handlePaste(e: React.ClipboardEvent) {
+    const item = Array.from(e.clipboardData.items).find(
+      (it) => it.kind === "file" && it.type.startsWith("image/"),
+    );
+    const file = item?.getAsFile();
+    if (!file) return;
+    e.preventDefault();
+    attachImageFile(file);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    const file = Array.from(e.dataTransfer.files).find((f) => f.type.startsWith("image/"));
+    if (file) attachImageFile(file);
   }
 
   function submit(e: React.FormEvent) {
@@ -37,7 +51,16 @@ export function ChatInput({ onSend }: { onSend: SendMessage }) {
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-2 border-t border-zinc-800 p-2">
+    <form
+      onSubmit={submit}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={handleDrop}
+      className={`flex flex-col gap-2 border-t border-zinc-800 p-2 ${dragging ? "ring-1 ring-inset ring-zinc-500" : ""}`}
+    >
       {image ? (
         <div className="flex items-center gap-2">
           <img
