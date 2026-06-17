@@ -7,67 +7,55 @@ function kindLabel(kind: string): string {
       return "tool";
     case "result":
       return "result";
-    case "user":
-      return "you";
     default:
       return "";
   }
 }
 
 function ActivityRow({ entry }: { entry: ActivityEntry }) {
-  const label = kindLabel(entry.kind);
-  const isTool = entry.kind === "tool";
-  const isUser = entry.kind === "user";
-  const isText = entry.kind === "text";
-  // The user's own turns read as a distinct, accented bubble in the transcript.
-  if (isUser) {
+  // Your prompts read as right-aligned bubbles.
+  if (entry.kind === "user") {
     return (
-      <li className="border-b border-zinc-900 px-3 py-1.5 text-xs">
-        <span className="mr-2 rounded bg-indigo-900 px-1.5 py-0.5 font-mono text-[10px] uppercase text-indigo-200">
-          you
-        </span>
-        <span className="text-zinc-100">{entry.text}</span>
+      <li className="flex justify-end">
+        <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-zinc-800 px-3.5 py-2 text-sm text-zinc-100">
+          {entry.text}
+        </div>
       </li>
     );
   }
-  // Assistant prose renders as markdown; tool/result stay compact one-liners.
-  if (isText) {
+  // The assistant's answer renders as markdown, full width.
+  if (entry.kind === "text") {
     return (
-      <li className="border-b border-zinc-900 px-3 py-1.5 text-xs text-zinc-200">
+      <li className="text-sm text-zinc-200">
         <Markdown>{entry.text}</Markdown>
       </li>
     );
   }
+  // Tool calls and run results are compact, dim one-liners.
+  const label = kindLabel(entry.kind);
   return (
-    <li className="border-b border-zinc-900 px-3 py-1.5 text-xs">
+    <li className="text-xs text-zinc-500">
       {label ? (
-        <span className="mr-2 rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] uppercase text-zinc-400">
+        <span className="mr-2 rounded bg-zinc-800/70 px-1.5 py-0.5 font-mono text-[10px] uppercase text-zinc-400">
           {label}
         </span>
       ) : null}
-      <span className={isTool ? "font-mono text-sky-300" : "text-zinc-300"}>{entry.text}</span>
+      <span className={entry.kind === "tool" ? "font-mono text-sky-400/80" : ""}>{entry.text}</span>
     </li>
   );
 }
 
-// A read-only, scrolling feed of the review session's narration: Claude's text,
-// tool calls, and run results, in arrival order. Presentational over the buffered
-// activity list (live updates and the connect snapshot both flow through it).
+// The conversation transcript: your prompts, the assistant's markdown answers, and
+// compact tool/result lines, in arrival order. The parent owns scrolling and width.
 export function ActivityFeed({ activity }: { activity: ActivityEntry[] }) {
+  if (activity.length === 0) {
+    return <div className="py-10 text-center text-sm text-zinc-500">no activity yet</div>;
+  }
   return (
-    <div className="flex min-h-0 flex-1 flex-col border-b border-zinc-800">
-      <div className="border-b border-zinc-800 px-3 py-2 text-sm font-semibold">
-        Activity <span className="text-zinc-500">· {activity.length}</span>
-      </div>
-      {activity.length === 0 ? (
-        <div className="p-3 text-sm text-zinc-500">no activity yet</div>
-      ) : (
-        <ul className="min-h-0 flex-1 overflow-auto">
-          {activity.map((entry, i) => (
-            <ActivityRow key={i} entry={entry} />
-          ))}
-        </ul>
-      )}
-    </div>
+    <ul className="space-y-3">
+      {activity.map((entry, i) => (
+        <ActivityRow key={i} entry={entry} />
+      ))}
+    </ul>
   );
 }

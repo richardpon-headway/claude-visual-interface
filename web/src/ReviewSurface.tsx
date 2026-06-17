@@ -1,14 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef } from "react";
 
 import { ActivityFeed } from "./ActivityFeed";
-import { ArtifactPane } from "./ArtifactPane";
 import { ChatInput } from "./ChatInput";
-import { CodePane } from "./CodePane";
-import { FindingsPanel } from "./FindingsPanel";
 import { ThinkingIndicator } from "./ThinkingIndicator";
-import { primaryOpenFile } from "./findingFocus";
 import { useSurfaceSocket } from "./useSurfaceSocket";
-import type { Finding, Range } from "./viewState";
 
 function StatusChip({ status }: { status: string | null }) {
   const cls =
@@ -31,28 +26,18 @@ function StatusChip({ status }: { status: string | null }) {
   );
 }
 
+// The surface is one vertically-scrolling conversation column: the transcript
+// scrolls; the composer (thinking/Stop + input) is pinned at the bottom. Both are
+// centered to the same readable max-width.
 export function ReviewSurface({ surface }: { surface: string }) {
-  const [{ view, findings, status, title }, sendMessage, stop] = useSurfaceSocket(surface);
-  // The agent is working when a chat turn is in flight or a kickoff run is active.
+  const [{ view, status, title }, sendMessage, stop] = useSurfaceSocket(surface);
   const busy = view.thinking || status === "running";
-  const paneIndexes = Array.from({ length: view.panes }, (_, i) => i);
-  const allFindings = Object.values(findings);
-  const openCount = allFindings.filter((f) => !f.disposition).length;
 
-  const [activeFinding, setActiveFinding] = useState<Finding | null>(null);
-  // The reveal carries a nonce so re-clicking the same finding (unchanged range)
-  // still re-fires the scroll-to effect in CodePane.
-  const [reveal, setReveal] = useState<{ range: Range; nonce: number } | null>(null);
-
-  function selectFinding(finding: Finding) {
-    setActiveFinding(finding);
-    const anchor = finding.anchor;
-    if (anchor) {
-      setReveal((prev) => ({ range: anchor.range, nonce: (prev?.nonce ?? 0) + 1 }));
-    } else {
-      setReveal(null);
-    }
-  }
+  // Stick to the bottom as new content arrives.
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ block: "end" });
+  }, [view.activity.length, view.thinking]);
 
   return (
     <div className="flex h-full flex-col">
@@ -60,50 +45,23 @@ export function ReviewSurface({ surface }: { surface: string }) {
         <a href="/" className="text-zinc-400 hover:text-zinc-100">
           ← sessions
         </a>
-        <span className="font-semibold">Claude Visual Interface</span>
-        <span className="text-zinc-500">{title ?? surface}</span>
-        <span className="ml-auto flex items-center gap-2">
+        <span className="truncate text-zinc-300">{title ?? surface}</span>
+        <span className="ml-auto">
           <StatusChip status={status} />
-          <span className="text-zinc-500">
-            {allFindings.length} findings · {openCount} open
-          </span>
         </span>
       </header>
 
-      <div className="flex min-h-0 flex-1">
-        {/* Left: an HTML artifact when one is set, else the code panes. Right:
-            findings + the conversation. */}
-        <main className="flex min-h-0 flex-1">
-          {view.artifact ? (
-            <div className="min-w-0 flex-1">
-              <ArtifactPane artifact={view.artifact} />
-            </div>
-          ) : (
-            paneIndexes.map((i) => (
-              <div key={i} className="min-w-0 flex-1 border-r border-zinc-800 last:border-r-0">
-                <CodePane
-                  surface={surface}
-                  openFile={
-                    i === 0 ? primaryOpenFile(activeFinding, view.open["0"]) : view.open[String(i)]
-                  }
-                  findings={allFindings}
-                  highlights={view.highlights}
-                  reveal={i === 0 ? reveal : undefined}
-                />
-              </div>
-            ))
-          )}
-        </main>
-        {/* Right: the conversation — activity/transcript over findings, chat box below. */}
-        <aside className="flex w-96 min-w-0 flex-col border-l border-zinc-800">
+      <div className="min-h-0 flex-1 overflow-auto">
+        <div className="mx-auto max-w-3xl px-4 py-4">
           <ActivityFeed activity={view.activity} />
-          <FindingsPanel
-            findings={findings}
-            activeId={activeFinding?.id ?? null}
-            onSelect={selectFinding}
-          />
+          <div ref={bottomRef} />
+        </div>
+      </div>
+
+      <div className="shrink-0 border-t border-zinc-800">
+        <div className="mx-auto max-w-3xl">
           {busy ? (
-            <div className="flex shrink-0 items-center gap-2 border-t border-zinc-800 px-3 py-1.5 text-xs text-zinc-400">
+            <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-400">
               <ThinkingIndicator active={view.thinking} />
               <button
                 type="button"
@@ -115,13 +73,8 @@ export function ReviewSurface({ surface }: { surface: string }) {
             </div>
           ) : null}
           <ChatInput onSend={sendMessage} />
-        </aside>
+        </div>
       </div>
-
-      <footer className="border-t border-zinc-800 px-4 py-1 text-xs text-zinc-500">
-        {view.diff ? `diff: ${view.diff.a} vs ${view.diff.b} · ` : ""}
-        highlights: {Object.values(view.highlights).reduce((n, ranges) => n + ranges.length, 0)}
-      </footer>
     </div>
   );
 }
