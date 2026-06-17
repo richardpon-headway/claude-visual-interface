@@ -1,8 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ActivityFeed } from "./ActivityFeed";
 import { ChatInput } from "./ChatInput";
 import { ThinkingIndicator } from "./ThinkingIndicator";
+import { activePromptId, promptLandmarks } from "./rail";
 import { useSurfaceSocket } from "./useSurfaceSocket";
 
 function StatusChip({ status }: { status: string | null }) {
@@ -26,18 +27,43 @@ function StatusChip({ status }: { status: string | null }) {
   );
 }
 
-// The surface is one vertically-scrolling conversation column: the transcript
-// scrolls; the composer (thinking/Stop + input) is pinned at the bottom. Both are
-// centered to the same readable max-width.
+// The surface is one vertically-scrolling conversation column with an outline rail
+// of the user's prompts. The transcript scrolls; the composer is pinned at the
+// bottom; the rail jumps to a prompt and tracks the active one as you scroll.
 export function ReviewSurface({ surface }: { surface: string }) {
   const [{ view, status, title }, sendMessage, stop] = useSurfaceSocket(surface);
   const busy = view.thinking || status === "running";
+  const prompts = promptLandmarks(view.activity);
+
+  const [railOpen, setRailOpen] = useState(true);
+  const [active, setActive] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
 
   // Stick to the bottom as new content arrives.
-  const bottomRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [view.activity.length, view.thinking]);
+
+  // Scroll-spy: mark the active prompt from the rendered anchors' positions.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const update = () => {
+      const top = el.getBoundingClientRect().top;
+      const positions = Array.from(el.querySelectorAll<HTMLElement>('[id^="prompt-"]')).map(
+        (node) => ({ id: node.id, top: node.getBoundingClientRect().top - top }),
+      );
+      setActive(activePromptId(positions));
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    return () => el.removeEventListener("scroll", update);
+  }, [view.activity.length]);
+
+  function jumpTo(id: string) {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -45,16 +71,47 @@ export function ReviewSurface({ surface }: { surface: string }) {
         <a href="/" className="text-zinc-400 hover:text-zinc-100">
           ← sessions
         </a>
+        {prompts.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => setRailOpen((o) => !o)}
+            className="text-zinc-400 hover:text-zinc-100"
+            aria-label="Toggle outline"
+            title="Toggle outline"
+          >
+            ☰
+          </button>
+        ) : null}
         <span className="truncate text-zinc-300">{title ?? surface}</span>
         <span className="ml-auto">
           <StatusChip status={status} />
         </span>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-auto">
-        <div className="mx-auto max-w-3xl px-4 py-4">
-          <ActivityFeed activity={view.activity} />
-          <div ref={bottomRef} />
+      <div className="flex min-h-0 flex-1">
+        {railOpen && prompts.length > 0 ? (
+          <nav className="w-56 shrink-0 space-y-0.5 overflow-auto border-r border-zinc-800 p-2">
+            {prompts.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => jumpTo(p.id)}
+                title={p.text}
+                className={`block w-full truncate rounded px-2 py-1 text-left text-xs ${
+                  active === p.id ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:bg-zinc-900"
+                }`}
+              >
+                {p.text}
+              </button>
+            ))}
+          </nav>
+        ) : null}
+
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
+          <div className="mx-auto max-w-3xl px-4 py-4">
+            <ActivityFeed activity={view.activity} />
+            <div ref={bottomRef} />
+          </div>
         </div>
       </div>
 
