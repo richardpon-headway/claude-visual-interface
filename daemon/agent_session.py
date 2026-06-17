@@ -105,9 +105,9 @@ def with_surface_id(prompt: str, surface: str) -> str:
     a surface no browser is watching."""
     return (
         f"{prompt}\n\nYour surface id is `{surface}`. Pass it as the `surface` "
-        "argument to every cvi tool (render_html, open_code, highlight_range, etc.). "
-        'This id is fixed for the whole session — do not guess it, do not use "default", '
-        "and do not query the daemon for it."
+        "argument to every cvi tool (render_html, render_file). This id is fixed for "
+        'the whole session — do not guess it, do not use "default", and do not query '
+        "the daemon for it."
     )
 
 

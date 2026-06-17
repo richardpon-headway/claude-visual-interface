@@ -1,6 +1,6 @@
-"""The view-control primitives mutate the live store AND push over the hub."""
+"""The render primitives append a conversation segment AND push it over the hub,
+plus the transient broadcast helpers (status / title / thinking / prompt summary)."""
 
-import json
 from typing import Any
 
 from daemon import mcp_server
@@ -10,15 +10,9 @@ from daemon.mcp_server import (
     broadcast_status,
     broadcast_thinking,
     broadcast_title,
-    get_selection,
-    get_view_state,
-    highlight_range,
-    open_code,
     record_activity,
     render_file,
     render_html,
-    show_diff,
-    split_pane,
 )
 from daemon.view_state import store
 
@@ -31,82 +25,15 @@ class FakeWS:
         self.received.append(data)
 
 
-async def test_open_code_updates_store_and_broadcasts():
-    surface = "vc-open"
-    ws = FakeWS()
-    hub.register(surface, ws)
-    try:
-        await open_code.handler(
-            {"surface": surface, "file": "a.py", "range": {"start": 1, "end": 4}, "pane": 0}
-        )
-    finally:
-        hub.unregister(surface, ws)
-
-    assert store.get_or_create(surface).open[0].file == "a.py"
-    assert ws.received == [
-        {
-            "type": "open_code",
-            "surface": surface,
-            "payload": {"file": "a.py", "range": {"start": 1, "end": 4}, "pane": 0},
-        }
-    ]
-
-
-async def test_split_pane_broadcasts_event():
-    surface = "vc-split"
-    ws = FakeWS()
-    hub.register(surface, ws)
-    try:
-        await split_pane.handler({"surface": surface, "n": 3})
-    finally:
-        hub.unregister(surface, ws)
-
-    assert store.get_or_create(surface).panes == 3
-    assert ws.received == [{"type": "split_pane", "surface": surface, "payload": {"n": 3}}]
-
-
-async def test_highlight_range_broadcasts_event():
-    surface = "vc-highlight"
-    ws = FakeWS()
-    hub.register(surface, ws)
-    try:
-        await highlight_range.handler(
-            {"surface": surface, "file": "a.py", "range": {"start": 7, "end": 9}}
-        )
-    finally:
-        hub.unregister(surface, ws)
-
-    assert ws.received[0]["type"] == "highlight_range"
-    assert ws.received[0]["payload"] == {"file": "a.py", "range": {"start": 7, "end": 9}}
-
-
-async def test_show_diff_broadcasts_event():
-    surface = "vc-diff"
-    ws = FakeWS()
-    hub.register(surface, ws)
-    try:
-        await show_diff.handler({"surface": surface, "a": "current", "b": "patch-1"})
-    finally:
-        hub.unregister(surface, ws)
-
-    assert store.get_or_create(surface).diff.a == "current"
-    assert ws.received == [
-        {"type": "show_diff", "surface": surface, "payload": {"a": "current", "b": "patch-1"}}
-    ]
-
-
 async def test_render_html_appends_an_inline_artifact_and_broadcasts():
     surface = "vc-html"
     ws = FakeWS()
     hub.register(surface, ws)
     try:
-        await render_html.handler(
-            {"surface": surface, "html": "<p>hi</p>", "title": "design"}
-        )
+        await render_html.handler({"surface": surface, "html": "<p>hi</p>", "title": "design"})
     finally:
         hub.unregister(surface, ws)
 
-    # render_html now appends an inline artifact segment to the conversation stream.
     entry = store.get_or_create(surface).activity[-1]
     assert (entry.kind, entry.text, entry.html) == ("artifact", "design", "<p>hi</p>")
     assert ws.received == [
@@ -194,9 +121,7 @@ async def test_broadcast_status_broadcasts_without_storing():
     finally:
         hub.unregister(surface, ws)
 
-    assert ws.received == [
-        {"type": "status", "surface": surface, "payload": {"status": "ready"}}
-    ]
+    assert ws.received == [{"type": "status", "surface": surface, "payload": {"status": "ready"}}]
 
 
 async def test_broadcast_title_broadcasts_without_storing():
@@ -244,20 +169,3 @@ async def test_broadcast_thinking_sets_the_flag_and_broadcasts():
     assert ws.received == [
         {"type": "thinking", "surface": surface, "payload": {"active": True}}
     ]
-
-
-async def test_get_view_state_returns_current_state():
-    surface = "pull-vs"
-    await split_pane.handler({"surface": surface, "n": 2})
-    result = await get_view_state.handler({"surface": surface})
-    data = json.loads(result["content"][0]["text"])
-    assert data["surface"] == surface
-    assert data["panes"] == 2
-
-
-async def test_get_selection_reflects_stored_selection():
-    surface = "pull-sel"
-    store.set_selection(surface, "a.py", {"start": 2, "end": 5})
-    result = await get_selection.handler({"surface": surface})
-    data = json.loads(result["content"][0]["text"])
-    assert data["selection"] == {"file": "a.py", "range": {"start": 2, "end": 5}}

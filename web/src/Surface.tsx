@@ -30,7 +30,7 @@ function StatusChip({ status }: { status: string | null }) {
 // The surface is one vertically-scrolling conversation column with an outline rail
 // of the user's prompts. The transcript scrolls; the composer is pinned at the
 // bottom; the rail jumps to a prompt and tracks the active one as you scroll.
-export function ReviewSurface({ surface }: { surface: string }) {
+export function Surface({ surface }: { surface: string }) {
   const [{ view, status, title }, sendMessage, stop] = useSurfaceSocket(surface);
   const busy = view.thinking || status === "running";
   const prompts = promptLandmarks(view.activity);

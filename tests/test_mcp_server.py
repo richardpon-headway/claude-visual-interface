@@ -30,39 +30,16 @@ def db(tmp_path, monkeypatch):
 
 
 EXPECTED_PRIMITIVES = {
-    # view-control
-    "open_code",
-    "split_pane",
-    "highlight_range",
-    "show_diff",
     "render_html",
     "render_file",
-    # state
-    "anchor_message",
-    # pull
-    "get_selection",
-    "get_view_state",
 }
 
 # Valid arguments for each primitive, so every handler can be exercised.
 VALID_ARGS = {
-    "open_code": {"surface": "mcp-test", "file": "a.py"},
-    "split_pane": {"surface": "mcp-test", "n": 2},
-    "highlight_range": {"surface": "mcp-test", "file": "a.py", "range": {"start": 1, "end": 3}},
-    "show_diff": {"surface": "mcp-test", "a": "current", "b": "patch-1"},
     "render_html": {"surface": "mcp-test", "html": "<p>hi</p>"},
     # The seeded session has no worktree, so render_file returns its (content-block)
     # error result — enough to exercise the handler.
     "render_file": {"surface": "mcp-test", "path": "a.py"},
-    "anchor_message": {"message_id": "m", "file": "a.py", "range": {"start": 1, "end": 2}},
-    "get_selection": {"surface": "mcp-test"},
-    "get_view_state": {"surface": "mcp-test"},
-}
-
-# anchor_message stays stubbed until the messages table (phase 4); its handler
-# still echoes its name.
-UNWIRED_PRIMITIVES = {
-    "anchor_message",
 }
 
 
@@ -82,11 +59,6 @@ def test_chat_and_review_prompts_differ_and_both_drive_the_html_canvas():
     assert "code-review surface" in CVI_REVIEW_SYSTEM_PROMPT
 
 
-def test_pull_primitives_are_marked_read_only():
-    read_only = {t.name for t in TOOLS if t.annotations and t.annotations.readOnlyHint}
-    assert read_only == {"get_selection", "get_view_state"}
-
-
 def test_allowed_tools_are_fully_qualified():
     assert ALLOWED_TOOLS == [f"mcp__{SERVER_NAME}__{t.name}" for t in TOOLS]
 
@@ -97,13 +69,6 @@ async def test_every_handler_returns_a_content_block():
         assert isinstance(result["content"], list)
         assert result["content"]
         assert result["content"][0]["type"] == "text"
-
-
-async def test_unwired_primitives_still_echo_their_name():
-    by_name = {t.name: t for t in TOOLS}
-    for name in UNWIRED_PRIMITIVES:
-        result = await by_name[name].handler(VALID_ARGS[name])
-        assert name in result["content"][0]["text"]
 
 
 def test_build_agent_options_attaches_server_and_approves_primitives():

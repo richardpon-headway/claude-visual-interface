@@ -7,7 +7,6 @@ from daemon import agent_session, reviews
 from daemon.agent_session import ImageInput
 from daemon.hub import hub
 from daemon.main import _handle_inbound, _parse_image, app
-from daemon.view_state import store
 
 
 @pytest.fixture(autouse=True)
@@ -30,22 +29,11 @@ def test_ws_sends_a_snapshot_on_connect_and_registers_then_cleans_up():
     assert hub.subscriber_count(surface) == 0
 
 
-async def test_inbound_selection_frame_updates_the_store():
-    surface = "ws-sel"
-    frame = {"type": "selection", "payload": {"file": "a.py", "range": {"start": 1, "end": 3}}}
-    await _handle_inbound(surface, json.dumps(frame))
-    assert store.snapshot(surface)["selection"] == {
-        "file": "a.py",
-        "range": {"start": 1, "end": 3},
-    }
-
-
-async def test_inbound_ignores_malformed_unknown_and_incomplete_frames():
-    surface = "ws-sel-bad"
-    await _handle_inbound(surface, "{not json")
-    await _handle_inbound(surface, json.dumps({"type": "nope", "payload": {}}))
-    await _handle_inbound(surface, json.dumps({"type": "selection", "payload": {"file": "a.py"}}))
-    assert store.snapshot(surface)["selection"] is None
+async def test_inbound_ignores_malformed_and_unknown_frames():
+    # Malformed/unknown frames are dropped; the socket stays open (no raise).
+    await _handle_inbound("ws-bad", "{not json")
+    await _handle_inbound("ws-bad", json.dumps({"type": "nope", "payload": {}}))
+    await _handle_inbound("ws-bad", json.dumps({"type": "message"}))  # missing payload
 
 
 async def test_inbound_message_frame_routes_to_the_agent_registry(monkeypatch):

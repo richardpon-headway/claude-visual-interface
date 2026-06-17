@@ -224,10 +224,9 @@ async def _stop_surface(surface: str) -> None:
 
 
 async def _handle_inbound(surface: str, raw: str) -> None:
-    """Apply a browser→daemon frame. `selection` records the left-pane selection;
-    `message` routes a chat turn to the surface's live agent session; `stop` aborts
-    the agent's current work on the surface. Anything malformed or unknown is
-    ignored (the socket stays open)."""
+    """Apply a browser→daemon frame. `message` routes a chat turn to the surface's
+    live agent session; `stop` aborts the agent's current work on the surface.
+    Anything malformed or unknown is ignored (the socket stays open)."""
     try:
         msg = json.loads(raw)
     except (ValueError, TypeError):
@@ -241,12 +240,7 @@ async def _handle_inbound(surface: str, raw: str) -> None:
     payload = msg.get("payload")
     if not isinstance(payload, dict):
         return
-    if msg_type == "selection":
-        file = payload.get("file")
-        line_range = payload.get("range")
-        if isinstance(file, str) and isinstance(line_range, dict):
-            store.set_selection(surface, file, line_range)
-    elif msg_type == "message":
+    if msg_type == "message":
         raw_text = payload.get("text")
         text = raw_text.strip() if isinstance(raw_text, str) else ""
         image = _parse_image(payload.get("image"))
