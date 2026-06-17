@@ -21,6 +21,9 @@ class ActivityEntry:
     text: str
     html: str | None = None
     summary: str | None = None
+    # The persisted `message` row id, so a prompt's summary can be written back to
+    # the right row. Server-only — stripped from the snapshot (see ViewStore.snapshot).
+    message_id: int | None = None
 
 
 # Cap the per-surface activity buffer so a long conversation can't grow it without
@@ -66,7 +69,12 @@ class ViewStore:
         return entry
 
     def snapshot(self, surface: str) -> dict[str, Any]:
-        return asdict(self.get_or_create(surface))
+        snap = asdict(self.get_or_create(surface))
+        # message_id is a server-only handle for persisting a prompt's summary; it
+        # never goes to the browser.
+        for entry in snap["activity"]:
+            entry.pop("message_id", None)
+        return snap
 
 
 # The daemon owns a single live store for the whole process.

@@ -12,6 +12,7 @@ browser over the WebSocket; the buffer rides the connect snapshot for late joine
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ from claude_agent_sdk import (
     tool,
 )
 
+from daemon import messages
 from daemon.hub import hub
 from daemon.view_state import store
 
@@ -49,6 +51,11 @@ async def record_activity(
     hold the reference). `html` carries an artifact's page; it's omitted from the
     payload otherwise."""
     entry = store.append_activity(surface, kind, text, html)
+    # Write the segment through to SQLite so the transcript survives a daemon
+    # restart; hold the row id on the entry so a later summary can target it.
+    entry.message_id = await asyncio.to_thread(
+        messages.append_message, surface, kind, text, html
+    )
     payload: dict[str, Any] = {"kind": kind, "text": text}
     if html is not None:
         payload["html"] = html

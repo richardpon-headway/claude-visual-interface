@@ -7,7 +7,7 @@ import asyncio
 import pytest
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
 
-from daemon import agent_session, sessions, titles
+from daemon import agent_session, messages, sessions, titles
 from daemon.agent_session import AgentSessionRegistry
 from daemon.db import apply_migrations_sync, open_db
 from daemon.hub import hub
@@ -763,9 +763,12 @@ async def test_prompt_gets_a_generated_summary(monkeypatch):
 
     summary_event = next(m for m in ws.received if m["type"] == "prompt_summary")
     assert summary_event["payload"] == {"index": 0, "text": "fix the parser"}
-    # The summary also lands on the stored prompt entry (rides the snapshot).
+    # The summary also lands on the stored prompt entry (rides the snapshot)...
     user_entry = next(e for e in store.get_or_create(SESSION).activity if e.kind == "user")
     assert user_entry.summary == "fix the parser"
+    # ...and is written back to its persisted row so it survives a restart.
+    row = next(r for r in messages.list_messages(SESSION) if r["id"] == user_entry.message_id)
+    assert row["summary"] == "fix the parser"
     await reg.shutdown_all()
 
 

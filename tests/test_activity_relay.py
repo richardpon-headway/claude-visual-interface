@@ -1,9 +1,17 @@
 """The tool-call summarizer feeding the activity feed, plus the relay wiring."""
 
+import pytest
 from claude_agent_sdk import AssistantMessage, ToolUseBlock
 
 from daemon.activity_relay import relay_message_activity, summarize_tool_use
+from daemon.db import apply_migrations_sync
 from daemon.view_state import store
+
+
+@pytest.fixture(autouse=True)
+def db(tmp_path, monkeypatch):
+    monkeypatch.setenv("CVI_DB_PATH", str(tmp_path / "cvi.db"))
+    apply_migrations_sync()
 
 
 def _tool(name, inp):
