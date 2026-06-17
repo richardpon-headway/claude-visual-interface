@@ -633,22 +633,25 @@ class _FlakyTitleGen:
 
 
 class _GatedTitleGen:
-    """Blocks each call on a per-message gate so two attempts can be held in flight
-    at once — to exercise the race-safe 'keep the first successful' guarantee."""
+    """Blocks each call on a per-call gate so two attempts can be held in flight at
+    once — to exercise the race-safe 'keep the first successful' guarantee. Keyed by
+    call order rather than the message, because concurrent attempts read the same
+    rolling-window input and so can't be told apart by content."""
 
     def __init__(self):
-        self.gates: dict[str, asyncio.Event] = {}
-        self.done: set[str] = set()
+        self.gates: dict[int, asyncio.Event] = {}
+        self.done: set[int] = set()
         self.calls = 0
 
-    def gate(self, message: str) -> asyncio.Event:
-        return self.gates.setdefault(message, asyncio.Event())
+    def gate(self, call: int) -> asyncio.Event:
+        return self.gates.setdefault(call, asyncio.Event())
 
     async def generate(self, message):
         self.calls += 1
-        await self.gate(message).wait()
-        self.done.add(message)
-        return f"title:{message}"
+        call = self.calls  # assigned before any await, so each call gets a distinct id
+        await self.gate(call).wait()
+        self.done.add(call)
+        return f"title-{call}"
 
 
 async def test_first_text_message_titles_an_untitled_chat(monkeypatch):
@@ -731,16 +734,16 @@ async def test_keeps_the_first_successful_title_under_concurrency(monkeypatch):
         await reg.send(chat, "b")
         await _wait_until(lambda: gen.calls == 2)
 
-        # Let "a" win; it titles the chat.
-        gen.gate("a").set()
-        await _wait_until(lambda: sessions.get_session(chat)["title"] == "title:a")
+        # Let the first attempt win; it titles the chat.
+        gen.gate(1).set()
+        await _wait_until(lambda: sessions.get_session(chat)["title"] == "title-1")
 
-        # "b" finishes second — its conditional write no-ops and it must not clobber.
-        gen.gate("b").set()
-        await _wait_until(lambda: "b" in gen.done)
-        assert sessions.get_session(chat)["title"] == "title:a"
+        # The second finishes after — its conditional write no-ops and must not clobber.
+        gen.gate(2).set()
+        await _wait_until(lambda: 2 in gen.done)
+        assert sessions.get_session(chat)["title"] == "title-1"
         title_frames = [m for m in ws.received if m["type"] == "title"]
-        assert title_frames == [{"type": "title", "surface": chat, "payload": {"title": "title:a"}}]
+        assert title_frames == [{"type": "title", "surface": chat, "payload": {"title": "title-1"}}]
     finally:
         hub.unregister(chat, ws)
     await reg.shutdown_all()
@@ -782,4 +785,79 @@ async def test_chat_with_an_explicit_title_is_not_auto_titled(monkeypatch):
     await _wait_until(lambda: len(FakeClient.instances) == 1)
     assert gen.calls == 0
     assert sessions.get_session(chat)["title"] == "My Title"
+    await reg.shutdown_all()
+
+
+class _RecordingTitleGen:
+    """Returns a distinct title per call and records the input each call received,
+    so a test can assert both the cadence and what the refresh was fed."""
+
+    def __init__(self):
+        self.calls = 0
+        self.inputs: list[str] = []
+
+    async def generate(self, message):
+        self.calls += 1
+        self.inputs.append(message)
+        return f"Title {self.calls}"
+
+
+async def test_title_refreshes_every_five_prompts_from_the_recent_window(monkeypatch):
+    chat = sessions.create_chat_session()
+    gen = _RecordingTitleGen()
+    monkeypatch.setattr(titles, "generator", gen)
+    reg = AgentSessionRegistry()
+    ws = FakeWS()
+    hub.register(chat, ws)
+    try:
+        # Prompt 1 → the initial title.
+        await reg.send(chat, "one")
+        await _wait_until(lambda: sessions.get_session(chat)["title"] == "Title 1")
+
+        # Prompts 2-4 → no regeneration (cadence not reached).
+        for text in ("two", "three", "four"):
+            await reg.send(chat, text)
+        await _wait_until(
+            lambda: FakeClient.instances[0].queried[:4] == ["one", "two", "three", "four"]
+        )
+        assert gen.calls == 1
+        assert sessions.get_session(chat)["title"] == "Title 1"
+
+        # Prompt 5 → refresh overwrites the title and broadcasts live.
+        await reg.send(chat, "five")
+        await _wait_until(lambda: sessions.get_session(chat)["title"] == "Title 2")
+    finally:
+        hub.unregister(chat, ws)
+
+    assert {"type": "title", "surface": chat, "payload": {"title": "Title 2"}} in ws.received
+    # The refresh is fed the recent-message window, newest-first.
+    assert gen.inputs[-1] == "five\nfour\nthree\ntwo\none"
+    await reg.shutdown_all()
+
+
+async def test_image_only_turn_does_not_advance_the_refresh_cadence(monkeypatch):
+    chat = sessions.create_chat_session()
+    gen = _RecordingTitleGen()
+    monkeypatch.setattr(titles, "generator", gen)
+    reg = AgentSessionRegistry()
+
+    # Prompt 1 (text) → initial title.
+    await reg.send(chat, "one")
+    await _wait_until(lambda: sessions.get_session(chat)["title"] == "Title 1")
+
+    # An image-only turn carries no text — it must not count toward the cadence.
+    await reg.send(chat, "", image=agent_session.ImageInput(media_type="image/png", data="QUJD"))
+    for text in ("two", "three", "four"):
+        await reg.send(chat, text)
+    await _wait_until(
+        lambda: [q for q in FakeClient.instances[0].queried if isinstance(q, str)]
+        == ["one", "two", "three", "four"]
+    )
+    # Only four *text* prompts so far (the image didn't count) → no refresh yet.
+    assert gen.calls == 1
+    assert sessions.get_session(chat)["title"] == "Title 1"
+
+    # The fifth text prompt reaches the cadence and refreshes.
+    await reg.send(chat, "five")
+    await _wait_until(lambda: sessions.get_session(chat)["title"] == "Title 2")
     await reg.shutdown_all()

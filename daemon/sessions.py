@@ -116,6 +116,23 @@ def set_generated_title(session_id: str, title: str) -> bool:
         conn.close()
 
 
+def overwrite_title(session_id: str, title: str) -> None:
+    """Unconditionally replace a session's title (used by the periodic title refresh,
+    which always overwrites the previously generated title). Unlike set_generated_title
+    there is no title-state guard — there is no rename UI today, so no user-set title to
+    protect. Bumps updated_at."""
+    now = _now_iso()
+    conn = open_db()
+    try:
+        conn.execute(
+            "UPDATE session SET title = ?, updated_at = ? WHERE id = ?",
+            (title, now, session_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def set_agent_session_id(session_id: str, agent_session_id: str) -> bool:
     """Store the Claude Agent SDK session id this chat is running under, so it can
     resume after an idle-close or daemon restart. Returns False if no such session.

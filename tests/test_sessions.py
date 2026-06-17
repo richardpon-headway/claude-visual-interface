@@ -134,6 +134,18 @@ def test_set_generated_title_reports_missing_session():
     assert sessions.set_generated_title("ghost", "x") is False
 
 
+def test_overwrite_title_replaces_an_existing_title():
+    chat = sessions.create_chat_session()
+    assert sessions.set_generated_title(chat, "First title") is True
+    before = sessions.get_session(chat)["updated_at"]
+
+    # The refresh path overwrites unconditionally, unlike set_generated_title's guard.
+    sessions.overwrite_title(chat, "Refreshed title")
+    row = sessions.get_session(chat)
+    assert row["title"] == "Refreshed title"
+    assert row["updated_at"] >= before
+
+
 def test_archive_endpoint_removes_session_from_the_listing():
     _insert_session("s", updated_at="2026-01-01T00:00:00Z")
     with TestClient(app) as client:
