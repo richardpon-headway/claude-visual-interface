@@ -21,7 +21,7 @@ from daemon import sessions
 from daemon.agent_session import ImageInput, agents
 from daemon.db import apply_migrations
 from daemon.hub import hub
-from daemon.mcp_server import SERVER_NAME, TOOLS
+from daemon.mcp_server import SERVER_NAME, TOOLS, hydrate_surface
 from daemon.view_state import store
 
 _TOOLS_BY_NAME = {t.name: t for t in TOOLS}
@@ -136,6 +136,9 @@ async def ws_surface(websocket: WebSocket, surface: str) -> None:
     """
     await websocket.accept()
     hub.register(surface, websocket)
+    # Load any persisted transcript before snapshotting so a conversation that
+    # outlived a daemon restart replays on connect (no-op after the first connect).
+    await hydrate_surface(surface)
     await websocket.send_json(
         {"type": "snapshot", "surface": surface, "payload": store.snapshot(surface)}
     )

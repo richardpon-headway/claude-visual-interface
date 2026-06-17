@@ -13,6 +13,7 @@ from daemon.mcp_server import (
     broadcast_status,
     broadcast_thinking,
     broadcast_title,
+    hydrate_surface,
     record_activity,
     render_html,
 )
@@ -101,6 +102,44 @@ async def test_snapshot_strips_the_server_only_message_id():
     snap = store.snapshot(surface)
     assert snap["activity"][0]["kind"] == "text"
     assert "message_id" not in snap["activity"][0]
+
+
+async def test_hydrate_replays_persisted_history_into_the_snapshot():
+    # Simulate a prior daemon run by writing transcript rows directly.
+    surface = "vc-hydrate"
+    messages.append_message(surface, "user", "fix the parser")
+    messages.append_message(surface, "text", "on it")
+
+    await hydrate_surface(surface)
+
+    snap = store.snapshot(surface)
+    assert [(e["kind"], e["text"]) for e in snap["activity"]] == [
+        ("user", "fix the parser"),
+        ("text", "on it"),
+    ]
+    assert "message_id" not in snap["activity"][0]
+
+
+async def test_hydrate_is_idempotent_and_does_not_clobber_live_entries():
+    surface = "vc-hydrate-reconnect"
+    messages.append_message(surface, "user", "first")
+    await hydrate_surface(surface)
+    # A live entry recorded after the first connect...
+    await record_activity(surface, "text", "live reply")
+    # ...survives a reconnect: the second hydrate is a no-op (no re-query, no dupes).
+    await hydrate_surface(surface)
+
+    assert [(e.kind, e.text) for e in store.get_or_create(surface).activity] == [
+        ("user", "first"),
+        ("text", "live reply"),
+    ]
+
+
+async def test_hydrate_marks_empty_surfaces_so_they_are_not_requeried():
+    surface = "vc-hydrate-empty"
+    await hydrate_surface(surface)
+    assert store.is_hydrated(surface) is True
+    assert store.get_or_create(surface).activity == []
 
 
 async def test_broadcast_status_broadcasts_without_storing():

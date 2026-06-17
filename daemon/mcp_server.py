@@ -24,7 +24,7 @@ from claude_agent_sdk import (
 
 from daemon import messages
 from daemon.hub import hub
-from daemon.view_state import store
+from daemon.view_state import ActivityEntry, store
 
 SERVER_NAME = "cvi"
 SERVER_VERSION = "0.1.0"
@@ -41,6 +41,31 @@ async def render_html_on_surface(surface: str, html: str, title: str | None = No
     conversation stream: it rides the activity buffer (and the connect snapshot) and
     appears in order, like any other turn. The canonical effect behind render_html."""
     await record_activity(surface, "artifact", title or "", html=html)
+
+
+async def hydrate_surface(surface: str) -> None:
+    """Load a surface's persisted transcript into the live store on first connect, so
+    the connect snapshot replays a conversation that outlived a daemon restart. A
+    no-op after the first call this process run (idempotent across reconnects), and it
+    marks the surface hydrated even when empty so a reconnect won't re-query the DB or
+    clobber entries recorded live since."""
+    if store.is_hydrated(surface):
+        return
+    rows = await asyncio.to_thread(messages.list_messages, surface)
+    store.load_activity(
+        surface,
+        [
+            ActivityEntry(
+                kind=row["kind"],
+                text=row["text"],
+                html=row["html"],
+                summary=row["summary"],
+                message_id=row["id"],
+            )
+            for row in rows
+        ],
+    )
+    store.mark_hydrated(surface)
 
 
 async def record_activity(
