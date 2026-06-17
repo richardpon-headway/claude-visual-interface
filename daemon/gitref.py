@@ -50,3 +50,28 @@ async def resolve_base_ref(worktree_path: str, base_ref: str) -> str:
         return candidate
     log.info("base ref %s has no origin counterpart, using as-is", base_ref)
     return base_ref
+
+
+async def file_diff(worktree_path: str, base_ref: str, path: str) -> str | None:
+    """Return the unified diff of `path` between `base_ref` and HEAD (merge-base
+    based: `git diff base...HEAD -- path`), or None on any git failure. Read-only;
+    `path` is passed after `--` so it can't be read as a revision."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            "-C",
+            worktree_path,
+            "diff",
+            f"{base_ref}...HEAD",
+            "--",
+            path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await proc.communicate()
+    except OSError:
+        log.info("could not run git diff for %s", path)
+        return None
+    if proc.returncode != 0:
+        return None
+    return stdout.decode("utf-8", errors="replace")

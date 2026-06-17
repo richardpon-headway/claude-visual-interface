@@ -34,6 +34,7 @@ def test_dev_emit_renders_html():
         "text": "",
         "html": "<p>hi</p>",
         "summary": None,
+        "diff": None,
     }
 
 

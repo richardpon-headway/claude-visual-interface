@@ -16,6 +16,7 @@ export type ActivityEntry = {
   text: string;
   html?: string | null;
   summary?: string | null; // for a user prompt: its generated outline-rail label
+  diff?: string | null; // for a file segment (text=path): the unified diff vs the base
 };
 
 // Transient view state — mirrors daemon ViewState (store.snapshot).

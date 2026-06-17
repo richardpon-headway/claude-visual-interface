@@ -109,7 +109,7 @@ export function ReviewSurface({ surface }: { surface: string }) {
 
         <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
           <div className="mx-auto max-w-3xl px-4 py-4">
-            <ActivityFeed activity={view.activity} />
+            <ActivityFeed activity={view.activity} surface={surface} />
             <div ref={bottomRef} />
           </div>
         </div>
