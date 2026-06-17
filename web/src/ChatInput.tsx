@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type { ImageAttachment, SendMessage } from "./useSurfaceSocket";
 
@@ -11,7 +11,7 @@ export function ChatInput({ onSend }: { onSend: SendMessage }) {
   const [dragging, setDragging] = useState(false);
 
   // Shared by paste and drop: read an image File into the attachment chip.
-  function attachImageFile(file: File) {
+  const attachImageFile = useCallback((file: File) => {
     if (!file.type.startsWith("image/")) return;
     const reader = new FileReader();
     reader.onload = () => {
@@ -22,7 +22,42 @@ export function ChatInput({ onSend }: { onSend: SendMessage }) {
       if (comma >= 0) setImage({ media_type: file.type, data: result.slice(comma + 1) });
     };
     reader.readAsDataURL(file);
-  }
+  }, []);
+
+  // Accept image drops anywhere in the window, not just over the composer. The
+  // overlay only shows for file drags (not text/link drags), and clears when the
+  // cursor leaves the window — element-to-element moves keep relatedTarget set.
+  useEffect(() => {
+    function isFileDrag(e: DragEvent) {
+      return e.dataTransfer?.types.includes("Files") ?? false;
+    }
+    function onDragOver(e: DragEvent) {
+      if (!isFileDrag(e)) return;
+      e.preventDefault();
+      setDragging(true);
+    }
+    function onDragLeave(e: DragEvent) {
+      // relatedTarget is the node being entered; it's null/absent only when the
+      // cursor leaves the window entirely (element-to-element moves keep it set).
+      if (!e.relatedTarget) setDragging(false);
+    }
+    function onDrop(e: DragEvent) {
+      e.preventDefault();
+      setDragging(false);
+      const file = Array.from(e.dataTransfer?.files ?? []).find((f) =>
+        f.type.startsWith("image/"),
+      );
+      if (file) attachImageFile(file);
+    }
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("dragleave", onDragLeave);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("dragleave", onDragLeave);
+      window.removeEventListener("drop", onDrop);
+    };
+  }, [attachImageFile]);
 
   function handlePaste(e: React.ClipboardEvent) {
     const item = Array.from(e.clipboardData.items).find(
@@ -32,13 +67,6 @@ export function ChatInput({ onSend }: { onSend: SendMessage }) {
     if (!file) return;
     e.preventDefault();
     attachImageFile(file);
-  }
-
-  function handleDrop(e: React.DragEvent) {
-    e.preventDefault();
-    setDragging(false);
-    const file = Array.from(e.dataTransfer.files).find((f) => f.type.startsWith("image/"));
-    if (file) attachImageFile(file);
   }
 
   function send() {
@@ -63,16 +91,14 @@ export function ChatInput({ onSend }: { onSend: SendMessage }) {
   }
 
   return (
-    <form
-      onSubmit={submit}
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={handleDrop}
-      className={`flex shrink-0 flex-col gap-2 p-2 ${dragging ? "ring-1 ring-inset ring-zinc-500" : ""}`}
-    >
+    <form onSubmit={submit} className="flex shrink-0 flex-col gap-2 p-2">
+      {dragging ? (
+        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/60 ring-2 ring-inset ring-zinc-400">
+          <span className="rounded border border-zinc-600 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-200">
+            Drop an image to attach
+          </span>
+        </div>
+      ) : null}
       {image ? (
         <div className="flex items-center gap-2">
           <img
