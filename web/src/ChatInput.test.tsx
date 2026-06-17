@@ -143,4 +143,34 @@ describe("ChatInput", () => {
     fireEvent.dragOver(document.body, { dataTransfer: { types: ["text/plain"] } });
     expect(screen.queryByText(/drop an image to attach/i)).toBeNull();
   });
+
+  describe("busy toggle", () => {
+    it("shows Stop (not Send) while busy and calls onStop when clicked", () => {
+      const onSend = vi.fn();
+      const onStop = vi.fn();
+      render(<ChatInput onSend={onSend} busy onStop={onStop} />);
+
+      expect(screen.queryByRole("button", { name: /send/i })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: /stop the agent/i }));
+      expect(onStop).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not send on Enter while busy", () => {
+      const onSend = vi.fn();
+      render(<ChatInput onSend={onSend} busy onStop={vi.fn()} />);
+
+      const input = screen.getByRole("textbox", { name: /message the agent/i });
+      fireEvent.change(input, { target: { value: "queued thought" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(onSend).not.toHaveBeenCalled();
+    });
+
+    it("shows Send (not Stop) when idle", () => {
+      const onSend = vi.fn();
+      render(<ChatInput onSend={onSend} />);
+
+      expect(screen.getByRole("button", { name: /send/i })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /stop the agent/i })).toBeNull();
+    });
+  });
 });
