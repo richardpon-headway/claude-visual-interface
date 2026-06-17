@@ -101,7 +101,7 @@ class ChatRequest(BaseModel):
 
 @app.post("/chats")
 async def create_chat(req: ChatRequest | None = None) -> dict[str, str]:
-    """Create a worktree-free chat session and return its id. The body is optional
+    """Create a chat session and return its id. The body is optional
     (a titleless 'New chat'); the browser navigates to the surface and the
     conversation starts on the first message over the WebSocket."""
     title = req.title if req else None
