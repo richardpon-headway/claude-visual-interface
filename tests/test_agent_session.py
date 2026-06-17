@@ -576,6 +576,38 @@ async def test_falls_back_to_fresh_when_resume_fails(monkeypatch):
     await reg.shutdown_all()
 
 
+async def test_records_its_sdk_session_id_then_resumes_it_next_time(monkeypatch):
+    # A turn reports the SDK session id; it's persisted, and a fresh session for the
+    # same surface (after this one closed) reopens with resume set to it.
+    _seed_session(SESSION)  # agent_session_id is NULL
+
+    class IdClient(FakeClient):
+        async def receive_response(self):
+            yield AssistantMessage(content=[TextBlock(text="hi")], model="test")
+            yield ResultMessage(
+                subtype="success",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id="sdk-new",
+            )
+
+    monkeypatch.setattr(agent_session, "ClaudeSDKClient", lambda options=None: IdClient(options))
+    reg = AgentSessionRegistry()
+
+    await reg.send(SESSION, "hello")
+    await _wait_until(lambda: sessions.get_session(SESSION)["agent_session_id"] == "sdk-new")
+    await reg.shutdown_all()
+
+    # A new session for the same surface resumes from the recorded id.
+    reg2 = AgentSessionRegistry()
+    await reg2.send(SESSION, "again")
+    await _wait_until(lambda: len(FakeClient.instances) >= 2)
+    assert FakeClient.instances[-1].options.resume == "sdk-new"
+    await reg2.shutdown_all()
+
+
 class _FixedTitleGen:
     """Always returns a fixed title; counts calls."""
 
