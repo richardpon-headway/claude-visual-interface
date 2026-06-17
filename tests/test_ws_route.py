@@ -3,7 +3,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from daemon import agent_session, reviews
+from daemon import agent_session
 from daemon.agent_session import ImageInput
 from daemon.hub import hub
 from daemon.main import _handle_inbound, _parse_image, app
@@ -76,24 +76,19 @@ async def test_inbound_message_frame_routes_a_pasted_image(monkeypatch):
     ]
 
 
-async def test_inbound_stop_frame_interrupts_the_turn_and_cancels_the_run(monkeypatch):
+async def test_inbound_stop_frame_interrupts_the_turn(monkeypatch):
     surface = "ws-stop"
     called: dict[str, object] = {}
 
     async def fake_interrupt(s):
         called["interrupt"] = s
 
-    def fake_cancel(s):
-        called["cancel"] = s
-        return True
-
     monkeypatch.setattr(agent_session.agents, "interrupt", fake_interrupt)
-    monkeypatch.setattr(reviews, "cancel", fake_cancel)
 
     # No payload needed — stop applies to whatever is running on the surface.
     await _handle_inbound(surface, json.dumps({"type": "stop"}))
 
-    assert called == {"interrupt": surface, "cancel": surface}
+    assert called == {"interrupt": surface}
 
 
 def test_parse_image_accepts_valid_and_fails_closed_on_malformed():

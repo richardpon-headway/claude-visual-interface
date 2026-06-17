@@ -1,9 +1,8 @@
 """CVI daemon entry point.
 
 A manually-started local FastAPI daemon. It owns the SQLite DB, the MCP render
-vocabulary, the live view-state store, and the WebSocket push hub (and, in a later
-phase, the Agent SDK review sessions). Start it with ``make run``; all activity
-streams in that terminal.
+vocabulary, the live view-state store, the WebSocket push hub, and the Agent SDK
+chat sessions. Start it with ``make run``; all activity streams in that terminal.
 """
 
 from __future__ import annotations
@@ -18,7 +17,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from daemon import files, reviews, sessions
+from daemon import files, sessions
 from daemon.agent_session import ImageInput, agents
 from daemon.db import apply_migrations
 from daemon.hub import hub
@@ -117,28 +116,6 @@ async def get_session_file(session_id: str, path: str) -> dict[str, Any]:
     return {"path": result.path, "content": result.content, "reason": result.reason}
 
 
-class ReviewRequest(BaseModel):
-    worktree_path: str
-    base_ref: str
-    repo: str | None = None
-    branch: str | None = None
-    title: str | None = None
-
-
-@app.post("/reviews")
-async def create_review(req: ReviewRequest) -> dict[str, str]:
-    """Create a review session over a worktree and kick off the run. Returns the
-    session id; the run proceeds in the background and streams over its WebSocket."""
-    session_id = await reviews.start_review(
-        worktree_path=req.worktree_path,
-        base_ref=req.base_ref,
-        repo=req.repo,
-        branch=req.branch,
-        title=req.title,
-    )
-    return {"session_id": session_id}
-
-
 class ChatRequest(BaseModel):
     title: str | None = None
 
@@ -216,11 +193,9 @@ def _parse_image(raw: Any) -> ImageInput | None:
 
 
 async def _stop_surface(surface: str) -> None:
-    """Stop whatever the agent is doing on this surface: interrupt a live chat turn
-    and/or cancel an in-flight kickoff run. At most one is active per surface, and
-    both are no-ops when idle, so a stray Stop is harmless."""
+    """Stop whatever the agent is doing on this surface by interrupting the live
+    chat turn. A no-op when idle, so a stray Stop is harmless."""
     await agents.interrupt(surface)
-    reviews.cancel(surface)
 
 
 async def _handle_inbound(surface: str, raw: str) -> None:
