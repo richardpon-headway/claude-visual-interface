@@ -47,12 +47,17 @@ export function Surface({ surface }: { surface: string }) {
   const [railOpen, setRailOpen] = useState(true);
   const [active, setActive] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  // Stick to the bottom as new content arrives.
+  // Stick to the bottom as new content arrives. Pin the scroll container itself —
+  // scrollHeight covers the transcript's bottom padding, which scrollIntoView on a
+  // zero-height marker would leave below the fold. Re-run when the transcript grows,
+  // the last entry streams more text, or the thinking indicator toggles the composer
+  // height — each changes content height after the activity count has settled.
+  const lastEntryText = view.activity[view.activity.length - 1]?.text ?? "";
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [view.activity.length, view.thinking]);
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [view.activity.length, lastEntryText, view.thinking]);
 
   // Scroll-spy: mark the active prompt from the rendered anchors' positions.
   useEffect(() => {
@@ -119,7 +124,6 @@ export function Surface({ surface }: { surface: string }) {
         <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
           <div className="mx-auto max-w-3xl px-4 py-4">
             <ActivityFeed activity={view.activity} />
-            <div ref={bottomRef} />
           </div>
         </div>
       </div>
