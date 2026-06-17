@@ -1,6 +1,6 @@
 """The conversational session: lazy start, turn serialization, idle/shutdown reaping,
-and the no-worktree guard — exercised with a fake Agent SDK client. The real agent
-turn (Claude actually answering) needs the CLI + auth and is verified locally."""
+and resume — exercised with a fake Agent SDK client. The real agent turn (Claude
+actually answering) needs the CLI + auth and is verified locally."""
 
 import asyncio
 
@@ -40,7 +40,7 @@ def db(tmp_path, monkeypatch):
     apply_migrations_sync()
 
 
-def _seed_session(session_id, *, worktree_path, session_type="review", agent_session_id=None):
+def _seed_session(session_id, *, worktree_path, session_type="chat", agent_session_id=None):
     conn = open_db()
     try:
         conn.execute(
@@ -519,19 +519,6 @@ async def test_chat_session_uses_the_general_prompt_with_its_surface_id():
     await reg.shutdown_all()
 
 
-async def test_review_session_uses_the_review_prompt_with_its_surface_id():
-    _seed_session("review-p", worktree_path="/tmp/wt", session_type="review")
-    reg = AgentSessionRegistry()
-
-    await reg.send("review-p", "why is finding 1 low?")
-    await _wait_until(lambda: len(FakeClient.instances) == 1)
-
-    prompt = FakeClient.instances[0].options.system_prompt
-    assert prompt.startswith(agent_session.CVI_REVIEW_SYSTEM_PROMPT)
-    assert "review-p" in prompt
-    await reg.shutdown_all()
-
-
 def test_with_surface_id_appends_the_id_and_instruction():
     out = agent_session.with_surface_id("BASE PROMPT", "surface-123")
     assert out.startswith("BASE PROMPT")
@@ -540,20 +527,20 @@ def test_with_surface_id_appends_the_id_and_instruction():
     assert "default" in out  # explicitly warns the agent off guessing "default"
 
 
-async def test_resumes_the_recorded_review_session():
-    _seed_session(SESSION, worktree_path="/tmp/wt", agent_session_id="sdk-xyz")
+async def test_resumes_the_recorded_session():
+    _seed_session(SESSION, worktree_path=None, agent_session_id="sdk-xyz")
     reg = AgentSessionRegistry()
 
-    await reg.send(SESSION, "why is finding 1 low?")
+    await reg.send(SESSION, "pick up where we left off")
     await _wait_until(lambda: len(FakeClient.instances) == 1)
 
-    # The chat client continues the review's conversation.
+    # The client continues the prior conversation rather than starting blank.
     assert FakeClient.instances[0].options.resume == "sdk-xyz"
     await reg.shutdown_all()
 
 
-async def test_starts_fresh_when_no_review_session_recorded():
-    _seed_session(SESSION, worktree_path="/tmp/wt")  # agent_session_id is NULL
+async def test_starts_fresh_when_no_session_recorded():
+    _seed_session(SESSION, worktree_path=None)  # agent_session_id is NULL
     reg = AgentSessionRegistry()
 
     await reg.send(SESSION, "hello")
@@ -564,7 +551,7 @@ async def test_starts_fresh_when_no_review_session_recorded():
 
 
 async def test_falls_back_to_fresh_when_resume_fails(monkeypatch):
-    _seed_session(SESSION, worktree_path="/tmp/wt", agent_session_id="stale-id")
+    _seed_session(SESSION, worktree_path=None, agent_session_id="stale-id")
     store.get_or_create(SESSION).activity.clear()
 
     class ResumeFailClient(FakeClient):
@@ -747,18 +734,6 @@ async def test_prompt_gets_a_generated_summary(monkeypatch):
     # The summary also lands on the stored prompt entry (rides the snapshot).
     user_entry = next(e for e in store.get_or_create(SESSION).activity if e.kind == "user")
     assert user_entry.summary == "fix the parser"
-    await reg.shutdown_all()
-
-
-async def test_review_session_is_not_auto_titled(monkeypatch):
-    _seed_session("rev", worktree_path="/tmp/wt", session_type="review")  # title NULL
-    gen = _FixedTitleGen()
-    monkeypatch.setattr(titles, "generator", gen)
-    reg = AgentSessionRegistry()
-
-    await reg.send("rev", "hello")
-    await _wait_until(lambda: len(FakeClient.instances) == 1)
-    assert gen.calls == 0  # reviews aren't chat-titled
     await reg.shutdown_all()
 
 

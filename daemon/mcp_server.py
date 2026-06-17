@@ -211,9 +211,8 @@ async def _approve_read_only_tools(
     return PermissionResultDeny(message="CVI review sessions are read-only")
 
 
-# The render contract both prompts share: visuals render inline in the conversation
-# as self-contained no-script pages. Kept as one constant so the rule can't drift
-# between the chat and review framings.
+# The render contract: visuals render inline in the conversation as self-contained
+# no-script pages. Kept as one constant so the chat prompt's rule can't drift.
 _RENDER_HTML_GUIDANCE = (
     "For anything visual — a design, diagram, table, chart, or report — use "
     "mcp__cvi__render_html to render a full HTML page inline in the conversation. That "
@@ -222,22 +221,12 @@ _RENDER_HTML_GUIDANCE = (
     "when the user asks to see something."
 )
 
-# The general framing for a conversational session. The default the chat agent
-# passes for a non-review surface.
+# The framing for a conversational session — the system prompt every chat agent runs.
 CVI_CHAT_SYSTEM_PROMPT = (
     "You are a Claude session with a visual surface: a single conversation the user "
     "reads top to bottom, where your answers, rendered HTML pages, and file diffs all "
     f"appear inline. {_RENDER_HTML_GUIDANCE} This is a read-only session — do not edit "
     "files."
-)
-
-# The review specialization. The one-shot runner omits this (its review prompt is
-# self-contained); the chat agent passes it when continuing a review conversation.
-CVI_REVIEW_SYSTEM_PROMPT = (
-    "You are operating a visual code-review surface — a single conversation. Present "
-    "findings as normal messages, one at a time, naming the file and lines. Use "
-    "mcp__cvi__render_file to show a changed file's diff inline when it helps. "
-    f"{_RENDER_HTML_GUIDANCE} This is a read-only session — do not edit files."
 )
 
 

@@ -1,12 +1,12 @@
 # Claude Visual Interface (CVI)
 
 A local-first visual surface for Claude sessions. A local daemon hosts Claude
-sessions and an MCP server; a browser renders code, diffs, and findings the
-session pushes, and feeds your input back — all talking to the API directly,
-no shared gateway.
+sessions and an MCP server; a browser renders the visuals and code the session
+pushes, and feeds your input back — all talking to the API directly, no shared
+gateway.
 
-First use case: **PR reviews** — see the code and Claude's findings together,
-with a single conversation to discuss them.
+It's a single scrolling conversation: ask Claude anything and read the reply top to
+bottom, with designs, diagrams, tables, and reports rendered inline as you go.
 
 > Early / work in progress.
 
@@ -26,6 +26,6 @@ Health check:
 
 ## Layout
 
-- `daemon/` — Python FastAPI daemon (SQLite + the MCP render-primitive vocabulary; Agent SDK review sessions land later)
+- `daemon/` — Python FastAPI daemon (SQLite + the MCP render-primitive vocabulary; Agent SDK chat sessions)
 - `web/` — TypeScript React client (added in a later phase)
-- `skills/` — the launcher / review-adapter skills (added in a later phase)
+- `skills/` — launcher skills (added in a later phase)

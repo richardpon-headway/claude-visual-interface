@@ -18,7 +18,7 @@ def _insert_session(session_id, *, updated_at, archived_at=None, deleted_at=None
         conn.execute(
             "INSERT INTO session "
             "(id, type, status, created_at, updated_at, archived_at, deleted_at) "
-            "VALUES (?, 'review', 'ready', 't', ?, ?, ?)",
+            "VALUES (?, 'chat', 'ready', 't', ?, ?, ?)",
             (session_id, updated_at, archived_at, deleted_at),
         )
         conn.commit()
@@ -39,14 +39,6 @@ def test_create_chat_session_is_worktree_free_and_ready():
 def test_create_chat_session_honors_a_title():
     session_id = sessions.create_chat_session("scratchpad")
     assert sessions.get_session(session_id)["title"] == "scratchpad"
-
-
-def test_create_review_session_still_sets_worktree_and_running():
-    session_id = sessions.create_review_session(worktree_path="/tmp/wt", base_ref="main")
-    row = sessions.get_session(session_id)
-    assert row["type"] == "review"
-    assert row["status"] == "running"
-    assert row["worktree_path"] == "/tmp/wt"
 
 
 def test_create_chat_endpoint_returns_a_ready_chat_session():
