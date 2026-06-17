@@ -17,9 +17,6 @@ from typing import Any
 
 from claude_agent_sdk import (
     ClaudeAgentOptions,
-    PermissionResultAllow,
-    PermissionResultDeny,
-    ToolPermissionContext,
     create_sdk_mcp_server,
     tool,
 )
@@ -150,25 +147,6 @@ cvi_server = create_sdk_mcp_server(
 )
 
 
-# Built-in tools a review session needs to inspect the checkout (read + git),
-# auto-approved alongside the cvi primitives. Edit/Write are intentionally absent:
-# a review is read-only (applying fixes is a later phase).
-REVIEW_TOOLS = ["Read", "Grep", "Glob", "Bash"]
-
-_REVIEW_APPROVED = frozenset([*ALLOWED_TOOLS, *REVIEW_TOOLS])
-
-
-async def _approve_read_only_tools(
-    tool_name: str, tool_input: dict[str, Any], context: ToolPermissionContext
-) -> PermissionResultAllow | PermissionResultDeny:
-    """Headless permission gate: approve the review tool set, deny everything else
-    (e.g. Edit/Write). Keeps an unattended review read-only and never blocks on an
-    interactive prompt."""
-    if tool_name in _REVIEW_APPROVED:
-        return PermissionResultAllow()
-    return PermissionResultDeny(message="CVI review sessions are read-only")
-
-
 # The render contract: visuals render inline in the conversation as self-contained
 # no-script pages. Kept as one constant so the chat prompt's rule can't drift.
 _RENDER_HTML_GUIDANCE = (
@@ -182,9 +160,9 @@ _RENDER_HTML_GUIDANCE = (
 # The framing for a conversational session — the system prompt every chat agent runs.
 CVI_CHAT_SYSTEM_PROMPT = (
     "You are a Claude session with a visual surface: a single conversation the user "
-    "reads top to bottom, where your answers, rendered HTML pages, and file diffs all "
-    f"appear inline. {_RENDER_HTML_GUIDANCE} This is a read-only session — do not edit "
-    "files."
+    "reads top to bottom, where your answers and rendered HTML pages appear inline. "
+    f"{_RENDER_HTML_GUIDANCE} You can read and edit files and run commands, just like "
+    "any Claude session."
 )
 
 
@@ -193,15 +171,16 @@ def build_agent_options(
     system_prompt: str | None = None,
     resume: str | None = None,
 ) -> ClaudeAgentOptions:
-    """Build the session-connection point: options that attach the CVI MCP server
-    and pre-approve its primitives plus the read-only review tools. Pass `cwd` to
-    run the session against a review worktree, `system_prompt` to steer an
-    interactive session (the one-shot runner leaves it None), and `resume` with a
-    prior SDK session id to continue that conversation (chat resuming a review)."""
+    """Build the session-connection point: options that attach the CVI MCP server and
+    grant full read/write tool access. A daemon session is headless (no interactive
+    permission prompts), so `bypassPermissions` is the equivalent of the CLI's
+    accept-all. `cwd` is a dormant hook for a future per-session working directory
+    (callers pass nothing today); `system_prompt` steers the session; `resume` carries
+    a prior SDK session id to continue that conversation."""
     return ClaudeAgentOptions(
         mcp_servers={SERVER_NAME: cvi_server},
-        allowed_tools=[*ALLOWED_TOOLS, *REVIEW_TOOLS],
-        can_use_tool=_approve_read_only_tools,
+        allowed_tools=ALLOWED_TOOLS,
+        permission_mode="bypassPermissions",
         cwd=cwd,
         system_prompt=system_prompt,
         resume=resume,
