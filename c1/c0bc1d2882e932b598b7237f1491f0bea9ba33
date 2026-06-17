@@ -1,0 +1,24 @@
+web/src/ActivityFeed.tsx
+  s_1a0096a62c009e::t_b00831d17b4378 88-90,92-94,97
+web/src/ActivityFeed.test.tsx
+  s_1a0096a62c009e::t_e9c9fdb4b4dac4 9-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "c1c0bc1d2882e932b598b7237f1491f0bea9ba33",
+  "prompts": {},
+  "sessions": {
+    "s_1a0096a62c009e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4cb239e5-c99c-4cf4-a459-b5a50935712e",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
