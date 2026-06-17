@@ -1,0 +1,31 @@
+tests/test_migrations.py
+  s_7645e4f7623a8d::t_9511c60db152a4 29-30
+daemon/migrations/004_chat_only.sql
+  s_7645e4f7623a8d::t_6d9cea11abaadb 1-44
+daemon/main.py
+  s_7645e4f7623a8d::t_1afacfb2525f11 53-54
+tests/test_agent_session.py
+  s_7645e4f7623a8d::t_5c25908f940fd9 116,135,153,198,207,219,236,262,292,317,365,390,415,475,510,531,543,554,718
+  s_7645e4f7623a8d::t_896edca55ffe28 43,48-50
+tests/test_sessions.py
+  s_7645e4f7623a8d::t_4a841d12bfda1f 29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "3134781a606715d3d7a3a9843aa38be161ea0a4c",
+  "prompts": {},
+  "sessions": {
+    "s_7645e4f7623a8d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4c08881d-a165-4720-ad7c-55bea7364e66",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
