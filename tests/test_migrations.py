@@ -30,6 +30,21 @@ def test_migrations_create_session_schema(tmp_path):
     assert _table_columns(db_path, "finding") == set()
 
 
+def test_migrations_create_message_table(tmp_path):
+    db_path = tmp_path / "cvi.db"
+    apply_migrations_sync(db_path)
+
+    assert _table_columns(db_path, "message") == {
+        "id",
+        "surface",
+        "kind",
+        "text",
+        "html",
+        "summary",
+        "created_at",
+    }
+
+
 def test_migrations_are_recorded(tmp_path):
     db_path = tmp_path / "cvi.db"
     apply_migrations_sync(db_path)
