@@ -1,0 +1,51 @@
+daemon/sessions.py
+  s_615aafd18b9701::t_1b79c82eec4b0b 119-135
+daemon/agent_session.py
+  s_615aafd18b9701::t_f6de474b3a1635 20
+  s_615aafd18b9701::t_c98773341e1e51 131-138
+  s_615aafd18b9701::t_a6227d9a2fe00a 328-330,332,338,350,352
+  s_615aafd18b9701::t_be819a27fad88e 318-324,326-327,331,333-337,339-341,345-348,368-372,374-383
+  s_615aafd18b9701::t_6738d12744f090 21
+  s_615aafd18b9701::t_09768b95546204 367,373
+tests/test_sessions.py
+  s_615aafd18b9701::t_f13d25d2074d4e 137-148
+tests/test_titles.py
+  s_615aafd18b9701::t_d6ddf1ccf41838 21-31
+tests/test_agent_session.py
+  s_615aafd18b9701::t_854f7d07ba73ec 789-863
+  s_615aafd18b9701::t_27f8d4aae2fb86 737,741
+  s_2faafd284a4546::t_36c341da6e28da 636-639,642-643,646-647,651-654
+  s_2faafd284a4546::t_c03eef4494d15b 738-739,742-744,746
+daemon/titles.py
+  s_615aafd18b9701::t_971a5e00c32d62 20-23,30-36,41-42,45-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "fe3b3d919f84b6557a8d629b585ffc87068c8acd",
+  "prompts": {},
+  "sessions": {
+    "s_2faafd284a4546": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3c604144-5b50-4358-af2b-e7c1c6ffe973",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    },
+    "s_615aafd18b9701": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1242156c-18f4-46de-ba24-03f8af298faa",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
