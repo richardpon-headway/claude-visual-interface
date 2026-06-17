@@ -1,4 +1,4 @@
-from daemon.view_state import MAX_ACTIVITY, ViewStore
+from daemon.view_state import ActivityEntry, ViewStore
 
 
 def test_snapshot_is_json_shaped_and_starts_empty():
@@ -47,12 +47,33 @@ def test_append_activity_carries_an_artifact_payload():
     assert activity[0].html == "<p>hi</p>"
 
 
-def test_append_activity_caps_at_max_keeping_newest():
+def test_append_activity_keeps_full_history_uncapped():
     store = ViewStore()
-    for i in range(MAX_ACTIVITY + 10):
+    for i in range(500):
         store.append_activity("s", "text", f"line {i}")
 
     activity = store.get_or_create("s").activity
-    assert len(activity) == MAX_ACTIVITY
-    assert activity[0].text == "line 10"
-    assert activity[-1].text == f"line {MAX_ACTIVITY + 9}"
+    assert len(activity) == 500
+    assert activity[0].text == "line 0"
+    assert activity[-1].text == "line 499"
+
+
+def test_load_activity_replaces_the_transcript_and_rides_the_snapshot():
+    store = ViewStore()
+    store.load_activity(
+        "s",
+        [ActivityEntry(kind="user", text="hello", summary="greeting", message_id=7)],
+    )
+    snap = store.snapshot("s")
+    # The loaded entry rides the snapshot; message_id stays server-only.
+    assert snap["activity"] == [
+        {"kind": "user", "text": "hello", "html": None, "summary": "greeting"}
+    ]
+
+
+def test_hydration_flag_tracks_per_surface():
+    store = ViewStore()
+    assert store.is_hydrated("s") is False
+    store.mark_hydrated("s")
+    assert store.is_hydrated("s") is True
+    assert store.is_hydrated("other") is False

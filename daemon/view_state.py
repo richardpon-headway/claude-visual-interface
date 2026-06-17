@@ -26,11 +26,6 @@ class ActivityEntry:
     message_id: int | None = None
 
 
-# Cap the per-surface activity buffer so a long conversation can't grow it without
-# bound; oldest entries are dropped when it overflows.
-MAX_ACTIVITY = 200
-
-
 @dataclass
 class ViewState:
     surface: str
@@ -47,6 +42,9 @@ class ViewStore:
 
     def __init__(self) -> None:
         self._surfaces: dict[str, ViewState] = {}
+        # Surfaces whose persisted history has been loaded this process run, so a
+        # reconnect doesn't re-query the DB or clobber live entries.
+        self._hydrated: set[str] = set()
 
     def get_or_create(self, surface: str) -> ViewState:
         state = self._surfaces.get(surface)
@@ -64,9 +62,18 @@ class ViewStore:
         activity = self.get_or_create(surface).activity
         entry = ActivityEntry(kind=kind, text=text, html=html)
         activity.append(entry)
-        if len(activity) > MAX_ACTIVITY:
-            del activity[: len(activity) - MAX_ACTIVITY]
         return entry
+
+    def is_hydrated(self, surface: str) -> bool:
+        return surface in self._hydrated
+
+    def mark_hydrated(self, surface: str) -> None:
+        self._hydrated.add(surface)
+
+    def load_activity(self, surface: str, entries: list[ActivityEntry]) -> None:
+        """Replace a surface's transcript with its persisted history. Used only by
+        hydration on first connect, before any live entries are recorded."""
+        self.get_or_create(surface).activity = entries
 
     def snapshot(self, surface: str) -> dict[str, Any]:
         snap = asdict(self.get_or_create(surface))
