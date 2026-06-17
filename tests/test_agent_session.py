@@ -214,8 +214,8 @@ async def test_shutdown_all_closes_a_live_session():
     assert reg.active_surfaces() == []
 
 
-async def test_chat_session_with_no_worktree_starts_and_chats():
-    # A general chat has no worktree — it starts anyway and runs with cwd=None.
+async def test_chat_session_starts_and_chats():
+    # A session with a row starts on first message and runs a turn end to end.
     _seed_session("chat-no-wt", session_type="chat")
     store.get_or_create("chat-no-wt").activity.clear()
     reg = AgentSessionRegistry()

@@ -54,15 +54,15 @@ async def relay_message_activity(session_id: str, message: object) -> None:
     if isinstance(message, AssistantMessage):
         for block in message.content:
             if isinstance(block, TextBlock):
-                log.info("[review %s] %s", session_id, block.text)
+                log.info("[chat %s] %s", session_id, block.text)
                 await record_activity(session_id, "text", block.text)
             elif isinstance(block, ToolUseBlock):
                 summary = summarize_tool_use(block)
-                log.info("[review %s] tool: %s", session_id, summary)
+                log.info("[chat %s] tool: %s", session_id, summary)
                 await record_activity(session_id, "tool", summary)
     elif isinstance(message, ResultMessage):
         log.info(
-            "[review %s] result: subtype=%s is_error=%s",
+            "[chat %s] result: subtype=%s is_error=%s",
             session_id,
             message.subtype,
             message.is_error,
