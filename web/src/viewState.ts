@@ -3,15 +3,13 @@
 // these in sync with daemon/view_state.py.
 
 // One conversation segment (mirrors daemon ActivityEntry): the user's prompt,
-// Claude's text, a tool call, a run result, an inline artifact (kind "artifact":
-// `html` is the page, `text` its title), or a file diff (kind "file": `text` is the
-// path, `diff` the unified diff).
+// Claude's text, a tool call, a run result, or an inline artifact (kind "artifact":
+// `html` is the page, `text` its title).
 export type ActivityEntry = {
   kind: string;
   text: string;
   html?: string | null;
   summary?: string | null; // for a user prompt: its generated outline-rail label
-  diff?: string | null; // for a file segment (text=path): the unified diff vs the base
 };
 
 // Transient view state — mirrors daemon ViewState (store.snapshot): the conversation

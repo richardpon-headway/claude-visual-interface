@@ -2,18 +2,16 @@
 
 The daemon hosts a single in-process MCP server (via the Claude Agent SDK) that a
 session connects to. A surface is one scrolling conversation; the agent renders
-content into it with two primitives:
+content into it with one primitive:
 
 - render_html — a self-contained HTML page, inline in the conversation
-- render_file — a file's diff (vs the review base), inline in the conversation
 
-Both append a segment to the per-surface activity buffer and broadcast it to the
+It appends a segment to the per-surface activity buffer and broadcasts it to the
 browser over the WebSocket; the buffer rides the connect snapshot for late joiners.
 """
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -26,8 +24,6 @@ from claude_agent_sdk import (
     tool,
 )
 
-from daemon import sessions
-from daemon.gitref import file_diff, resolve_base_ref
 from daemon.hub import hub
 from daemon.view_state import store
 
@@ -49,18 +45,16 @@ async def render_html_on_surface(surface: str, html: str, title: str | None = No
 
 
 async def record_activity(
-    surface: str, kind: str, text: str, html: str | None = None, diff: str | None = None
+    surface: str, kind: str, text: str, html: str | None = None
 ):
     """Append a conversation segment on a surface and push it to subscribers; return
     the stored entry (callers that need to enrich it later — e.g. a prompt's summary —
-    hold the reference). `html` carries an artifact's page and `diff` a file segment's
-    unified diff; each is omitted from the payload otherwise."""
-    entry = store.append_activity(surface, kind, text, html, diff)
+    hold the reference). `html` carries an artifact's page; it's omitted from the
+    payload otherwise."""
+    entry = store.append_activity(surface, kind, text, html)
     payload: dict[str, Any] = {"kind": kind, "text": text}
     if html is not None:
         payload["html"] = html
-    if diff is not None:
-        payload["diff"] = diff
     await hub.broadcast(
         surface,
         {"type": "activity", "surface": surface, "payload": payload},
@@ -139,45 +133,9 @@ async def render_html(args: dict[str, Any]) -> dict[str, Any]:
     return _ok(f"rendered html on surface {surface}")
 
 
-@tool(
-    "render_file",
-    "Render a file's diff (vs the review base) inline in the conversation so the "
-    "user can read the code you're discussing. Use during a review for each file you "
-    "review. The surface's session must have a worktree.",
-    {
-        "type": "object",
-        "properties": {
-            "surface": {"type": "string", "description": "Surface UUID to route to"},
-            "path": {"type": "string", "description": "Repo-relative file path"},
-        },
-        "required": ["surface", "path"],
-    },
-)
-async def render_file(args: dict[str, Any]) -> dict[str, Any]:
-    surface = args["surface"]
-    path = args["path"]
-    session = await asyncio.to_thread(sessions.get_session, surface)
-    worktree = session.get("worktree_path") if session else None
-    if not worktree:
-        return {
-            "content": [{"type": "text", "text": "no worktree for this surface"}],
-            "is_error": True,
-        }
-    resolved = await resolve_base_ref(worktree, session.get("base_ref") or "HEAD")
-    diff = await file_diff(worktree, resolved, path)
-    if diff is None:
-        return {
-            "content": [{"type": "text", "text": f"could not diff {path}"}],
-            "is_error": True,
-        }
-    await record_activity(surface, "file", path, diff=diff)
-    return _ok(f"rendered {path} ({len(diff)} bytes of diff)")
-
-
 # The full primitive vocabulary: render content into the conversation.
 TOOLS = [
     render_html,
-    render_file,
 ]
 
 TOOL_NAMES = [t.name for t in TOOLS]

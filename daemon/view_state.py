@@ -15,14 +15,12 @@ from typing import Any
 @dataclass
 class ActivityEntry:
     # One segment of the conversation: the user's prompt, Claude's text, a tool
-    # call, a run result, an inline artifact (kind="artifact": `html` is the page,
-    # `text` its title), or a file diff (kind="file": `text` is the path, `diff` the
-    # unified diff). `summary` is a user prompt's generated outline-rail label.
-    kind: str  # "user" | "text" | "tool" | "result" | "artifact" | "file"
+    # call, a run result, or an inline artifact (kind="artifact": `html` is the page,
+    # `text` its title). `summary` is a user prompt's generated outline-rail label.
+    kind: str  # "user" | "text" | "tool" | "result" | "artifact"
     text: str
     html: str | None = None
     summary: str | None = None
-    diff: str | None = None
 
 
 # Cap the per-surface activity buffer so a long conversation can't grow it without
@@ -58,10 +56,10 @@ class ViewStore:
         self.get_or_create(surface).thinking = active
 
     def append_activity(
-        self, surface: str, kind: str, text: str, html: str | None = None, diff: str | None = None
+        self, surface: str, kind: str, text: str, html: str | None = None
     ) -> ActivityEntry:
         activity = self.get_or_create(surface).activity
-        entry = ActivityEntry(kind=kind, text=text, html=html, diff=diff)
+        entry = ActivityEntry(kind=kind, text=text, html=html)
         activity.append(entry)
         if len(activity) > MAX_ACTIVITY:
             del activity[: len(activity) - MAX_ACTIVITY]

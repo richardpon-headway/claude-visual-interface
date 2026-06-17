@@ -26,8 +26,8 @@ def test_append_activity_accumulates_and_rides_the_snapshot():
 
     snap = store.snapshot("s")
     assert snap["activity"] == [
-        {"kind": "text", "text": "reviewing the diff", "html": None, "summary": None, "diff": None},
-        {"kind": "tool", "text": "Bash", "html": None, "summary": None, "diff": None},
+        {"kind": "text", "text": "reviewing the diff", "html": None, "summary": None},
+        {"kind": "tool", "text": "Bash", "html": None, "summary": None},
     ]
 
 
@@ -40,13 +40,11 @@ def test_append_activity_returns_the_stored_entry():
     assert store.get_or_create("s").activity[-1].summary == "greeting"
 
 
-def test_append_activity_carries_artifact_and_file_payloads():
+def test_append_activity_carries_an_artifact_payload():
     store = ViewStore()
     store.append_activity("s", "artifact", "design", html="<p>hi</p>")
-    store.append_activity("s", "file", "a.py", diff="@@ -1 +1 @@")
     activity = store.get_or_create("s").activity
     assert activity[0].html == "<p>hi</p>"
-    assert activity[1].diff == "@@ -1 +1 @@"
 
 
 def test_append_activity_caps_at_max_keeping_newest():
