@@ -47,12 +47,11 @@ export type Finding = {
   disposition: string | null;
 };
 
-// The full client state for a surface: the live view plus its findings (keyed by
-// id), the session's run status (running / ready / error; null until known), and
-// its title (null until known; auto-generated for chats).
+// The full client state for a surface: the live view, the session's run status
+// (running / ready / error; null until known), and its title (null until known;
+// auto-generated for chats).
 export type SurfaceState = {
   view: ViewState;
-  findings: Record<string, Finding>;
   status: string | null;
   title: string | null;
 };
@@ -66,8 +65,6 @@ export type WsMessage =
   | { type: "highlight_range"; surface: string; payload: { file: string; range: Range } }
   | { type: "show_diff"; surface: string; payload: { a: string; b: string } }
   | { type: "render_html"; surface: string; payload: { html: string; title: string | null } }
-  | { type: "finding"; surface: string; payload: Finding }
-  | { type: "disposition"; surface: string; payload: { finding_id: string; value: string } }
   | { type: "activity"; surface: string; payload: ActivityEntry }
   | { type: "status"; surface: string; payload: { status: string } }
   | { type: "thinking"; surface: string; payload: { active: boolean } }
@@ -81,8 +78,6 @@ const MESSAGE_TYPES = [
   "highlight_range",
   "show_diff",
   "render_html",
-  "finding",
-  "disposition",
   "activity",
   "status",
   "thinking",
@@ -105,7 +100,7 @@ export function emptyViewState(surface: string): ViewState {
 }
 
 export function emptySurface(surface: string): SurfaceState {
-  return { view: emptyViewState(surface), findings: {}, status: null, title: null };
+  return { view: emptyViewState(surface), status: null, title: null };
 }
 
 // Parse a raw WebSocket payload into a known message, or null if it doesn't look
@@ -164,16 +159,6 @@ export function applyMessage(state: SurfaceState, msg: WsMessage): SurfaceState 
       return { ...state, view: { ...state.view, diff: { a: msg.payload.a, b: msg.payload.b } } };
     case "render_html":
       return { ...state, view: { ...state.view, artifact: msg.payload } };
-    case "finding":
-      return { ...state, findings: { ...state.findings, [msg.payload.id]: msg.payload } };
-    case "disposition": {
-      const existing = state.findings[msg.payload.finding_id];
-      if (!existing) return state;
-      return {
-        ...state,
-        findings: { ...state.findings, [existing.id]: { ...existing, disposition: msg.payload.value } },
-      };
-    }
     case "activity":
       return { ...state, view: { ...state.view, activity: [...state.view.activity, msg.payload] } };
     case "status":

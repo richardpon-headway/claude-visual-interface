@@ -26,20 +26,6 @@ def _insert_session(session_id, *, updated_at, archived_at=None, deleted_at=None
         conn.close()
 
 
-def _insert_finding(session_id, finding_id, *, disposition=None):
-    conn = open_db()
-    try:
-        conn.execute(
-            "INSERT INTO finding "
-            "(id, session_id, file, title, body, disposition, created_at, updated_at) "
-            "VALUES (?, ?, 'a.py', 't', 'b', ?, 't', 't')",
-            (finding_id, session_id, disposition),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
 def test_create_chat_session_is_worktree_free_and_ready():
     session_id = sessions.create_chat_session()
     row = sessions.get_session(session_id)
@@ -83,22 +69,6 @@ def test_lists_newest_activity_first():
     _insert_session("newer", updated_at="2026-02-01T00:00:00Z")
     ids = [s["id"] for s in sessions.list_sessions()]
     assert ids == ["newer", "older"]
-
-
-def test_includes_findings_summary():
-    _insert_session("s", updated_at="2026-01-01T00:00:00Z")
-    _insert_finding("s", "f1")  # open
-    _insert_finding("s", "f2", disposition="dismissed")  # resolved
-    row = sessions.list_sessions()[0]
-    assert row["findings_total"] == 2
-    assert row["findings_open"] == 1
-
-
-def test_session_with_no_findings_reports_zero():
-    _insert_session("s", updated_at="2026-01-01T00:00:00Z")
-    row = sessions.list_sessions()[0]
-    assert row["findings_total"] == 0
-    assert row["findings_open"] == 0
 
 
 def test_excludes_soft_deleted_always():

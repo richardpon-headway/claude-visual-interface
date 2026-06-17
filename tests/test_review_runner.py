@@ -3,7 +3,6 @@ with a fake Agent SDK client. The real review (Claude actually calling the tools
 needs the Claude Code CLI + auth + a worktree and is verified locally."""
 
 import asyncio
-import json
 
 import pytest
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
@@ -74,7 +73,9 @@ def test_review_prompt_carries_session_and_base_ref():
     prompt = review_runner._review_prompt(SESSION, "main")
     assert SESSION in prompt
     assert "main" in prompt
-    assert "mcp__cvi__upsert_finding" in prompt
+    # Conversational review: render_file for diffs, pr-state for dispositions.
+    assert "mcp__cvi__render_file" in prompt
+    assert "pr-state" in prompt
 
 
 async def test_successful_run_marks_session_ready(monkeypatch):
@@ -252,75 +253,3 @@ async def test_cancelled_run_marks_session_stopped(monkeypatch):
         "surface": SESSION,
         "payload": {"status": "stopped"},
     }
-
-
-def _seed(session_id, *findings):
-    """Insert a session + its findings. Each finding is (id, file, created_at, anchor|None)."""
-    conn = open_db()
-    try:
-        conn.execute(
-            "INSERT INTO session (id, type, status, created_at, updated_at) "
-            "VALUES (?, 'review', 'running', 't', 't')",
-            (session_id,),
-        )
-        for fid, file, created_at, anchor in findings:
-            conn.execute(
-                "INSERT INTO finding "
-                "(id, session_id, file, anchor, title, body, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, 't', 'b', ?, ?)",
-                (
-                    fid,
-                    session_id,
-                    file,
-                    json.dumps(anchor) if anchor else None,
-                    created_at,
-                    created_at,
-                ),
-            )
-        conn.commit()
-    finally:
-        conn.close()
-
-
-async def test_run_auto_opens_the_oldest_findings_file(monkeypatch):
-    sid = "auto-open"
-    anchor = {"snippet": "x", "range": {"start": 10, "end": 12}}
-    _seed(
-        sid,
-        ("f-old", "old.py", "2026-01-01T00:00:00Z", anchor),
-        ("f-new", "new.py", "2026-02-01T00:00:00Z", None),
-    )
-    monkeypatch.setattr(review_runner, "ClaudeSDKClient", lambda options=None: FakeClient())
-
-    await AgentReviewRunner().run(session_id=sid, worktree_path="/tmp/wt", base_ref="main")
-
-    snap = store.snapshot(sid)
-    assert snap["open"][0]["file"] == "old.py"  # oldest finding; pane key is int
-    assert snap["open"][0]["range"] == {"start": 10, "end": 12}
-    assert sessions.get_session(sid)["status"] == "ready"
-
-
-async def test_run_with_no_findings_opens_nothing(monkeypatch):
-    sid = "auto-open-empty"
-    _seed(sid)
-    monkeypatch.setattr(review_runner, "ClaudeSDKClient", lambda options=None: FakeClient())
-
-    await AgentReviewRunner().run(session_id=sid, worktree_path="/tmp/wt", base_ref="main")
-
-    assert store.snapshot(sid)["open"] == {}
-    assert sessions.get_session(sid)["status"] == "ready"
-
-
-async def test_auto_open_failure_leaves_review_ready(monkeypatch):
-    sid = "auto-open-fail"
-    _seed(sid, ("f1", "a.py", "2026-01-01T00:00:00Z", None))
-
-    async def boom(*args, **kwargs):
-        raise RuntimeError("open blew up")
-
-    monkeypatch.setattr(review_runner, "open_file_on_surface", boom)
-    monkeypatch.setattr(review_runner, "ClaudeSDKClient", lambda options=None: FakeClient())
-
-    await AgentReviewRunner().run(session_id=sid, worktree_path="/tmp/wt", base_ref="main")
-
-    assert sessions.get_session(sid)["status"] == "ready"  # auto-open failure is swallowed

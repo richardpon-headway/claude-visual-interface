@@ -1,5 +1,5 @@
-// A session row from GET /sessions (mirrors the daemon session columns plus the
-// findings summary). Kept in sync with daemon/sessions.py.
+// A session row from GET /sessions (mirrors the daemon session columns). Kept in
+// sync with daemon/sessions.py.
 
 export type Session = {
   id: string;
@@ -14,8 +14,6 @@ export type Session = {
   updated_at: string;
   archived_at: string | null;
   deleted_at: string | null;
-  findings_total: number;
-  findings_open: number;
 };
 
 export function filterSessions(sessions: Session[], query: string): Session[] {

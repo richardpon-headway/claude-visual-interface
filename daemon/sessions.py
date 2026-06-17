@@ -89,38 +89,19 @@ def create_chat_session(title: str | None = None) -> str:
 
 
 def list_sessions(*, include_archived: bool = False) -> list[dict[str, Any]]:
-    """Sessions for the home page, newest-activity first, each with a findings
-    summary (total + open). Soft-deleted sessions are always excluded; archived
-    ones only when include_archived is False.
-
-    A single LEFT JOIN + GROUP BY computes the counts (no per-session query).
-    """
-    where = "WHERE s.deleted_at IS NULL"
+    """Sessions for the home page, newest-activity first. Soft-deleted sessions are
+    always excluded; archived ones only when include_archived is False."""
+    where = "WHERE deleted_at IS NULL"
     if not include_archived:
-        where += " AND s.archived_at IS NULL"
-    select_cols = ", ".join(f"s.{c}" for c in _COLUMNS)
-    sql = (
-        f"SELECT {select_cols}, "
-        "COUNT(f.id) AS findings_total, "
-        # f.id IS NOT NULL guards the LEFT JOIN's null row for sessions with no
-        # findings (whose f.disposition is also NULL but isn't an open finding).
-        "COALESCE(SUM(CASE WHEN f.id IS NOT NULL AND f.disposition IS NULL THEN 1 ELSE 0 END), 0) "
-        "AS findings_open "
-        "FROM session s LEFT JOIN finding f ON f.session_id = s.id "
-        f"{where} GROUP BY s.id ORDER BY s.updated_at DESC"
-    )
+        where += " AND archived_at IS NULL"
+    select_cols = ", ".join(_COLUMNS)
+    sql = f"SELECT {select_cols} FROM session {where} ORDER BY updated_at DESC"
     conn = open_db()
     try:
         rows = conn.execute(sql).fetchall()
     finally:
         conn.close()
-    sessions = []
-    for row in rows:
-        record = dict(zip(_COLUMNS, row[: len(_COLUMNS)], strict=True))
-        record["findings_total"] = row[len(_COLUMNS)]
-        record["findings_open"] = row[len(_COLUMNS) + 1]
-        sessions.append(record)
-    return sessions
+    return [dict(zip(_COLUMNS, row, strict=True)) for row in rows]
 
 
 def _set_lifecycle_timestamp(session_id: str, column: str, on: bool) -> bool:

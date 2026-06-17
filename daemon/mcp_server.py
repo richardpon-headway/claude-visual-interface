@@ -30,7 +30,7 @@ from claude_agent_sdk import (
     tool,
 )
 
-from daemon import findings, sessions
+from daemon import sessions
 from daemon.gitref import file_diff, resolve_base_ref
 from daemon.hub import hub
 from daemon.view_state import store
@@ -256,87 +256,6 @@ async def render_html(args: dict[str, Any]) -> dict[str, Any]:
 # --- state primitives (persisted) -------------------------------------------------
 
 @tool(
-    "upsert_finding",
-    "Create or update a code-anchored review finding. Pass 'id' to update an "
-    "existing finding; omit it to create one.",
-    {
-        "type": "object",
-        "properties": {
-            "id": {"type": "string", "description": "Finding id; omit to create"},
-            "session_id": {"type": "string", "description": "Owning session UUID"},
-            "file": {"type": "string", "description": "Repo-relative file path"},
-            "anchor": {
-                "type": "object",
-                "description": "Quoted snippet + line range for fuzzy relocation",
-                "properties": {
-                    "snippet": {"type": "string"},
-                    "range": _RANGE_SCHEMA,
-                },
-            },
-            "severity": {"type": "string", "description": "Finding severity"},
-            "title": {"type": "string"},
-            "body": {"type": "string"},
-            "suggested_patch": {"type": "string"},
-            "source_lens": {"type": "string", "description": "Which review lens produced it"},
-            "actions": {"type": "array", "items": {"type": "string"}},
-            "disposition": {"type": "string"},
-        },
-        "required": ["session_id", "file", "title", "body"],
-    },
-)
-async def upsert_finding(args: dict[str, Any]) -> dict[str, Any]:
-    try:
-        finding_id = await asyncio.to_thread(
-            findings.upsert_finding,
-            finding_id=args.get("id"),
-            session_id=args["session_id"],
-            file=args["file"],
-            title=args["title"],
-            body=args["body"],
-            severity=args.get("severity"),
-            anchor=args.get("anchor"),
-            suggested_patch=args.get("suggested_patch"),
-            source_lens=args.get("source_lens"),
-            actions=args.get("actions"),
-        )
-    except findings.UnknownSessionError:
-        return {
-            "content": [{"type": "text", "text": f"no session with id {args['session_id']}"}],
-            "is_error": True,
-        }
-    finding = await asyncio.to_thread(findings.get_finding, finding_id)
-    if finding is not None:
-        surface = finding["session_id"]
-        await hub.broadcast(surface, {"type": "finding", "surface": surface, "payload": finding})
-    return _ok(json.dumps({"finding_id": finding_id}))
-
-
-@tool(
-    "set_disposition",
-    "Set the disposition of a finding (e.g. dismiss / fix / defer).",
-    {"finding_id": str, "value": str},
-)
-async def set_disposition(args: dict[str, Any]) -> dict[str, Any]:
-    finding_id = args["finding_id"]
-    value = args["value"]
-    surface = await asyncio.to_thread(findings.set_disposition, finding_id, value)
-    if surface is None:
-        return {
-            "content": [{"type": "text", "text": f"no finding with id {finding_id}"}],
-            "is_error": True,
-        }
-    await hub.broadcast(
-        surface,
-        {
-            "type": "disposition",
-            "surface": surface,
-            "payload": {"finding_id": finding_id, "value": value},
-        },
-    )
-    return _ok(f"set disposition of {finding_id} to {value}")
-
-
-@tool(
     "anchor_message",
     "Anchor a conversation message to a file range so the panes stay in sync.",
     {
@@ -418,8 +337,6 @@ TOOLS = [
     show_diff,
     render_html,
     render_file,
-    upsert_finding,
-    set_disposition,
     anchor_message,
     get_selection,
     get_view_state,

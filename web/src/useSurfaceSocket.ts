@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { applyMessage, emptySurface, parseMessage } from "./viewState";
-import type { Finding, SurfaceState } from "./viewState";
+import type { SurfaceState } from "./viewState";
 
 function surfaceUrl(surface: string): string {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -28,17 +28,6 @@ export function useSurfaceSocket(surface: string): [SurfaceState, SendMessage, S
   useEffect(() => {
     setState(emptySurface(surface));
     let cancelled = false;
-
-    fetch(`/sessions/${encodeURIComponent(surface)}/findings`)
-      .then((res) => (res.ok ? res.json() : { findings: [] }))
-      .then((data: { findings?: Finding[] }) => {
-        if (cancelled) return;
-        const fetched = Object.fromEntries((data.findings ?? []).map((f) => [f.id, f]));
-        setState((prev) => ({ ...prev, findings: { ...fetched, ...prev.findings } }));
-      })
-      .catch(() => {
-        /* daemon unreachable or no findings yet — live events still flow */
-      });
 
     fetch(`/sessions/${encodeURIComponent(surface)}`)
       .then((res) => (res.ok ? res.json() : null))
