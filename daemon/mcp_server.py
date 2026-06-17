@@ -75,25 +75,23 @@ async def open_file_on_surface(
 
 
 async def render_html_on_surface(surface: str, html: str, title: str | None = None) -> None:
-    """Render a self-contained HTML page onto a surface's left pane: update the view
-    store and push the render_html event to subscribers. The canonical effect behind
-    the render_html primitive. Mirrors open_file_on_surface."""
-    store.render_html(surface, html, title)
-    await hub.broadcast(
-        surface,
-        {"type": "render_html", "surface": surface,
-         "payload": {"html": html, "title": title}},
-    )
+    """Render a model-authored HTML page as an inline artifact block in the
+    conversation stream: it rides the activity buffer (and the connect snapshot) and
+    appears in order, like any other turn. The canonical effect behind render_html."""
+    await record_activity(surface, "artifact", title or "", html=html)
 
 
-async def record_activity(surface: str, kind: str, text: str) -> None:
-    """Buffer a line of review narration on a surface and push it to subscribers.
-    Mirrors open_file_on_surface: update the view store, then broadcast. Called by
-    the review runner so the browser sees what Claude is doing as it happens."""
-    store.append_activity(surface, kind, text)
+async def record_activity(surface: str, kind: str, text: str, html: str | None = None) -> None:
+    """Append a conversation segment on a surface and push it to subscribers. Mirrors
+    open_file_on_surface: update the view store, then broadcast. `html` carries the
+    page for an artifact segment; it's omitted from the payload otherwise."""
+    store.append_activity(surface, kind, text, html)
+    payload: dict[str, Any] = {"kind": kind, "text": text}
+    if html is not None:
+        payload["html"] = html
     await hub.broadcast(
         surface,
-        {"type": "activity", "surface": surface, "payload": {"kind": kind, "text": text}},
+        {"type": "activity", "surface": surface, "payload": payload},
     )
 
 

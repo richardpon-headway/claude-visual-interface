@@ -117,8 +117,8 @@ def test_append_activity_accumulates_and_rides_the_snapshot():
 
     snap = store.snapshot("s")
     assert snap["activity"] == [
-        {"kind": "text", "text": "reviewing the diff"},
-        {"kind": "tool", "text": "Bash"},
+        {"kind": "text", "text": "reviewing the diff", "html": None},
+        {"kind": "tool", "text": "Bash", "html": None},
     ]
 
 

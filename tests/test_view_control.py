@@ -92,7 +92,7 @@ async def test_show_diff_broadcasts_event():
     ]
 
 
-async def test_render_html_updates_store_and_broadcasts():
+async def test_render_html_appends_an_inline_artifact_and_broadcasts():
     surface = "vc-html"
     ws = FakeWS()
     hub.register(surface, ws)
@@ -103,18 +103,19 @@ async def test_render_html_updates_store_and_broadcasts():
     finally:
         hub.unregister(surface, ws)
 
-    artifact = store.get_or_create(surface).artifact
-    assert (artifact.html, artifact.title) == ("<p>hi</p>", "design")
+    # render_html now appends an inline artifact segment to the conversation stream.
+    entry = store.get_or_create(surface).activity[-1]
+    assert (entry.kind, entry.text, entry.html) == ("artifact", "design", "<p>hi</p>")
     assert ws.received == [
         {
-            "type": "render_html",
+            "type": "activity",
             "surface": surface,
-            "payload": {"html": "<p>hi</p>", "title": "design"},
+            "payload": {"kind": "artifact", "text": "design", "html": "<p>hi</p>"},
         }
     ]
 
 
-async def test_render_html_defaults_title_when_omitted():
+async def test_render_html_defaults_title_to_empty():
     surface = "vc-html-notitle"
     ws = FakeWS()
     hub.register(surface, ws)
@@ -123,8 +124,8 @@ async def test_render_html_defaults_title_when_omitted():
     finally:
         hub.unregister(surface, ws)
 
-    assert store.get_or_create(surface).artifact.title is None
-    assert ws.received[0]["payload"] == {"html": "<p>hi</p>", "title": None}
+    entry = store.get_or_create(surface).activity[-1]
+    assert (entry.kind, entry.text, entry.html) == ("artifact", "", "<p>hi</p>")
 
 
 async def test_record_activity_buffers_and_broadcasts():

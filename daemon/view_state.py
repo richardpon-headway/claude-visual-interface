@@ -50,9 +50,12 @@ class Selection:
 
 @dataclass
 class ActivityEntry:
-    # One line of review narration: Claude's text, a tool call, or a run result.
-    kind: str  # "text" | "tool" | "result"
+    # One segment of the conversation: the user's prompt, Claude's text, a tool
+    # call, a run result, or an inline artifact (kind="artifact": `html` carries a
+    # model-authored HTML page, `text` its title).
+    kind: str  # "user" | "text" | "tool" | "result" | "artifact"
     text: str
+    html: str | None = None
 
 
 # Cap the per-surface activity buffer so a long review can't grow it without
@@ -137,9 +140,11 @@ class ViewStore:
     def set_thinking(self, surface: str, active: bool) -> None:
         self.get_or_create(surface).thinking = active
 
-    def append_activity(self, surface: str, kind: str, text: str) -> None:
+    def append_activity(
+        self, surface: str, kind: str, text: str, html: str | None = None
+    ) -> None:
         activity = self.get_or_create(surface).activity
-        activity.append(ActivityEntry(kind=kind, text=text))
+        activity.append(ActivityEntry(kind=kind, text=text, html=html))
         if len(activity) > MAX_ACTIVITY:
             del activity[: len(activity) - MAX_ACTIVITY]
 

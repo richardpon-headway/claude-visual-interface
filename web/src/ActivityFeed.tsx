@@ -1,5 +1,33 @@
+import { useState } from "react";
+
 import { Markdown } from "./Markdown";
 import type { ActivityEntry } from "./viewState";
+
+// A model-authored HTML page, rendered inline as a sandboxed iframe block with a
+// collapse/expand toggle (sandboxed iframes can't self-size).
+function ArtifactBlock({ title, html }: { title: string; html: string }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="overflow-hidden rounded border border-zinc-800">
+      <div className="flex items-center gap-2 border-b border-zinc-800 bg-zinc-900 px-3 py-1 font-mono text-xs text-zinc-400">
+        <span className="truncate">{title || "artifact"}</span>
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className="ml-auto rounded border border-zinc-700 px-1.5 text-zinc-300 hover:bg-zinc-800"
+        >
+          {expanded ? "collapse" : "expand"}
+        </button>
+      </div>
+      <iframe
+        className={`w-full border-0 bg-white ${expanded ? "h-[80vh]" : "h-96"}`}
+        sandbox=""
+        srcDoc={html}
+        title={title || "artifact"}
+      />
+    </div>
+  );
+}
 
 function kindLabel(kind: string): string {
   switch (kind) {
@@ -28,6 +56,14 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
     return (
       <li className="text-sm text-zinc-200">
         <Markdown>{entry.text}</Markdown>
+      </li>
+    );
+  }
+  // A model-rendered HTML page, inline in the flow.
+  if (entry.kind === "artifact") {
+    return (
+      <li>
+        <ArtifactBlock title={entry.text} html={entry.html ?? ""} />
       </li>
     );
   }
