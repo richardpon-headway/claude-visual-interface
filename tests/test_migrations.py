@@ -20,16 +20,14 @@ def test_migrations_create_session_schema(tmp_path):
         "type",
         "title",
         "status",
-        "repo",
-        "branch",
-        "worktree_path",
-        "base_ref",
         "created_at",
         "updated_at",
         "archived_at",
         "deleted_at",
         "agent_session_id",
     }
+    # The review feature's finding table is dropped by migration 004.
+    assert _table_columns(db_path, "finding") == set()
 
 
 def test_migrations_are_recorded(tmp_path):

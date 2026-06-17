@@ -21,7 +21,6 @@ function statusClass(status: string): string {
 const actionButton = "rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300 hover:bg-zinc-800";
 
 function SessionRow({ session, onChanged }: { session: Session; onChanged: () => void }) {
-  const repoBranch = [session.repo, session.branch].filter(Boolean).join(" · ");
   const archived = session.archived_at !== null;
 
   async function call(path: string, method: string) {
@@ -38,7 +37,6 @@ function SessionRow({ session, onChanged }: { session: Session; onChanged: () =>
       <a href={`/s/${encodeURIComponent(session.id)}`} className="flex-1 truncate hover:underline">
         {session.title ?? session.id}
       </a>
-      {repoBranch ? <span className="font-mono text-xs text-zinc-600">{repoBranch}</span> : null}
       <button
         type="button"
         className={actionButton}
