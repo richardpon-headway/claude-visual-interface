@@ -20,7 +20,15 @@ function statusClass(status: string): string {
 
 const actionButton = "rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300 hover:bg-zinc-800";
 
-function SessionRow({ session, onChanged }: { session: Session; onChanged: () => void }) {
+function SessionRow({
+  session,
+  onChanged,
+  onRequestDelete,
+}: {
+  session: Session;
+  onChanged: () => void;
+  onRequestDelete?: (session: Session) => void;
+}) {
   const archived = session.archived_at !== null;
 
   async function call(path: string, method: string) {
@@ -28,13 +36,15 @@ function SessionRow({ session, onChanged }: { session: Session; onChanged: () =>
     onChanged();
   }
 
+  // Archived rows read as "set aside": a neutral status badge and a muted title.
+  const badgeClass = archived ? "bg-zinc-800 text-zinc-400" : statusClass(session.status);
+  const titleClass = archived ? "flex-1 truncate text-zinc-400 hover:underline" : "flex-1 truncate hover:underline";
+
   // The title is the only link; actions sit beside it (not nested in the anchor).
   return (
     <div className="flex items-center gap-3 border-b border-zinc-800 px-4 py-3 hover:bg-zinc-900">
-      <span className={`rounded px-1.5 py-0.5 text-xs ${statusClass(session.status)}`}>
-        {session.status}
-      </span>
-      <a href={`/s/${encodeURIComponent(session.id)}`} className="flex-1 truncate hover:underline">
+      <span className={`rounded px-1.5 py-0.5 text-xs ${badgeClass}`}>{session.status}</span>
+      <a href={`/s/${encodeURIComponent(session.id)}`} className={titleClass}>
         {session.title ?? session.id}
       </a>
       <button
@@ -46,13 +56,49 @@ function SessionRow({ session, onChanged }: { session: Session; onChanged: () =>
       >
         {archived ? "Unarchive" : "Archive"}
       </button>
-      <button
-        type="button"
-        className={actionButton}
-        onClick={() => call(`/sessions/${encodeURIComponent(session.id)}`, "DELETE")}
+      {archived && onRequestDelete ? (
+        <button type="button" className={actionButton} onClick={() => onRequestDelete(session)}>
+          Delete
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function DeleteConfirm({
+  session,
+  onCancel,
+  onConfirm,
+}: {
+  session: Session;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  // Scrim closes; the card stops propagation so clicks inside don't cancel.
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onCancel}>
+      <div
+        className="w-full max-w-sm rounded-lg border border-zinc-700 bg-zinc-900 p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
       >
-        Delete
-      </button>
+        <h2 className="text-sm font-semibold text-zinc-100">Delete session?</h2>
+        <p className="mt-2 text-sm text-zinc-400">
+          <span className="text-zinc-100">{session.title ?? session.id}</span> will be permanently
+          deleted. This can’t be undone.
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" className={actionButton} onClick={onCancel}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="rounded border border-red-800 bg-red-900 px-2 py-0.5 text-xs text-red-100 hover:bg-red-800"
+            onClick={onConfirm}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -60,25 +106,27 @@ function SessionRow({ session, onChanged }: { session: Session; onChanged: () =>
 export function HomePage() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [query, setQuery] = useState("");
-  const [includeArchived, setIncludeArchived] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<Session | null>(null);
 
   const reload = useCallback(() => {
-    const qs = includeArchived ? "?include_archived=true" : "";
-    fetch(`/sessions${qs}`)
+    fetch("/sessions?include_archived=true")
       .then((res) => (res.ok ? res.json() : { sessions: [] }))
       .then((data: { sessions?: Session[] }) => {
         setSessions(data.sessions ?? []);
         setLoaded(true);
       })
       .catch(() => setLoaded(true));
-  }, [includeArchived]);
+  }, []);
 
   useEffect(() => {
     reload();
   }, [reload]);
 
   const visible = filterSessions(sessions, query);
+  const active = visible.filter((s) => s.archived_at === null);
+  const archived = visible.filter((s) => s.archived_at !== null);
 
   async function newChat() {
     const res = await fetch("/chats", { method: "POST" });
@@ -88,6 +136,13 @@ export function HomePage() {
     }
     const { session_id } = (await res.json()) as { session_id: string };
     window.location.href = `/s/${encodeURIComponent(session_id)}`;
+  }
+
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    await fetch(`/sessions/${encodeURIComponent(pendingDelete.id)}`, { method: "DELETE" });
+    setPendingDelete(null);
+    reload();
   }
 
   return (
@@ -101,19 +156,11 @@ export function HomePage() {
         >
           New chat
         </button>
-        <label className="ml-auto flex items-center gap-1 text-xs text-zinc-400">
-          <input
-            type="checkbox"
-            checked={includeArchived}
-            onChange={(e) => setIncludeArchived(e.target.checked)}
-          />
-          show archived
-        </label>
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search by title…"
-          className="rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-sm"
+          className="ml-auto rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-sm"
         />
       </header>
       <div className="min-h-0 flex-1 overflow-auto">
@@ -124,9 +171,51 @@ export function HomePage() {
             {sessions.length === 0 ? "no sessions yet" : "no matches"}
           </div>
         ) : (
-          visible.map((s) => <SessionRow key={s.id} session={s} onChanged={reload} />)
+          <>
+            {active.length === 0 ? (
+              <div className="p-4 text-sm text-zinc-500">no active sessions</div>
+            ) : (
+              active.map((s) => <SessionRow key={s.id} session={s} onChanged={reload} />)
+            )}
+            {archived.length > 0 ? (
+              <section>
+                <button
+                  type="button"
+                  aria-label={`Archive (${archived.length})`}
+                  aria-expanded={archiveOpen}
+                  onClick={() => setArchiveOpen((open) => !open)}
+                  className="flex w-full items-center gap-2 border-b border-zinc-800 bg-zinc-950 px-4 py-3 text-left hover:bg-zinc-900"
+                >
+                  <span className="w-3 text-xs text-zinc-500">{archiveOpen ? "▼" : "▶"}</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                    Archive
+                  </span>
+                  <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-500">
+                    {archived.length}
+                  </span>
+                </button>
+                {archiveOpen
+                  ? archived.map((s) => (
+                      <SessionRow
+                        key={s.id}
+                        session={s}
+                        onChanged={reload}
+                        onRequestDelete={setPendingDelete}
+                      />
+                    ))
+                  : null}
+              </section>
+            ) : null}
+          </>
         )}
       </div>
+      {pendingDelete ? (
+        <DeleteConfirm
+          session={pendingDelete}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={confirmDelete}
+        />
+      ) : null}
     </div>
   );
 }
