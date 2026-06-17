@@ -3,7 +3,6 @@ plus the transient broadcast helpers (status / title / thinking / prompt summary
 
 from typing import Any
 
-from daemon import mcp_server
 from daemon.hub import hub
 from daemon.mcp_server import (
     broadcast_prompt_summary,
@@ -11,7 +10,6 @@ from daemon.mcp_server import (
     broadcast_thinking,
     broadcast_title,
     record_activity,
-    render_file,
     render_html,
 )
 from daemon.view_state import store
@@ -56,45 +54,6 @@ async def test_render_html_defaults_title_to_empty():
 
     entry = store.get_or_create(surface).activity[-1]
     assert (entry.kind, entry.text, entry.html) == ("artifact", "", "<p>hi</p>")
-
-
-async def test_render_file_appends_a_diff_segment_and_broadcasts(monkeypatch):
-    surface = "vc-file"
-    monkeypatch.setattr(
-        mcp_server.sessions,
-        "get_session",
-        lambda sid: {"worktree_path": "/tmp/wt", "base_ref": "main"},
-    )
-
-    async def fake_resolve(wt, base):
-        return base
-
-    async def fake_diff(wt, base, path):
-        return "@@ -1 +1 @@\n-a\n+b"
-
-    monkeypatch.setattr(mcp_server, "resolve_base_ref", fake_resolve)
-    monkeypatch.setattr(mcp_server, "file_diff", fake_diff)
-
-    ws = FakeWS()
-    hub.register(surface, ws)
-    try:
-        await render_file.handler({"surface": surface, "path": "a.py"})
-    finally:
-        hub.unregister(surface, ws)
-
-    entry = store.get_or_create(surface).activity[-1]
-    assert (entry.kind, entry.text, entry.diff) == ("file", "a.py", "@@ -1 +1 @@\n-a\n+b")
-    assert ws.received[-1]["payload"] == {
-        "kind": "file",
-        "text": "a.py",
-        "diff": "@@ -1 +1 @@\n-a\n+b",
-    }
-
-
-async def test_render_file_errors_without_a_worktree(monkeypatch):
-    monkeypatch.setattr(mcp_server.sessions, "get_session", lambda sid: {"worktree_path": None})
-    result = await render_file.handler({"surface": "vc-file-nw", "path": "a.py"})
-    assert result.get("is_error") is True
 
 
 async def test_record_activity_buffers_and_broadcasts():

@@ -40,59 +40,12 @@ function kindLabel(kind: string): string {
   }
 }
 
-// A file's diff (vs the review base), rendered inline as a highlighted block with a
-// toggle to fetch and show the full file on demand.
-function FileBlock({ surface, path, diff }: { surface: string; path: string; diff: string }) {
-  const [full, setFull] = useState<string | null>(null);
-  const [showFull, setShowFull] = useState(false);
-
-  async function expand() {
-    if (full === null) {
-      try {
-        const res = await fetch(
-          `/sessions/${encodeURIComponent(surface)}/file?path=${encodeURIComponent(path)}`,
-        );
-        const data = res.ok ? await res.json() : null;
-        const content = data?.content ?? data?.reason ?? "could not load file";
-        setFull(typeof content === "string" ? content : "could not load file");
-      } catch {
-        setFull("could not load file");
-      }
-    }
-    setShowFull(true);
-  }
-
-  return (
-    <div className="overflow-hidden rounded border border-zinc-800">
-      <div className="flex items-center gap-2 border-b border-zinc-800 bg-zinc-900 px-3 py-1 font-mono text-xs text-zinc-400">
-        <span className="truncate">{path}</span>
-        <button
-          type="button"
-          onClick={() => (showFull ? setShowFull(false) : expand())}
-          className="ml-auto shrink-0 rounded border border-zinc-700 px-1.5 text-zinc-300 hover:bg-zinc-800"
-        >
-          {showFull ? "show diff" : "expand to full file"}
-        </button>
-      </div>
-      <div className="max-h-[60vh] overflow-auto">
-        {showFull ? (
-          <Markdown>{"```\n" + (full ?? "") + "\n```"}</Markdown>
-        ) : (
-          <Markdown>{"```diff\n" + diff + "\n```"}</Markdown>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function ActivityRow({
   entry,
   promptId,
-  surface,
 }: {
   entry: ActivityEntry;
   promptId?: string;
-  surface: string;
 }) {
   // Your prompts read as right-aligned bubbles; each carries a stable anchor id so
   // the outline rail can scroll to it.
@@ -121,14 +74,6 @@ function ActivityRow({
       </li>
     );
   }
-  // A file's diff, inline in the flow.
-  if (entry.kind === "file") {
-    return (
-      <li>
-        <FileBlock surface={surface} path={entry.text} diff={entry.diff ?? ""} />
-      </li>
-    );
-  }
   // Tool calls and run results are compact, dim one-liners.
   const label = kindLabel(entry.kind);
   return (
@@ -147,10 +92,8 @@ function ActivityRow({
 // compact tool/result lines, in arrival order. The parent owns scrolling and width.
 export function ActivityFeed({
   activity,
-  surface,
 }: {
   activity: ActivityEntry[];
-  surface: string;
 }) {
   if (activity.length === 0) {
     return (
@@ -165,7 +108,7 @@ export function ActivityFeed({
     <ul className="space-y-3">
       {shown.map((entry, i) => {
         const promptId = entry.kind === "user" ? `prompt-${userCount++}` : undefined;
-        return <ActivityRow key={i} entry={entry} promptId={promptId} surface={surface} />;
+        return <ActivityRow key={i} entry={entry} promptId={promptId} />;
       })}
     </ul>
   );

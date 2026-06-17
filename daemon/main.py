@@ -17,7 +17,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from daemon import files, sessions
+from daemon import sessions
 from daemon.agent_session import ImageInput, agents
 from daemon.db import apply_migrations
 from daemon.hub import hub
@@ -93,27 +93,6 @@ async def get_session(session_id: str) -> dict[str, Any]:
     if session is None:
         raise HTTPException(status_code=404, detail=f"no session with id {session_id}")
     return session
-
-
-@app.get("/sessions/{session_id}/file")
-async def get_session_file(session_id: str, path: str) -> dict[str, Any]:
-    """Serve a file's contents from the session's worktree for the code pane.
-    Path-traversal-safe; binary/oversized files report a reason instead of
-    content; missing file / session / worktree → 404."""
-    session = await asyncio.to_thread(sessions.get_session, session_id)
-    if session is None or not session.get("worktree_path"):
-        raise HTTPException(status_code=404, detail="no worktree for session")
-    try:
-        result = await asyncio.to_thread(files.read_worktree_file, session["worktree_path"], path)
-    except files.FileOutsideWorktreeError:
-        log.warning(
-            "blocked file read outside worktree",
-            extra={"session_id": session_id, "path": path},
-        )
-        raise HTTPException(status_code=404, detail="not found") from None
-    if result is None:
-        raise HTTPException(status_code=404, detail="not found")
-    return {"path": result.path, "content": result.content, "reason": result.reason}
 
 
 class ChatRequest(BaseModel):
