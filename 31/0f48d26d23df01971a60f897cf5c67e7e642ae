@@ -1,0 +1,47 @@
+daemon/view_state.py
+  s_1a0096a62c009e::t_a475fec0cb3f75 1,3-6,18-20,28,36-37,39-40
+web/src/viewState.test.ts
+  s_1a0096a62c009e::t_9729c7456b934e 8-9,28-32,36-37,41-42,60-64,76-81,83-85
+daemon/agent_session.py
+  s_1a0096a62c009e::t_fafaf51bce84b4 108-110
+tests/test_ws_route.py
+  s_1a0096a62c009e::t_b613a570df21e3 32-36
+tests/test_view_state.py
+  s_1a0096a62c009e::t_2ec3c0cd09bc85 6,34-49
+daemon/mcp_server.py
+  s_1a0096a62c009e::t_60696ff143674b 117,121,123-125
+  s_1a0096a62c009e::t_044f36bd3c506c 214-216,219-222,225-226,228-231,234-235,237-240
+  s_1a0096a62c009e::t_acc4ebe8936681 1,4-5,7-8,10-11
+  s_1a0096a62c009e::t_5b15f346a967bf 42
+  s_1a0096a62c009e::t_f40e86c4a13621 177
+tests/test_view_control.py
+  s_1a0096a62c009e::t_254224b1ace7d8 1-2,33,124
+web/src/Surface.tsx
+  s_1a0096a62c009e::t_eaaa30ef340b51 33
+daemon/main.py
+  s_1a0096a62c009e::t_a0b64cd1c677b2 227-229,243
+web/src/viewState.ts
+  s_1a0096a62c009e::t_7c9aee3ef48893 3,6-8,17-18,21
+  s_1a0096a62c009e::t_60ab204333e62f 35
+web/src/App.tsx
+  s_1a0096a62c009e::t_eaaa30ef340b51 2,7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "310f48d26d23df01971a60f897cf5c67e7e642ae",
+  "prompts": {},
+  "sessions": {
+    "s_1a0096a62c009e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4cb239e5-c99c-4cf4-a459-b5a50935712e",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
