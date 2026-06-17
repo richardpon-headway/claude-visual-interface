@@ -65,9 +65,8 @@ async def test_every_handler_returns_a_content_block():
 def test_build_agent_options_attaches_server_and_approves_primitives():
     options = build_agent_options()
     assert options.mcp_servers == {SERVER_NAME: cvi_server}
-    # cvi primitives plus the read-only review tools are auto-approved.
+    # The cvi primitives are auto-approved.
     assert set(ALLOWED_TOOLS).issubset(options.allowed_tools)
-    assert {"Read", "Grep", "Glob", "Bash"}.issubset(options.allowed_tools)
     assert options.cwd is None
 
 
@@ -76,11 +75,9 @@ def test_build_agent_options_passes_resume_session_id():
     assert build_agent_options().resume is None
 
 
-async def test_review_permission_gate_allows_read_only_tools_and_denies_writes():
-    options = build_agent_options(cwd="/tmp/worktree")
-    allow_read = await options.can_use_tool("Read", {}, None)
-    allow_cvi = await options.can_use_tool(f"mcp__{SERVER_NAME}__render_html", {}, None)
-    deny_edit = await options.can_use_tool("Edit", {}, None)
-    assert allow_read.behavior == "allow"
-    assert allow_cvi.behavior == "allow"
-    assert deny_edit.behavior == "deny"
+def test_sessions_have_full_write_access():
+    # No read-only gate: a headless chat runs with bypassPermissions (the CLI's
+    # accept-all), so reads, edits, and commands are all permitted.
+    options = build_agent_options()
+    assert options.permission_mode == "bypassPermissions"
+    assert options.can_use_tool is None
