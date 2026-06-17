@@ -35,6 +35,15 @@ export function Surface({ surface }: { surface: string }) {
   const busy = view.thinking || status === "running";
   const prompts = promptLandmarks(view.activity);
 
+  // Mirror the inferred session title into the browser tab. Falls back to the
+  // surface id until a title is inferred, and restores the default on unmount.
+  useEffect(() => {
+    document.title = title ?? surface;
+    return () => {
+      document.title = "Claude Visual Interface";
+    };
+  }, [title, surface]);
+
   const [railOpen, setRailOpen] = useState(true);
   const [active, setActive] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
