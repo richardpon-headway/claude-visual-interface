@@ -40,11 +40,12 @@ function kindLabel(kind: string): string {
   }
 }
 
-function ActivityRow({ entry }: { entry: ActivityEntry }) {
-  // Your prompts read as right-aligned bubbles.
+function ActivityRow({ entry, promptId }: { entry: ActivityEntry; promptId?: string }) {
+  // Your prompts read as right-aligned bubbles; each carries a stable anchor id so
+  // the outline rail can scroll to it.
   if (entry.kind === "user") {
     return (
-      <li className="flex justify-end">
+      <li id={promptId} className="flex justify-end scroll-mt-4">
         <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-zinc-800 px-3.5 py-2 text-sm text-zinc-100">
           {entry.text}
         </div>
@@ -92,11 +93,13 @@ export function ActivityFeed({ activity }: { activity: ActivityEntry[] }) {
   // A successful run result is implied by the answer above it; hide it as noise.
   // Failures (error / stopped / API error / …) still surface.
   const shown = activity.filter((e) => !(e.kind === "result" && e.text === "success"));
+  let userCount = 0;
   return (
     <ul className="space-y-3">
-      {shown.map((entry, i) => (
-        <ActivityRow key={i} entry={entry} />
-      ))}
+      {shown.map((entry, i) => {
+        const promptId = entry.kind === "user" ? `prompt-${userCount++}` : undefined;
+        return <ActivityRow key={i} entry={entry} promptId={promptId} />;
+      })}
     </ul>
   );
 }
