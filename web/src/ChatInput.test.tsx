@@ -84,17 +84,13 @@ describe("ChatInput", () => {
     expect(onSend.mock.calls[0][1].media_type).toBe("image/png");
   });
 
-  function getForm() {
-    return screen.getByRole("textbox", { name: /message the agent/i }).closest("form")!;
-  }
-
   it("attaches a dropped image, sends it with the text, then clears", async () => {
     const onSend = vi.fn();
     render(<ChatInput onSend={onSend} />);
     const input = screen.getByRole("textbox", { name: /message the agent/i });
 
     const file = new File([new Uint8Array([1, 2, 3])], "shot.png", { type: "image/png" });
-    fireEvent.drop(getForm(), { dataTransfer: { files: [file] } });
+    fireEvent.drop(document.body, { dataTransfer: { files: [file], types: ["Files"] } });
     // FileReader.readAsDataURL is async — wait for the attachment chip.
     expect(await screen.findByRole("button", { name: /remove image/i })).toBeInTheDocument();
 
@@ -114,27 +110,37 @@ describe("ChatInput", () => {
     render(<ChatInput onSend={onSend} />);
 
     const file = new File(["hello"], "notes.txt", { type: "text/plain" });
-    fireEvent.drop(getForm(), { dataTransfer: { files: [file] } });
+    fireEvent.drop(document.body, { dataTransfer: { files: [file], types: ["Files"] } });
 
     expect(screen.queryByRole("button", { name: /remove image/i })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /send/i }));
     expect(onSend).not.toHaveBeenCalled();
   });
 
-  it("highlights the form while dragging and clears on drop or leave", () => {
+  it("shows a window-wide overlay while dragging a file and clears on drop or leave", () => {
     const onSend = vi.fn();
     render(<ChatInput onSend={onSend} />);
-    const form = getForm();
+    const overlay = () => screen.queryByText(/drop an image to attach/i);
 
-    fireEvent.dragOver(form);
-    expect(form.className).toContain("ring-zinc-500");
+    // A file drag anywhere in the window shows the overlay.
+    fireEvent.dragOver(document.body, { dataTransfer: { types: ["Files"] } });
+    expect(overlay()).toBeInTheDocument();
 
-    fireEvent.dragLeave(form);
-    expect(form.className).not.toContain("ring-zinc-500");
+    // Leaving the window (relatedTarget null) clears it.
+    fireEvent.dragLeave(document.body, { relatedTarget: null });
+    expect(overlay()).toBeNull();
 
-    fireEvent.dragOver(form);
-    expect(form.className).toContain("ring-zinc-500");
-    fireEvent.drop(form, { dataTransfer: { files: [] } });
-    expect(form.className).not.toContain("ring-zinc-500");
+    fireEvent.dragOver(document.body, { dataTransfer: { types: ["Files"] } });
+    expect(overlay()).toBeInTheDocument();
+    fireEvent.drop(document.body, { dataTransfer: { files: [], types: ["Files"] } });
+    expect(overlay()).toBeNull();
+  });
+
+  it("does not show the overlay for a non-file drag", () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+
+    fireEvent.dragOver(document.body, { dataTransfer: { types: ["text/plain"] } });
+    expect(screen.queryByText(/drop an image to attach/i)).toBeNull();
   });
 });
