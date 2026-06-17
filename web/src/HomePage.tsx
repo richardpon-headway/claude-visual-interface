@@ -38,9 +38,6 @@ function SessionRow({ session, onChanged }: { session: Session; onChanged: () =>
       <a href={`/s/${encodeURIComponent(session.id)}`} className="flex-1 truncate hover:underline">
         {session.title ?? session.id}
       </a>
-      <span className="text-xs text-zinc-500">
-        {session.findings_total} findings · {session.findings_open} open
-      </span>
       {repoBranch ? <span className="font-mono text-xs text-zinc-600">{repoBranch}</span> : null}
       <button
         type="button"

@@ -38,8 +38,6 @@ EXPECTED_PRIMITIVES = {
     "render_html",
     "render_file",
     # state
-    "upsert_finding",
-    "set_disposition",
     "anchor_message",
     # pull
     "get_selection",
@@ -56,8 +54,6 @@ VALID_ARGS = {
     # The seeded session has no worktree, so render_file returns its (content-block)
     # error result — enough to exercise the handler.
     "render_file": {"surface": "mcp-test", "path": "a.py"},
-    "upsert_finding": {"session_id": "mcp-test", "file": "a.py", "title": "t", "body": "b"},
-    "set_disposition": {"finding_id": "f", "value": "dismiss"},
     "anchor_message": {"message_id": "m", "file": "a.py", "range": {"start": 1, "end": 2}},
     "get_selection": {"surface": "mcp-test"},
     "get_view_state": {"surface": "mcp-test"},
@@ -132,7 +128,7 @@ def test_build_agent_options_passes_resume_session_id():
 async def test_review_permission_gate_allows_read_only_tools_and_denies_writes():
     options = build_agent_options(cwd="/tmp/worktree")
     allow_read = await options.can_use_tool("Read", {}, None)
-    allow_cvi = await options.can_use_tool(f"mcp__{SERVER_NAME}__upsert_finding", {}, None)
+    allow_cvi = await options.can_use_tool(f"mcp__{SERVER_NAME}__render_file", {}, None)
     deny_edit = await options.can_use_tool("Edit", {}, None)
     assert allow_read.behavior == "allow"
     assert allow_cvi.behavior == "allow"

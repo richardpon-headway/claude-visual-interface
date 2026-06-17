@@ -18,7 +18,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from daemon import files, findings, reviews, sessions
+from daemon import files, reviews, sessions
 from daemon.agent_session import ImageInput, agents
 from daemon.db import apply_migrations
 from daemon.hub import hub
@@ -115,14 +115,6 @@ async def get_session_file(session_id: str, path: str) -> dict[str, Any]:
     if result is None:
         raise HTTPException(status_code=404, detail="not found")
     return {"path": result.path, "content": result.content, "reason": result.reason}
-
-
-@app.get("/sessions/{session_id}/findings")
-async def list_session_findings(session_id: str) -> dict[str, Any]:
-    """The findings for a session, for a browser's initial load (live updates
-    then arrive as `finding` / `disposition` events over the WebSocket)."""
-    rows = await asyncio.to_thread(findings.list_findings, session_id)
-    return {"findings": rows}
 
 
 class ReviewRequest(BaseModel):

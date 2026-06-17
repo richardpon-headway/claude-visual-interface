@@ -18,13 +18,12 @@ from typing import Protocol
 
 from claude_agent_sdk import ClaudeSDKClient, ResultMessage
 
-from daemon import findings, sessions
+from daemon import sessions
 from daemon.activity_relay import relay_message_activity
 from daemon.gitref import resolve_base_ref
 from daemon.mcp_server import (
     broadcast_status,
     build_agent_options,
-    open_file_on_surface,
     record_activity,
 )
 
@@ -39,30 +38,16 @@ def _review_prompt(session_id: str, base_ref: str) -> str:
     return (
         f"Review the code changes in this worktree against the base ref `{base_ref}`. "
         f"Start by running `git diff {base_ref}...HEAD` to see what changed, then read "
-        "the surrounding code as needed. For each issue you find, call the "
-        "mcp__cvi__upsert_finding tool with these arguments: "
-        f'session_id="{session_id}", the `file` path, a short `title`, a `body` '
-        "explaining the issue, and a `severity` of high, medium, or low. Where you can, "
-        "include an `anchor` of the relevant snippet and line range. This is a "
-        "read-only review — do not edit any files. When you have reported every finding, "
-        "stop."
+        "the surrounding code as needed. Present your review as a normal conversation: "
+        "describe each issue you find in a clear message — one finding at a time — naming "
+        "the file and lines, why it matters, and a suggested fix. Use the "
+        f'mcp__cvi__render_file tool (surface="{session_id}") to show a changed file\'s '
+        "diff inline when it helps the reader. Before raising issues, read any prior "
+        "review dispositions and honor them so resolved items aren't re-raised, and record "
+        "your dispositions afterward, per the pr-state contract (shared with the CLI "
+        "review flow). This is a read-only review — do not edit any files. When you've "
+        "covered everything, give a short summary."
     )
-
-
-async def _open_first_finding(session_id: str) -> None:
-    """Auto-open the first (oldest) finding's file so the surface lands on real
-    code when opened, instead of a blank pane. Best-effort: a failure here must
-    not fail a review that otherwise succeeded."""
-    try:
-        rows = await asyncio.to_thread(findings.list_findings, session_id)
-        if not rows:
-            return
-        first = rows[0]
-        anchor = first.get("anchor")
-        line_range = anchor["range"] if anchor else None
-        await open_file_on_surface(session_id, first["file"], line_range)
-    except Exception:
-        log.warning("auto-open first finding failed for session %s", session_id, exc_info=True)
 
 
 class AgentReviewRunner:
@@ -96,7 +81,6 @@ class AgentReviewRunner:
                 await asyncio.to_thread(
                     sessions.set_agent_session_id, session_id, agent_session_id
                 )
-            await _open_first_finding(session_id)
             await asyncio.to_thread(sessions.set_status, session_id, "ready")
             await broadcast_status(session_id, "ready")
             log.info("review complete for session %s", session_id)
