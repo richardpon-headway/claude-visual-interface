@@ -1,0 +1,30 @@
+web/src/HomePage.tsx
+  s_615aafd18b9701::t_4a43a387b53575 184-185
+  s_615aafd18b9701::t_692dc2931f5c87 23-31,39-42,46-47,59-82,84-101,110-111,114,121,128-129,141-147,163,174-183,186-209,212-218
+web/src/HomePage.test.tsx
+  s_615aafd18b9701::t_f93d5cfe967d86 62-92,94-106,108-117,119-136,138-148
+  s_615aafd18b9701::t_c939b5fa3e6253 107
+  s_615aafd18b9701::t_dbcbc30b442e92 1,5,14-39
+  s_615aafd18b9701::t_17a3f1a76f2ae6 118
+  s_615aafd18b9701::t_926e58417c4737 93
+  s_615aafd18b9701::t_2d85b5653955a3 137
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "1b066eec6a2f81248c46331070d65743bad1b967",
+  "prompts": {},
+  "sessions": {
+    "s_615aafd18b9701": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1242156c-18f4-46de-ba24-03f8af298faa",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
