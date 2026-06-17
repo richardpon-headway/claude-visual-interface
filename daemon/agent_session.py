@@ -119,6 +119,10 @@ class AgentSession:
         self._surface = surface
         self._system_prompt = system_prompt
         self._resume = resume
+        # The SDK session id this chat is running under, persisted so a later session
+        # (after idle-close / daemon restart) resumes the conversation. Seeded with the
+        # id we opened on; updated when a turn's result reports a different one.
+        self._sdk_session_id = resume
         # True while this chat is still on the default title; flipped off once any
         # titling attempt resolves, so we stop spawning title calls per message.
         self._needs_title = needs_title
@@ -271,10 +275,21 @@ class AgentSession:
                 and message.api_error_status in _RETRYABLE_API_STATUSES
             ):
                 return relayed_content, message.api_error_status
+            if isinstance(message, ResultMessage):
+                await self._remember_sdk_session(message.session_id)
             await relay_message_activity(self._surface, message)
             if isinstance(message, AssistantMessage):
                 relayed_content = True
         return relayed_content, None
+
+    async def _remember_sdk_session(self, session_id: str | None) -> None:
+        """Persist the SDK session id so a later session for this surface resumes the
+        conversation. A no-op unless it changed, so a steady conversation doesn't write
+        to the DB every turn."""
+        if not session_id or session_id == self._sdk_session_id:
+            return
+        self._sdk_session_id = session_id
+        await asyncio.to_thread(sessions.set_agent_session_id, self._surface, session_id)
 
     async def interrupt(self) -> None:
         """Stop the in-flight turn without closing the session, so the next message
