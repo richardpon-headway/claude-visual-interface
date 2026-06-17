@@ -6,7 +6,20 @@ import { ActivityFeed } from "./ActivityFeed";
 describe("ActivityFeed", () => {
   it("shows a placeholder when there's no activity", () => {
     render(<ActivityFeed activity={[]} />);
-    expect(screen.getByText(/no activity yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/ask anything to get started/i)).toBeInTheDocument();
+  });
+
+  it("hides successful run results but keeps failures", () => {
+    render(
+      <ActivityFeed
+        activity={[
+          { kind: "result", text: "success" },
+          { kind: "result", text: "stopped" },
+        ]}
+      />,
+    );
+    expect(screen.queryByText("success")).toBeNull();
+    expect(screen.getByText("stopped")).toBeInTheDocument();
   });
 
   it("renders each entry and labels tool calls", () => {

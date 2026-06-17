@@ -85,11 +85,16 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
 // compact tool/result lines, in arrival order. The parent owns scrolling and width.
 export function ActivityFeed({ activity }: { activity: ActivityEntry[] }) {
   if (activity.length === 0) {
-    return <div className="py-10 text-center text-sm text-zinc-500">no activity yet</div>;
+    return (
+      <div className="py-16 text-center text-sm text-zinc-500">Ask anything to get started.</div>
+    );
   }
+  // A successful run result is implied by the answer above it; hide it as noise.
+  // Failures (error / stopped / API error / …) still surface.
+  const shown = activity.filter((e) => !(e.kind === "result" && e.text === "success"));
   return (
     <ul className="space-y-3">
-      {activity.map((entry, i) => (
+      {shown.map((entry, i) => (
         <ActivityRow key={i} entry={entry} />
       ))}
     </ul>
