@@ -4,7 +4,7 @@
 
 import type { ActivityEntry } from "./viewState";
 
-export type Prompt = { id: string; text: string };
+export type Prompt = { id: string; text: string; summary: string | null };
 export type PromptPos = { id: string; top: number };
 
 // One landmark per user prompt, in order. The id is stable for the surface lifetime
@@ -15,7 +15,7 @@ export function promptLandmarks(activity: ActivityEntry[]): Prompt[] {
   let n = 0;
   for (const entry of activity) {
     if (entry.kind === "user") {
-      prompts.push({ id: `prompt-${n}`, text: entry.text });
+      prompts.push({ id: `prompt-${n}`, text: entry.text, summary: entry.summary ?? null });
       n += 1;
     }
   }

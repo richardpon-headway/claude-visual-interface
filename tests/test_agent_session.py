@@ -106,8 +106,10 @@ async def _wait_until(predicate, limit=1.0):
 def fake_client(monkeypatch):
     FakeClient.instances.clear()
     monkeypatch.setattr(agent_session, "ClaudeSDKClient", lambda options=None: FakeClient(options))
-    # Neutralize auto-titling by default; titling tests inject their own generator.
+    # Neutralize auto-titling and prompt-summaries by default; tests that exercise
+    # them inject their own generator/summarizer.
     monkeypatch.setattr(titles, "generator", _NoTitleGen())
+    monkeypatch.setattr(titles, "summarizer", _NoTitleGen())
 
 
 async def test_first_message_starts_a_session_records_user_and_relays_reply():
@@ -722,6 +724,29 @@ async def test_keeps_the_first_successful_title_under_concurrency(monkeypatch):
         assert title_frames == [{"type": "title", "surface": chat, "payload": {"title": "title:a"}}]
     finally:
         hub.unregister(chat, ws)
+    await reg.shutdown_all()
+
+
+async def test_prompt_gets_a_generated_summary(monkeypatch):
+    _seed_session(SESSION, worktree_path=None, session_type="chat")
+    store.get_or_create(SESSION).activity.clear()
+    monkeypatch.setattr(titles, "summarizer", _FixedTitleGen("fix the parser"))
+    reg = AgentSessionRegistry()
+    ws = FakeWS()
+    hub.register(SESSION, ws)
+    try:
+        await reg.send(SESSION, "can you help me fix the parser please")
+        await _wait_until(
+            lambda: any(m.get("type") == "prompt_summary" for m in ws.received)
+        )
+    finally:
+        hub.unregister(SESSION, ws)
+
+    summary_event = next(m for m in ws.received if m["type"] == "prompt_summary")
+    assert summary_event["payload"] == {"index": 0, "text": "fix the parser"}
+    # The summary also lands on the stored prompt entry (rides the snapshot).
+    user_entry = next(e for e in store.get_or_create(SESSION).activity if e.kind == "user")
+    assert user_entry.summary == "fix the parser"
     await reg.shutdown_all()
 
 

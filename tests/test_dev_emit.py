@@ -33,6 +33,7 @@ def test_dev_emit_renders_html():
         "kind": "artifact",
         "text": "",
         "html": "<p>hi</p>",
+        "summary": None,
     }
 
 
