@@ -28,7 +28,12 @@ def test_dev_emit_renders_html():
             json={"tool": "render_html", "args": {"surface": surface, "html": "<p>hi</p>"}},
         )
     assert response.status_code == 200
-    assert store.snapshot(surface)["artifact"] == {"html": "<p>hi</p>", "title": None}
+    # render_html appends an inline artifact segment to the conversation stream.
+    assert store.snapshot(surface)["activity"][-1] == {
+        "kind": "artifact",
+        "text": "",
+        "html": "<p>hi</p>",
+    }
 
 
 def test_dev_emit_404s_on_unknown_primitive():

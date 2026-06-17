@@ -23,6 +23,15 @@ describe("ActivityFeed", () => {
     expect(screen.getByText("tool")).toBeInTheDocument();
   });
 
+  it("renders an artifact entry as an inline iframe", () => {
+    const { container } = render(
+      <ActivityFeed activity={[{ kind: "artifact", text: "design", html: "<p>hi</p>" }]} />,
+    );
+    const iframe = container.querySelector("iframe");
+    expect(iframe).toBeInTheDocument();
+    expect(iframe).toHaveAttribute("srcdoc", "<p>hi</p>");
+  });
+
   it("renders a user turn as a right-aligned bubble", () => {
     const { container } = render(
       <ActivityFeed activity={[{ kind: "user", text: "open utils.py" }]} />,

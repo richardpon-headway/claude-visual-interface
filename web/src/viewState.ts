@@ -8,9 +8,10 @@ export type Diff = { a: string; b: string };
 // A self-contained HTML page rendered on the left pane (mirrors daemon Artifact).
 export type Artifact = { html: string; title: string | null };
 export type Selection = { file: string; range: Range };
-// One line of review narration (mirrors daemon ActivityEntry): Claude's text, a
-// tool call, or a run result.
-export type ActivityEntry = { kind: string; text: string };
+// One conversation segment (mirrors daemon ActivityEntry): the user's prompt,
+// Claude's text, a tool call, a run result, or an inline artifact (kind "artifact":
+// `html` carries the page, `text` its title).
+export type ActivityEntry = { kind: string; text: string; html?: string | null };
 
 // Transient view state — mirrors daemon ViewState (store.snapshot).
 export type ViewState = {
