@@ -23,7 +23,7 @@ from typing import Any
 
 from claude_agent_sdk import AssistantMessage, ClaudeSDKClient, ResultMessage
 
-from daemon import sessions, titles
+from daemon import messages, sessions, titles
 from daemon.activity_relay import relay_message_activity
 from daemon.mcp_server import (
     CVI_CHAT_SYSTEM_PROMPT,
@@ -349,6 +349,12 @@ class AgentSession:
             if not summary:
                 return
             entry.summary = summary  # rides the connect snapshot for late joiners
+            if entry.message_id is not None:
+                # Persist the summary onto its already-written row so the rail label
+                # survives a restart, not just this live broadcast.
+                await asyncio.to_thread(
+                    messages.set_message_summary, entry.message_id, summary
+                )
             await broadcast_prompt_summary(self._surface, index, summary)
         except asyncio.CancelledError:
             raise

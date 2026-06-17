@@ -3,6 +3,10 @@ plus the transient broadcast helpers (status / title / thinking / prompt summary
 
 from typing import Any
 
+import pytest
+
+from daemon import messages
+from daemon.db import apply_migrations_sync
 from daemon.hub import hub
 from daemon.mcp_server import (
     broadcast_prompt_summary,
@@ -13,6 +17,12 @@ from daemon.mcp_server import (
     render_html,
 )
 from daemon.view_state import store
+
+
+@pytest.fixture(autouse=True)
+def db(tmp_path, monkeypatch):
+    monkeypatch.setenv("CVI_DB_PATH", str(tmp_path / "cvi.db"))
+    apply_migrations_sync()
 
 
 class FakeWS:
@@ -69,6 +79,28 @@ async def test_record_activity_buffers_and_broadcasts():
     assert ws.received == [
         {"type": "activity", "surface": surface, "payload": {"kind": "tool", "text": "Bash"}}
     ]
+
+
+async def test_record_activity_persists_the_segment_and_holds_the_row_id():
+    surface = "vc-persist"
+    entry = await record_activity(surface, "user", "fix the parser", html=None)
+
+    # The row id is held on the live entry so a later summary can target it...
+    assert entry.message_id is not None
+    # ...and the segment is written through to SQLite, surviving a restart.
+    rows = messages.list_messages(surface)
+    assert [(r["id"], r["kind"], r["text"]) for r in rows] == [
+        (entry.message_id, "user", "fix the parser")
+    ]
+
+
+async def test_snapshot_strips_the_server_only_message_id():
+    surface = "vc-snapshot"
+    await record_activity(surface, "text", "hello")
+
+    snap = store.snapshot(surface)
+    assert snap["activity"][0]["kind"] == "text"
+    assert "message_id" not in snap["activity"][0]
 
 
 async def test_broadcast_status_broadcasts_without_storing():
