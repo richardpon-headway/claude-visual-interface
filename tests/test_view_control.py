@@ -5,6 +5,7 @@ from typing import Any
 
 from daemon.hub import hub
 from daemon.mcp_server import (
+    broadcast_prompt_summary,
     broadcast_status,
     broadcast_thinking,
     broadcast_title,
@@ -168,6 +169,24 @@ async def test_broadcast_title_broadcasts_without_storing():
 
     assert ws.received == [
         {"type": "title", "surface": surface, "payload": {"title": "Fix the parser"}}
+    ]
+
+
+async def test_broadcast_prompt_summary_broadcasts_the_index_and_text():
+    surface = "vc-summary"
+    ws = FakeWS()
+    hub.register(surface, ws)
+    try:
+        await broadcast_prompt_summary(surface, 2, "fix the parser")
+    finally:
+        hub.unregister(surface, ws)
+
+    assert ws.received == [
+        {
+            "type": "prompt_summary",
+            "surface": surface,
+            "payload": {"index": 2, "text": "fix the parser"},
+        }
     ]
 
 

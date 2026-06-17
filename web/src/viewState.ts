@@ -11,7 +11,12 @@ export type Selection = { file: string; range: Range };
 // One conversation segment (mirrors daemon ActivityEntry): the user's prompt,
 // Claude's text, a tool call, a run result, or an inline artifact (kind "artifact":
 // `html` carries the page, `text` its title).
-export type ActivityEntry = { kind: string; text: string; html?: string | null };
+export type ActivityEntry = {
+  kind: string;
+  text: string;
+  html?: string | null;
+  summary?: string | null; // for a user prompt: its generated outline-rail label
+};
 
 // Transient view state — mirrors daemon ViewState (store.snapshot).
 export type ViewState = {
@@ -65,7 +70,8 @@ export type WsMessage =
   | { type: "activity"; surface: string; payload: ActivityEntry }
   | { type: "status"; surface: string; payload: { status: string } }
   | { type: "thinking"; surface: string; payload: { active: boolean } }
-  | { type: "title"; surface: string; payload: { title: string } };
+  | { type: "title"; surface: string; payload: { title: string } }
+  | { type: "prompt_summary"; surface: string; payload: { index: number; text: string } };
 
 const MESSAGE_TYPES = [
   "snapshot",
@@ -80,6 +86,7 @@ const MESSAGE_TYPES = [
   "status",
   "thinking",
   "title",
+  "prompt_summary",
 ];
 
 export function emptyViewState(surface: string): ViewState {
@@ -174,5 +181,16 @@ export function applyMessage(state: SurfaceState, msg: WsMessage): SurfaceState 
       return { ...state, view: { ...state.view, thinking: msg.payload.active } };
     case "title":
       return { ...state, title: msg.payload.title };
+    case "prompt_summary": {
+      // Attach the summary to the index-th user prompt (the rail's `prompt-N`).
+      const { index, text } = msg.payload;
+      let n = -1;
+      const activity = state.view.activity.map((e) => {
+        if (e.kind !== "user") return e;
+        n += 1;
+        return n === index ? { ...e, summary: text } : e;
+      });
+      return { ...state, view: { ...state.view, activity } };
+    }
   }
 }

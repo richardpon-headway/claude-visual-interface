@@ -101,7 +101,7 @@ export function ReviewSurface({ surface }: { surface: string }) {
                   active === p.id ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:bg-zinc-900"
                 }`}
               >
-                {p.text}
+                {p.summary ?? p.text}
               </button>
             ))}
           </nav>

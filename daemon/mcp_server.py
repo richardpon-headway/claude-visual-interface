@@ -81,17 +81,33 @@ async def render_html_on_surface(surface: str, html: str, title: str | None = No
     await record_activity(surface, "artifact", title or "", html=html)
 
 
-async def record_activity(surface: str, kind: str, text: str, html: str | None = None) -> None:
-    """Append a conversation segment on a surface and push it to subscribers. Mirrors
-    open_file_on_surface: update the view store, then broadcast. `html` carries the
-    page for an artifact segment; it's omitted from the payload otherwise."""
-    store.append_activity(surface, kind, text, html)
+async def record_activity(surface: str, kind: str, text: str, html: str | None = None):
+    """Append a conversation segment on a surface and push it to subscribers; return
+    the stored entry (callers that need to enrich it later — e.g. a prompt's summary —
+    hold the reference). `html` carries the page for an artifact segment; it's omitted
+    from the payload otherwise."""
+    entry = store.append_activity(surface, kind, text, html)
     payload: dict[str, Any] = {"kind": kind, "text": text}
     if html is not None:
         payload["html"] = html
     await hub.broadcast(
         surface,
         {"type": "activity", "surface": surface, "payload": payload},
+    )
+    return entry
+
+
+async def broadcast_prompt_summary(surface: str, index: int, summary: str) -> None:
+    """Push a generated one-line summary for the index-th user prompt so the outline
+    rail's label updates live. The summary is also set on the stored prompt entry by
+    the caller, so it rides the connect snapshot for a browser that joins later."""
+    await hub.broadcast(
+        surface,
+        {
+            "type": "prompt_summary",
+            "surface": surface,
+            "payload": {"index": index, "text": summary},
+        },
     )
 
 

@@ -66,5 +66,9 @@ class AgentTitleGenerator:
             return None
 
 
-# The active generator. Tests inject a fake via daemon.titles.generator.
+# The active generators. `generator` titles a whole chat session (from its first
+# message); `summarizer` labels each prompt for the outline rail. Same shape, but
+# separate seams so tests can stub them independently. Tests inject fakes via
+# daemon.titles.generator / daemon.titles.summarizer.
 generator: TitleGenerator = AgentTitleGenerator()
+summarizer: TitleGenerator = AgentTitleGenerator()

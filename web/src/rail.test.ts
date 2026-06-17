@@ -5,14 +5,14 @@ import { activePromptId, promptLandmarks } from "./rail";
 describe("promptLandmarks", () => {
   it("derives one stable landmark per user prompt, in order", () => {
     const prompts = promptLandmarks([
-      { kind: "user", text: "first" },
+      { kind: "user", text: "first", summary: "the first ask" },
       { kind: "text", text: "answer" },
       { kind: "tool", text: "Bash" },
       { kind: "user", text: "second" },
     ]);
     expect(prompts).toEqual([
-      { id: "prompt-0", text: "first" },
-      { id: "prompt-1", text: "second" },
+      { id: "prompt-0", text: "first", summary: "the first ask" },
+      { id: "prompt-1", text: "second", summary: null },
     ]);
   });
 

@@ -56,6 +56,9 @@ class ActivityEntry:
     kind: str  # "user" | "text" | "tool" | "result" | "artifact"
     text: str
     html: str | None = None
+    # For a user prompt: a generated one-line summary used as its outline-rail label
+    # (set asynchronously after the prompt is recorded; None until/unless generated).
+    summary: str | None = None
 
 
 # Cap the per-surface activity buffer so a long review can't grow it without
@@ -142,11 +145,13 @@ class ViewStore:
 
     def append_activity(
         self, surface: str, kind: str, text: str, html: str | None = None
-    ) -> None:
+    ) -> ActivityEntry:
         activity = self.get_or_create(surface).activity
-        activity.append(ActivityEntry(kind=kind, text=text, html=html))
+        entry = ActivityEntry(kind=kind, text=text, html=html)
+        activity.append(entry)
         if len(activity) > MAX_ACTIVITY:
             del activity[: len(activity) - MAX_ACTIVITY]
+        return entry
 
     def snapshot(self, surface: str) -> dict[str, Any]:
         return asdict(self.get_or_create(surface))

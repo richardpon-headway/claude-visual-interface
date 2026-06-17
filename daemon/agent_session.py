@@ -33,11 +33,13 @@ from daemon.activity_relay import relay_message_activity
 from daemon.mcp_server import (
     CVI_CHAT_SYSTEM_PROMPT,
     CVI_REVIEW_SYSTEM_PROMPT,
+    broadcast_prompt_summary,
     broadcast_thinking,
     broadcast_title,
     build_agent_options,
     record_activity,
 )
+from daemon.view_state import ActivityEntry
 
 log = logging.getLogger(__name__)
 
@@ -130,6 +132,10 @@ class AgentSession:
         # titling attempt resolves, so we stop spawning title calls per message.
         self._needs_title = needs_title
         self._title_tasks: set[asyncio.Task[None]] = set()
+        # Per-prompt outline-rail summaries: a monotonic prompt counter (the rail's
+        # `prompt-N` index) and the in-flight summary tasks.
+        self._prompt_count = 0
+        self._summary_tasks: set[asyncio.Task[None]] = set()
         self._queue: asyncio.Queue[ChatTurn] = asyncio.Queue()
         # The live client while a connection is open, so a concurrent caller can
         # interrupt the in-flight turn. `_turn_active` gates interrupt to a running
@@ -206,7 +212,11 @@ class AgentSession:
         # message sent while a prior turn is still streaming stays queued (invisible)
         # until its turn runs, instead of landing above the prior turn's answer.
         marker = f"[image] {turn.text}".rstrip() if turn.image is not None else turn.text
-        await record_activity(self._surface, "user", marker)
+        entry = await record_activity(self._surface, "user", marker)
+        # Generate this prompt's one-line outline-rail summary in the background.
+        index = self._prompt_count
+        self._prompt_count += 1
+        self._summarize_prompt(index, entry, turn.text)
         await broadcast_thinking(self._surface, True)
         self._turn_active = True
         self._interrupting = False
@@ -318,8 +328,30 @@ class AgentSession:
         except Exception:
             log.warning("titling failed (surface=%s)", self._surface, exc_info=True)
 
+    def _summarize_prompt(self, index: int, entry: ActivityEntry, text: str) -> None:
+        """Kick off a background one-line summary for the index-th user prompt, used
+        as its outline-rail label. Fire-and-forget; image-only turns (no text) are
+        skipped (the rail falls back to the prompt text)."""
+        if not text:
+            return
+        task = asyncio.create_task(self._run_summary(index, entry, text))
+        self._summary_tasks.add(task)
+        task.add_done_callback(self._summary_tasks.discard)
+
+    async def _run_summary(self, index: int, entry: ActivityEntry, text: str) -> None:
+        try:
+            summary = await titles.summarizer.generate(text)
+            if not summary:
+                return
+            entry.summary = summary  # rides the connect snapshot for late joiners
+            await broadcast_prompt_summary(self._surface, index, summary)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.warning("prompt summary failed (surface=%s)", self._surface, exc_info=True)
+
     async def aclose(self) -> None:
-        for task in self._title_tasks:
+        for task in (*self._title_tasks, *self._summary_tasks):
             task.cancel()
         self._task.cancel()
         try:
