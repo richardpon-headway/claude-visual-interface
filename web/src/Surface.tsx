@@ -133,16 +133,9 @@ export function Surface({ surface }: { surface: string }) {
           {busy ? (
             <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-400">
               <ThinkingIndicator active={view.thinking} />
-              <button
-                type="button"
-                onClick={stop}
-                className="ml-auto rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300 hover:bg-zinc-800"
-              >
-                Stop
-              </button>
             </div>
           ) : null}
-          <ChatInput onSend={sendMessage} />
+          <ChatInput onSend={sendMessage} busy={busy} onStop={stop} />
         </div>
       </div>
     </div>

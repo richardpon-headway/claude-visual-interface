@@ -1,11 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
 
-import type { ImageAttachment, SendMessage } from "./useSurfaceSocket";
+import type { ImageAttachment, SendMessage, StopAgent } from "./useSurfaceSocket";
 
 // The chat box at the bottom of the right pane. Submitting sends a turn to the
 // surface's agent; the message echoes back into the transcript as a `user` entry.
 // Pasting or dropping an image attaches it to the next message (thumbnail chip).
-export function ChatInput({ onSend }: { onSend: SendMessage }) {
+// While a turn is in flight (`busy`), the Send button becomes a Stop button in
+// the same slot, and submitting is inert until the turn ends or is stopped.
+export function ChatInput({
+  onSend,
+  busy = false,
+  onStop,
+}: {
+  onSend: SendMessage;
+  busy?: boolean;
+  onStop?: StopAgent;
+}) {
   const [text, setText] = useState("");
   const [image, setImage] = useState<ImageAttachment | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -70,6 +80,7 @@ export function ChatInput({ onSend }: { onSend: SendMessage }) {
   }
 
   function send() {
+    if (busy) return;
     const trimmed = text.trim();
     if (!trimmed && !image) return;
     onSend(trimmed, image ?? undefined);
@@ -127,13 +138,24 @@ export function ChatInput({ onSend }: { onSend: SendMessage }) {
           aria-label="Message the agent"
           className="min-w-0 flex-1 resize-none rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-sm"
         />
-        <button
-          type="submit"
-          disabled={!text.trim() && !image}
-          className="rounded border border-zinc-700 px-3 py-1 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-40"
-        >
-          Send
-        </button>
+        {busy ? (
+          <button
+            type="button"
+            onClick={onStop}
+            aria-label="Stop the agent"
+            className="rounded border border-zinc-700 px-3 py-1 text-sm text-zinc-200 hover:bg-zinc-800"
+          >
+            Stop
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={!text.trim() && !image}
+            className="rounded border border-zinc-700 px-3 py-1 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-40"
+          >
+            Send
+          </button>
+        )}
       </div>
     </form>
   );

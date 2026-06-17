@@ -28,8 +28,8 @@ export function ThinkingIndicator({ active }: { active: boolean }) {
   const word = WORDS[Math.floor(elapsed / WORD_INTERVAL_MS) % WORDS.length];
   const seconds = Math.floor(elapsed / 1000);
 
-  // Inline content only — the parent (Surface) provides the bordered row so
-  // the Stop button can sit on the same line.
+  // Inline content only — the parent (Surface) provides the status row above
+  // the composer.
   return (
     <span className="flex items-center gap-2">
       <span className="font-mono text-sky-300">{frame}</span>
