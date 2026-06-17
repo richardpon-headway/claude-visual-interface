@@ -1,0 +1,22 @@
+web/src/styles.css
+  s_00287a2396e886::t_d0b8320639350d 7-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "620e9248d827ef456cb13bfcd2156774f7d8103c",
+  "prompts": {},
+  "sessions": {
+    "s_00287a2396e886": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd1d386a-26db-40b6-8c32-0be7448c9d9e",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
