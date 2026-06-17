@@ -6,9 +6,6 @@ export type Session = {
   type: string;
   title: string | null;
   status: string;
-  repo: string | null;
-  branch: string | null;
-  worktree_path: string | null;
   created_at: string;
   updated_at: string;
   archived_at: string | null;

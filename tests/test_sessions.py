@@ -26,14 +26,12 @@ def _insert_session(session_id, *, updated_at, archived_at=None, deleted_at=None
         conn.close()
 
 
-def test_create_chat_session_is_worktree_free_and_ready():
+def test_create_chat_session_is_ready_with_a_default_title():
     session_id = sessions.create_chat_session()
     row = sessions.get_session(session_id)
     assert row["type"] == "chat"
     assert row["status"] == "ready"
     assert row["title"] == "New chat"  # default label so the list row isn't a raw uuid
-    assert row["worktree_path"] is None
-    assert row["base_ref"] is None
 
 
 def test_create_chat_session_honors_a_title():

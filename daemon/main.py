@@ -50,8 +50,8 @@ async def health() -> dict[str, str]:
 
 @app.get("/sessions")
 async def get_sessions(include_archived: bool = False) -> dict[str, Any]:
-    """List sessions for the home page (newest activity first, with findings
-    summaries). Soft-deleted sessions are excluded; archived ones unless asked."""
+    """List sessions for the home page (newest activity first). Soft-deleted
+    sessions are excluded; archived ones unless asked."""
     rows = await asyncio.to_thread(sessions.list_sessions, include_archived=include_archived)
     return {"sessions": rows}
 

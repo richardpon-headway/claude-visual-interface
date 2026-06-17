@@ -40,14 +40,14 @@ def db(tmp_path, monkeypatch):
     apply_migrations_sync()
 
 
-def _seed_session(session_id, *, worktree_path, session_type="chat", agent_session_id=None):
+def _seed_session(session_id, *, session_type="chat", agent_session_id=None):
     conn = open_db()
     try:
         conn.execute(
             "INSERT INTO session "
-            "(id, type, status, worktree_path, agent_session_id, created_at, updated_at) "
-            "VALUES (?, ?, 'ready', ?, ?, 't', 't')",
-            (session_id, session_type, worktree_path, agent_session_id),
+            "(id, type, status, agent_session_id, created_at, updated_at) "
+            "VALUES (?, ?, 'ready', ?, 't', 't')",
+            (session_id, session_type, agent_session_id),
         )
         conn.commit()
     finally:
@@ -113,7 +113,7 @@ def fake_client(monkeypatch):
 
 
 async def test_first_message_starts_a_session_records_user_and_relays_reply():
-    _seed_session(SESSION, worktree_path="/tmp/wt")
+    _seed_session(SESSION)
     store.get_or_create(SESSION).activity.clear()
     reg = AgentSessionRegistry()
 
@@ -132,7 +132,7 @@ async def test_first_message_starts_a_session_records_user_and_relays_reply():
 
 
 async def test_turns_are_serialized_in_order():
-    _seed_session(SESSION, worktree_path="/tmp/wt")
+    _seed_session(SESSION)
     reg = AgentSessionRegistry()
 
     await reg.send(SESSION, "first")
@@ -150,7 +150,7 @@ async def test_turns_are_serialized_in_order():
 async def test_user_turn_is_recorded_at_execution_time_not_on_enqueue(monkeypatch):
     # A message sent while a prior turn is still streaming must not jump ahead of
     # that turn's answer — the transcript pairs each prompt with its own reply.
-    _seed_session(SESSION, worktree_path=None, session_type="chat")
+    _seed_session(SESSION, session_type="chat")
     store.get_or_create(SESSION).activity.clear()
     release = asyncio.Event()
 
@@ -195,7 +195,7 @@ async def test_user_turn_is_recorded_at_execution_time_not_on_enqueue(monkeypatc
 
 
 async def test_idle_timeout_closes_and_deregisters(monkeypatch):
-    _seed_session(SESSION, worktree_path="/tmp/wt")
+    _seed_session(SESSION)
     monkeypatch.setattr(agent_session, "AGENT_IDLE_SECONDS", 0.05)
     reg = AgentSessionRegistry()
 
@@ -204,7 +204,7 @@ async def test_idle_timeout_closes_and_deregisters(monkeypatch):
 
 
 async def test_shutdown_all_closes_a_live_session():
-    _seed_session(SESSION, worktree_path="/tmp/wt")
+    _seed_session(SESSION)
     reg = AgentSessionRegistry()
 
     await reg.send(SESSION, "hi")
@@ -216,7 +216,7 @@ async def test_shutdown_all_closes_a_live_session():
 
 async def test_chat_session_with_no_worktree_starts_and_chats():
     # A general chat has no worktree — it starts anyway and runs with cwd=None.
-    _seed_session("chat-no-wt", worktree_path=None, session_type="chat")
+    _seed_session("chat-no-wt", session_type="chat")
     store.get_or_create("chat-no-wt").activity.clear()
     reg = AgentSessionRegistry()
 
@@ -233,7 +233,7 @@ async def test_chat_session_with_no_worktree_starts_and_chats():
 
 
 async def test_image_turn_sends_an_image_block_and_marks_the_feed():
-    _seed_session("img", worktree_path=None, session_type="chat")
+    _seed_session("img", session_type="chat")
     store.get_or_create("img").activity.clear()
     reg = AgentSessionRegistry()
 
@@ -259,7 +259,7 @@ async def test_image_turn_sends_an_image_block_and_marks_the_feed():
 
 
 async def test_image_only_turn_marks_the_feed_and_sends_just_the_image():
-    _seed_session("img2", worktree_path=None, session_type="chat")
+    _seed_session("img2", session_type="chat")
     store.get_or_create("img2").activity.clear()
     reg = AgentSessionRegistry()
 
@@ -289,7 +289,7 @@ async def test_unknown_surface_records_a_notice_and_starts_nothing():
 
 
 async def test_turn_sets_thinking_during_and_clears_after(monkeypatch):
-    _seed_session("think", worktree_path=None, session_type="chat")
+    _seed_session("think", session_type="chat")
     seen: dict[str, bool] = {}
 
     class ThinkingProbeClient(FakeClient):
@@ -314,7 +314,7 @@ async def test_turn_sets_thinking_during_and_clears_after(monkeypatch):
 
 
 async def test_thinking_clears_when_a_turn_errors(monkeypatch):
-    _seed_session("think-err", worktree_path=None, session_type="chat")
+    _seed_session("think-err", session_type="chat")
 
     class BoomClient(FakeClient):
         async def query(self, prompt):
@@ -362,7 +362,7 @@ class FlakyClient(FakeClient):
 
 
 async def test_transient_api_error_is_retried_then_succeeds(monkeypatch):
-    _seed_session("flaky", worktree_path=None, session_type="chat")
+    _seed_session("flaky", session_type="chat")
     store.get_or_create("flaky").activity.clear()
     monkeypatch.setattr(agent_session, "_RETRY_BASE_DELAY", 0.0)
     monkeypatch.setattr(agent_session, "_RETRY_MAX_DELAY", 0.0)
@@ -387,7 +387,7 @@ async def test_transient_api_error_is_retried_then_succeeds(monkeypatch):
 
 
 async def test_transient_api_error_surfaced_after_retries_exhausted(monkeypatch):
-    _seed_session("downed", worktree_path=None, session_type="chat")
+    _seed_session("downed", session_type="chat")
     store.get_or_create("downed").activity.clear()
     monkeypatch.setattr(agent_session, "_RETRY_BASE_DELAY", 0.0)
     monkeypatch.setattr(agent_session, "_RETRY_MAX_DELAY", 0.0)
@@ -412,7 +412,7 @@ async def test_transient_api_error_surfaced_after_retries_exhausted(monkeypatch)
 async def test_transient_error_after_content_streamed_is_not_retried(monkeypatch):
     # Once content has streamed, a retry would duplicate it — so surface the error
     # instead of re-running.
-    _seed_session("mid", worktree_path=None, session_type="chat")
+    _seed_session("mid", session_type="chat")
     store.get_or_create("mid").activity.clear()
 
     class MidStreamErrorClient(FakeClient):
@@ -472,7 +472,7 @@ class BlockingClient(FakeClient):
 
 
 async def test_interrupt_stops_the_turn_and_keeps_the_session_open(monkeypatch):
-    _seed_session(SESSION, worktree_path=None, session_type="chat")
+    _seed_session(SESSION, session_type="chat")
     store.get_or_create(SESSION).activity.clear()
     monkeypatch.setattr(
         agent_session, "ClaudeSDKClient", lambda options=None: BlockingClient(options)
@@ -507,7 +507,7 @@ async def test_interrupt_is_a_noop_when_no_turn_is_running():
 
 
 async def test_chat_session_uses_the_general_prompt_with_its_surface_id():
-    _seed_session("chat-p", worktree_path=None, session_type="chat")
+    _seed_session("chat-p", session_type="chat")
     reg = AgentSessionRegistry()
 
     await reg.send("chat-p", "hi")
@@ -528,7 +528,7 @@ def test_with_surface_id_appends_the_id_and_instruction():
 
 
 async def test_resumes_the_recorded_session():
-    _seed_session(SESSION, worktree_path=None, agent_session_id="sdk-xyz")
+    _seed_session(SESSION, agent_session_id="sdk-xyz")
     reg = AgentSessionRegistry()
 
     await reg.send(SESSION, "pick up where we left off")
@@ -540,7 +540,7 @@ async def test_resumes_the_recorded_session():
 
 
 async def test_starts_fresh_when_no_session_recorded():
-    _seed_session(SESSION, worktree_path=None)  # agent_session_id is NULL
+    _seed_session(SESSION)  # agent_session_id is NULL
     reg = AgentSessionRegistry()
 
     await reg.send(SESSION, "hello")
@@ -551,7 +551,7 @@ async def test_starts_fresh_when_no_session_recorded():
 
 
 async def test_falls_back_to_fresh_when_resume_fails(monkeypatch):
-    _seed_session(SESSION, worktree_path=None, agent_session_id="stale-id")
+    _seed_session(SESSION, agent_session_id="stale-id")
     store.get_or_create(SESSION).activity.clear()
 
     class ResumeFailClient(FakeClient):
@@ -715,7 +715,7 @@ async def test_keeps_the_first_successful_title_under_concurrency(monkeypatch):
 
 
 async def test_prompt_gets_a_generated_summary(monkeypatch):
-    _seed_session(SESSION, worktree_path=None, session_type="chat")
+    _seed_session(SESSION, session_type="chat")
     store.get_or_create(SESSION).activity.clear()
     monkeypatch.setattr(titles, "summarizer", _FixedTitleGen("fix the parser"))
     reg = AgentSessionRegistry()
