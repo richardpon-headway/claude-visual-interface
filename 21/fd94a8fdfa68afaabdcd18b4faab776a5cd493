@@ -1,0 +1,28 @@
+web/src/ActivityFeed.tsx
+  s_1a0096a62c009e::t_a06705c9488331 16-17,19-22,26-27,29,34-35,37,39,43,48-49,51-53,55-59
+web/src/ActivityFeed.test.tsx
+  s_1a0096a62c009e::t_46786d74126c56 26-29,31
+web/src/ReviewSurface.tsx
+  s_1a0096a62c009e::t_f46fce959c63f4 1,29-31,33,36-40,48-49,54-55,57-62,64,76
+web/src/ChatInput.tsx
+  s_1a0096a62c009e::t_a289446b1e5af5 74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "21fd94a8fdfa68afaabdcd18b4faab776a5cd493",
+  "prompts": {},
+  "sessions": {
+    "s_1a0096a62c009e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4cb239e5-c99c-4cf4-a459-b5a50935712e",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
