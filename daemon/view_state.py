@@ -53,12 +53,15 @@ class ActivityEntry:
     # One segment of the conversation: the user's prompt, Claude's text, a tool
     # call, a run result, or an inline artifact (kind="artifact": `html` carries a
     # model-authored HTML page, `text` its title).
-    kind: str  # "user" | "text" | "tool" | "result" | "artifact"
+    kind: str  # "user" | "text" | "tool" | "result" | "artifact" | "file"
     text: str
     html: str | None = None
     # For a user prompt: a generated one-line summary used as its outline-rail label
     # (set asynchronously after the prompt is recorded; None until/unless generated).
     summary: str | None = None
+    # For a file segment (kind="file", `text` is the path): the unified diff vs the
+    # review base. The full file is fetched on demand via GET /sessions/{id}/file.
+    diff: str | None = None
 
 
 # Cap the per-surface activity buffer so a long review can't grow it without
@@ -144,10 +147,10 @@ class ViewStore:
         self.get_or_create(surface).thinking = active
 
     def append_activity(
-        self, surface: str, kind: str, text: str, html: str | None = None
+        self, surface: str, kind: str, text: str, html: str | None = None, diff: str | None = None
     ) -> ActivityEntry:
         activity = self.get_or_create(surface).activity
-        entry = ActivityEntry(kind=kind, text=text, html=html)
+        entry = ActivityEntry(kind=kind, text=text, html=html, diff=diff)
         activity.append(entry)
         if len(activity) > MAX_ACTIVITY:
             del activity[: len(activity) - MAX_ACTIVITY]

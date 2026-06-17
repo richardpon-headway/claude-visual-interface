@@ -4,7 +4,7 @@ under tmp_path (no network)."""
 
 import subprocess
 
-from daemon.gitref import resolve_base_ref
+from daemon.gitref import file_diff, resolve_base_ref
 
 
 def _git(cwd, *args):
@@ -30,6 +30,13 @@ def _init_repo_with_commit(path):
 def _set_remote_tracking(path, branch, sha):
     """Create a remote-tracking ref without a real remote (no network)."""
     _git(path, "update-ref", f"refs/remotes/origin/{branch}", sha)
+
+
+def _head(path):
+    out = subprocess.run(
+        ["git", "-C", str(path), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    )
+    return out.stdout.strip()
 
 
 async def test_prefers_origin_branch_when_it_exists(tmp_path):
@@ -60,3 +67,25 @@ async def test_falls_back_for_a_non_git_directory(tmp_path):
     plain.mkdir()
 
     assert await resolve_base_ref(str(plain), "main") == "main"
+
+
+async def test_file_diff_returns_the_unified_diff_against_the_base(tmp_path):
+    repo = tmp_path / "repo"
+    _init_repo_with_commit(repo)
+    (repo / "a.txt").write_text("one\n")
+    _git(repo, "add", "a.txt")
+    _git(repo, "commit", "-q", "-m", "add a")
+    base = _head(repo)
+    (repo / "a.txt").write_text("one\ntwo\n")
+    _git(repo, "commit", "-aqm", "edit a")
+
+    diff = await file_diff(str(repo), base, "a.txt")
+    assert diff is not None
+    assert "+two" in diff
+    assert "a.txt" in diff
+
+
+async def test_file_diff_returns_none_for_a_non_git_directory(tmp_path):
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    assert await file_diff(str(plain), "HEAD", "a.txt") is None
