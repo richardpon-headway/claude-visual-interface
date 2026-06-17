@@ -1,8 +1,8 @@
 import { HomePage } from "./HomePage";
-import { ReviewSurface } from "./ReviewSurface";
+import { Surface } from "./Surface";
 import { routeFromPath } from "./router";
 
 export function App() {
   const route = routeFromPath(window.location.pathname);
-  return route.kind === "surface" ? <ReviewSurface surface={route.surface} /> : <HomePage />;
+  return route.kind === "surface" ? <Surface surface={route.surface} /> : <HomePage />;
 }

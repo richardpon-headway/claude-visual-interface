@@ -1,22 +1,19 @@
-"""The CVI MCP server: the typed render vocabulary a Claude session pushes through.
+"""The CVI MCP server: the render vocabulary a Claude session pushes through.
 
 The daemon hosts a single in-process MCP server (via the Claude Agent SDK) that a
-session connects to. Its tools are a small, curated set of typed primitives — NOT
-arbitrary HTML — namespaced by direction:
+session connects to. A surface is one scrolling conversation; the agent renders
+content into it with two primitives:
 
-- view-control (transient): open_code / split_pane / highlight_range / show_diff / render_html
-- state (persisted):         upsert_finding / set_disposition / anchor_message
-- pull (read):               get_selection / get_view_state
+- render_html — a self-contained HTML page, inline in the conversation
+- render_file — a file's diff (vs the review base), inline in the conversation
 
-This phase registers the vocabulary and the session-connection point. The handlers
-are stubs: they accept and echo their arguments but do not yet update daemon state
-or push to the browser — that wiring (DB + WebSocket) lands in a later phase.
+Both append a segment to the per-surface activity buffer and broadcast it to the
+browser over the WebSocket; the buffer rides the connect snapshot for late joiners.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +21,6 @@ from claude_agent_sdk import (
     ClaudeAgentOptions,
     PermissionResultAllow,
     PermissionResultDeny,
-    ToolAnnotations,
     ToolPermissionContext,
     create_sdk_mcp_server,
     tool,
@@ -38,42 +34,12 @@ from daemon.view_state import store
 SERVER_NAME = "cvi"
 SERVER_VERSION = "0.1.0"
 
-# A line range within a file, 1-based and inclusive. Reused by several primitives.
-_RANGE_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "start": {"type": "integer", "description": "1-based start line"},
-        "end": {"type": "integer", "description": "1-based end line, inclusive"},
-    },
-    "required": ["start", "end"],
-}
-
 
 def _ok(text: str) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": text}]}
 
 
-def _not_wired(name: str, args: dict[str, Any]) -> dict[str, Any]:
-    """Stub result for an unwired primitive — echoes the call for observability."""
-    text = f"[cvi skeleton] {name} accepted {args!r}; state/render wiring lands in a later phase."
-    return _ok(text)
-
-
-# --- view-control primitives (transient) -----------------------------------------
-
-async def open_file_on_surface(
-    surface: str, file: str, line_range: dict[str, int] | None = None, pane: int = 0
-) -> None:
-    """Open a file in a surface's left pane: update the view store and push the
-    open_code event to subscribers. The canonical effect behind the open_code
-    primitive — also called by the review runner to auto-open a finding's file."""
-    store.open_code(surface, file, line_range, pane)
-    await hub.broadcast(
-        surface,
-        {"type": "open_code", "surface": surface,
-         "payload": {"file": file, "range": line_range, "pane": pane}},
-    )
-
+# --- render helpers ---------------------------------------------------------------
 
 async def render_html_on_surface(surface: str, html: str, title: str | None = None) -> None:
     """Render a model-authored HTML page as an inline artifact block in the
@@ -148,95 +114,15 @@ async def broadcast_thinking(surface: str, active: bool) -> None:
     )
 
 
-@tool(
-    "open_code",
-    "Open a file in the review's left pane, optionally scrolled to a line range and "
-    "targeted at a specific split pane. Omit 'range' to open at the top; omit 'pane' "
-    "to use the primary pane.",
-    {
-        "type": "object",
-        "properties": {
-            "surface": {"type": "string", "description": "Surface UUID to route to"},
-            "file": {"type": "string", "description": "Repo-relative file path"},
-            "range": _RANGE_SCHEMA,
-            "pane": {"type": "integer", "description": "0-based split-pane index"},
-        },
-        "required": ["surface", "file"],
-    },
-)
-async def open_code(args: dict[str, Any]) -> dict[str, Any]:
-    surface = args["surface"]
-    file = args["file"]
-    pane = args.get("pane", 0)
-    await open_file_on_surface(surface, file, args.get("range"), pane)
-    return _ok(f"opened {file} on surface {surface} (pane {pane})")
-
-
-@tool(
-    "split_pane",
-    "Split the left pane of a surface into n independent, side-by-side code views.",
-    {"surface": str, "n": int},
-)
-async def split_pane(args: dict[str, Any]) -> dict[str, Any]:
-    surface = args["surface"]
-    n = args["n"]
-    store.split_pane(surface, n)
-    await hub.broadcast(
-        surface, {"type": "split_pane", "surface": surface, "payload": {"n": n}}
-    )
-    return _ok(f"split surface {surface} into {n} pane(s)")
-
-
-@tool(
-    "highlight_range",
-    "Highlight a line range in a file on the left pane of a surface.",
-    {
-        "type": "object",
-        "properties": {
-            "surface": {"type": "string", "description": "Surface UUID to route to"},
-            "file": {"type": "string", "description": "Repo-relative file path"},
-            "range": _RANGE_SCHEMA,
-        },
-        "required": ["surface", "file", "range"],
-    },
-)
-async def highlight_range(args: dict[str, Any]) -> dict[str, Any]:
-    surface = args["surface"]
-    file = args["file"]
-    line_range = args["range"]
-    store.highlight_range(surface, file, line_range)
-    await hub.broadcast(
-        surface,
-        {"type": "highlight_range", "surface": surface,
-         "payload": {"file": file, "range": line_range}},
-    )
-    return _ok(f"highlighted {file} {line_range} on surface {surface}")
-
-
-@tool(
-    "show_diff",
-    "Render a current-vs-proposed diff on a surface. 'a' and 'b' are content "
-    "references (e.g. 'current' or a suggested-patch id).",
-    {"surface": str, "a": str, "b": str},
-)
-async def show_diff(args: dict[str, Any]) -> dict[str, Any]:
-    surface = args["surface"]
-    a = args["a"]
-    b = args["b"]
-    store.show_diff(surface, a, b)
-    await hub.broadcast(
-        surface, {"type": "show_diff", "surface": surface, "payload": {"a": a, "b": b}}
-    )
-    return _ok(f"showing diff {a} vs {b} on surface {surface}")
-
+# --- render primitives ------------------------------------------------------------
 
 @tool(
     "render_html",
-    "Render a self-contained HTML page on the left pane of a surface — for anything "
+    "Render a self-contained HTML page inline in the conversation — for anything "
     "visual that isn't code: a design, diagram, table, report, or text-driven review. "
-    "A later render_html replaces the page; opening a code file switches the pane back "
-    "to the code view. Emit self-contained HTML/CSS/SVG only — no JavaScript and no "
-    "external/CDN resources (the page renders in a no-script sandbox).",
+    "Each call appears as its own block in the conversation. Emit self-contained "
+    "HTML/CSS/SVG only — no JavaScript and no external/CDN resources (the page renders "
+    "in a no-script sandbox).",
     {
         "type": "object",
         "properties": {
@@ -251,47 +137,6 @@ async def render_html(args: dict[str, Any]) -> dict[str, Any]:
     surface = args["surface"]
     await render_html_on_surface(surface, args["html"], args.get("title"))
     return _ok(f"rendered html on surface {surface}")
-
-
-# --- state primitives (persisted) -------------------------------------------------
-
-@tool(
-    "anchor_message",
-    "Anchor a conversation message to a file range so the panes stay in sync.",
-    {
-        "type": "object",
-        "properties": {
-            "message_id": {"type": "string", "description": "Message id to anchor"},
-            "file": {"type": "string", "description": "Repo-relative file path"},
-            "range": _RANGE_SCHEMA,
-        },
-        "required": ["message_id", "file", "range"],
-    },
-)
-async def anchor_message(args: dict[str, Any]) -> dict[str, Any]:
-    return _not_wired("anchor_message", args)
-
-
-# --- pull primitives (read) -------------------------------------------------------
-
-@tool(
-    "get_selection",
-    "Read the user's current left-pane selection on a surface.",
-    {"surface": str},
-    annotations=ToolAnnotations(readOnlyHint=True),
-)
-async def get_selection(args: dict[str, Any]) -> dict[str, Any]:
-    return _ok(json.dumps({"selection": store.snapshot(args["surface"])["selection"]}))
-
-
-@tool(
-    "get_view_state",
-    "Read the current view state (open files, splits, highlights) of a surface.",
-    {"surface": str},
-    annotations=ToolAnnotations(readOnlyHint=True),
-)
-async def get_view_state(args: dict[str, Any]) -> dict[str, Any]:
-    return _ok(json.dumps(store.snapshot(args["surface"])))
 
 
 @tool(
@@ -329,17 +174,10 @@ async def render_file(args: dict[str, Any]) -> dict[str, Any]:
     return _ok(f"rendered {path} ({len(diff)} bytes of diff)")
 
 
-# The full primitive vocabulary, in push-then-pull order.
+# The full primitive vocabulary: render content into the conversation.
 TOOLS = [
-    open_code,
-    split_pane,
-    highlight_range,
-    show_diff,
     render_html,
     render_file,
-    anchor_message,
-    get_selection,
-    get_view_state,
 ]
 
 TOOL_NAMES = [t.name for t in TOOLS]
@@ -373,36 +211,33 @@ async def _approve_read_only_tools(
     return PermissionResultDeny(message="CVI review sessions are read-only")
 
 
-# The HTML-canvas contract both prompts share: render visuals as a full, self-
-# contained page in the no-script sandbox. Kept as one constant so the rule can't
-# drift between the chat and review framings.
+# The render contract both prompts share: visuals render inline in the conversation
+# as self-contained no-script pages. Kept as one constant so the rule can't drift
+# between the chat and review framings.
 _RENDER_HTML_GUIDANCE = (
     "For anything visual — a design, diagram, table, chart, or report — use "
-    "mcp__cvi__render_html to render a full HTML page on the left pane. That page "
-    "must be self-contained HTML/CSS/SVG only: no JavaScript and no external/CDN "
-    "resources, as it renders in a no-script sandbox. Render rather than only "
-    "describe when the user asks to see something."
+    "mcp__cvi__render_html to render a full HTML page inline in the conversation. That "
+    "page must be self-contained HTML/CSS/SVG only: no JavaScript and no external/CDN "
+    "resources, as it renders in a no-script sandbox. Render rather than only describe "
+    "when the user asks to see something."
 )
 
-# The general framing for a conversational session: a chat on the right with an
-# HTML canvas on the left. The default the chat agent passes for a non-review surface.
+# The general framing for a conversational session. The default the chat agent
+# passes for a non-review surface.
 CVI_CHAT_SYSTEM_PROMPT = (
-    "You are a Claude session with a visual surface. The user types in a right-hand "
-    "conversation pane and you reply there in text. You also have an HTML canvas on "
-    f"the left. {_RENDER_HTML_GUIDANCE} This is a read-only session — do not edit files."
+    "You are a Claude session with a visual surface: a single conversation the user "
+    "reads top to bottom, where your answers, rendered HTML pages, and file diffs all "
+    f"appear inline. {_RENDER_HTML_GUIDANCE} This is a read-only session — do not edit "
+    "files."
 )
 
-# The review specialization: same canvas, plus the code-review primitives. The
-# one-shot runner omits this (its review prompt is self-contained); the chat agent
-# passes it when continuing a review conversation.
+# The review specialization. The one-shot runner omits this (its review prompt is
+# self-contained); the chat agent passes it when continuing a review conversation.
 CVI_REVIEW_SYSTEM_PROMPT = (
-    "You are operating a visual code-review surface. The user watches a left code "
-    "pane and a right conversation pane. Use the cvi tools to drive the left pane: "
-    "mcp__cvi__open_code to show a file (optionally at a line range), "
-    "mcp__cvi__highlight_range to point at lines, and mcp__cvi__upsert_finding to "
-    "record a review finding anchored to code. When the user asks you to look at or "
-    f"show something, open it in the pane rather than only describing it. {_RENDER_HTML_GUIDANCE} "
-    "This is a read-only session — do not edit files."
+    "You are operating a visual code-review surface — a single conversation. Present "
+    "findings as normal messages, one at a time, naming the file and lines. Use "
+    "mcp__cvi__render_file to show a changed file's diff inline when it helps. "
+    f"{_RENDER_HTML_GUIDANCE} This is a read-only session — do not edit files."
 )
 
 
