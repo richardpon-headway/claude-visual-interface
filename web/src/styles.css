@@ -9,7 +9,7 @@
    px so a user who's raised their browser's default font size still scales above
    this — they shouldn't have to touch browser settings to get a larger UI. */
 html {
-  font-size: 112.5%; /* ~18px on a default 16px browser */
+  font-size: 125%; /* ~20px on a default 16px browser */
 }
 
 html,
