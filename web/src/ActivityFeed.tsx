@@ -1,3 +1,4 @@
+import { Markdown } from "./Markdown";
 import type { ActivityEntry } from "./viewState";
 
 function kindLabel(kind: string): string {
@@ -17,6 +18,7 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
   const label = kindLabel(entry.kind);
   const isTool = entry.kind === "tool";
   const isUser = entry.kind === "user";
+  const isText = entry.kind === "text";
   // The user's own turns read as a distinct, accented bubble in the transcript.
   if (isUser) {
     return (
@@ -25,6 +27,14 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
           you
         </span>
         <span className="text-zinc-100">{entry.text}</span>
+      </li>
+    );
+  }
+  // Assistant prose renders as markdown; tool/result stay compact one-liners.
+  if (isText) {
+    return (
+      <li className="border-b border-zinc-900 px-3 py-1.5 text-xs text-zinc-200">
+        <Markdown>{entry.text}</Markdown>
       </li>
     );
   }
