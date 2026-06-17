@@ -1,0 +1,22 @@
+web/src/Surface.tsx
+  s_09192dced8b861::t_c61d7b231e19f7 38-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "eaeb01eb1d3e2bfdbbab995458cc984f760df005",
+  "prompts": {},
+  "sessions": {
+    "s_09192dced8b861": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2663f36b-a38f-4358-b872-5070a3dbf798",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
