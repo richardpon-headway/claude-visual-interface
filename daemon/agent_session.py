@@ -17,7 +17,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-from collections.abc import AsyncIterator
+from collections import deque
+from collections.abc import AsyncIterator, Coroutine
 from dataclasses import dataclass
 from typing import Any
 
@@ -127,6 +128,14 @@ class AgentSession:
         # titling attempt resolves, so we stop spawning title calls per message.
         self._needs_title = needs_title
         self._title_tasks: set[asyncio.Task[None]] = set()
+        # Periodic title refresh: a rolling window of the most recent user messages
+        # feeds a regeneration every TITLE_REFRESH_EVERY text prompts. The counter is
+        # at send time (where titling lives), distinct from the execution-time
+        # _prompt_count used for rail summaries. _title_refreshing single-flights the
+        # refresh so a burst of prompts can't stack overlapping calls.
+        self._recent_user_msgs: deque[str] = deque(maxlen=titles.TITLE_WINDOW_MESSAGES)
+        self._title_prompt_count = 0
+        self._title_refreshing = False
         # Per-prompt outline-rail summaries: a monotonic prompt counter (the rail's
         # `prompt-N` index) and the in-flight summary tasks.
         self._prompt_count = 0
@@ -306,19 +315,41 @@ class AgentSession:
             log.warning("interrupt failed (surface=%s)", self._surface, exc_info=True)
 
     def maybe_title(self, text: str) -> None:
-        """If this chat still needs a title and the message has text to title from,
-        kick off a background titling attempt. Fire-and-forget — never blocks the
-        turn. Image-only turns (no text) are skipped, so titling falls to a later
-        message; failed attempts leave the flag set and retry on the next message."""
-        if not (self._needs_title and text):
+        """Drive titling off each text-bearing user message. Image-only turns (no text)
+        are skipped, so they don't advance the window or the refresh cadence. While the
+        chat is still untitled, kick off an initial titling attempt (retried on the next
+        message until one lands); once titled, regenerate every TITLE_REFRESH_EVERY
+        prompts off the recent-message window. Both are fire-and-forget — never block
+        the turn."""
+        if not text:
             return
-        task = asyncio.create_task(self._run_titling(text))
+        self._recent_user_msgs.append(text)
+        self._title_prompt_count += 1
+        # Snapshot the window now, at the prompt, so the attempt titles from the window
+        # as of this message — not whatever it's grown to when the task happens to run.
+        title_input = self._title_input()
+        if self._needs_title:
+            self._spawn_title_task(self._run_titling(title_input))
+        elif (
+            self._title_prompt_count % titles.TITLE_REFRESH_EVERY == 0
+            and not self._title_refreshing
+        ):
+            self._title_refreshing = True
+            self._spawn_title_task(self._run_title_refresh(title_input))
+
+    def _spawn_title_task(self, coro: Coroutine[Any, Any, None]) -> None:
+        task = asyncio.create_task(coro)
         self._title_tasks.add(task)
         task.add_done_callback(self._title_tasks.discard)
 
-    async def _run_titling(self, text: str) -> None:
+    def _title_input(self) -> str:
+        """The recent-message window fed to the title call, newest-first so generate()'s
+        length cap preserves the most recent context."""
+        return "\n".join(reversed(self._recent_user_msgs))
+
+    async def _run_titling(self, title_input: str) -> None:
         try:
-            title = await titles.generator.generate(text)
+            title = await titles.generator.generate(title_input)
             if not title:
                 return  # leave _needs_title set — retried on the next message
             # The title is resolved now (this attempt or a concurrent one), so stop
@@ -332,6 +363,24 @@ class AgentSession:
             raise
         except Exception:
             log.warning("titling failed (surface=%s)", self._surface, exc_info=True)
+
+    async def _run_title_refresh(self, title_input: str) -> None:
+        """Regenerate the title from the recent-message window and overwrite the prior
+        one. Single-flighted via _title_refreshing (cleared in finally). Always broadcasts
+        the result — we don't track the current title in memory, and re-broadcasting an
+        unchanged title is harmless."""
+        try:
+            title = await titles.generator.generate(title_input)
+            if not title:
+                return
+            await asyncio.to_thread(sessions.overwrite_title, self._surface, title)
+            await broadcast_title(self._surface, title)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.warning("title refresh failed (surface=%s)", self._surface, exc_info=True)
+        finally:
+            self._title_refreshing = False
 
     def _summarize_prompt(self, index: int, entry: ActivityEntry, text: str) -> None:
         """Kick off a background one-line summary for the index-th user prompt, used

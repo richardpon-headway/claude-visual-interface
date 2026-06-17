@@ -18,6 +18,17 @@ def test_clean_title_returns_none_on_empty():
     assert titles._clean_title("   \n  ") is None
 
 
+def test_clean_title_strips_a_stray_title_prefix():
+    assert titles._clean_title("Title: Fix the parser") == "Fix the parser"
+    assert titles._clean_title("title: fix the parser") == "fix the parser"
+    assert titles._clean_title('Title: "Quoted thing"') == "Quoted thing"
+
+
+def test_clean_title_keeps_a_legit_title_without_a_colon():
+    # No colon → not the "Title:" preamble; the real title is left intact.
+    assert titles._clean_title("Title bar refactor") == "Title bar refactor"
+
+
 def test_clean_title_caps_length_on_a_word_boundary():
     out = titles._clean_title("word " * 30)  # 150 chars of words
     assert out is not None
