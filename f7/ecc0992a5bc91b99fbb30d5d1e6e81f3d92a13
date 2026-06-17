@@ -1,0 +1,43 @@
+daemon/sessions.py
+  s_1a0096a62c009e::t_14fb43961d5ef2 92-94,96-98,104
+tests/test_review_runner.py
+  s_1a0096a62c009e::t_29178aecdc5794 76-78
+web/src/useSurfaceSocket.ts
+  s_1a0096a62c009e::t_b0a0d76c54c400 4
+daemon/main.py
+  s_1a0096a62c009e::t_9c711f4bdf165c 21
+web/src/viewState.test.ts
+  s_1a0096a62c009e::t_160b0291b6721c 29
+  s_1a0096a62c009e::t_efa843eb29ad88 4,7
+daemon/mcp_server.py
+  s_1a0096a62c009e::t_f13ed0d8fdbf90 33
+web/src/session.ts
+  s_1a0096a62c009e::t_30c68d95f11a03 1-2
+tests/test_mcp_server.py
+  s_1a0096a62c009e::t_876cdf45bfcf44 131
+daemon/review_runner.py
+  s_1a0096a62c009e::t_696bf572e6e10f 21
+  s_1a0096a62c009e::t_4c81eacee6a0f2 41-49
+web/src/viewState.ts
+  s_1a0096a62c009e::t_95bac8efb2e2f3 50-52
+  s_1a0096a62c009e::t_7d0158701857d3 103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "f7ecc0992a5bc91b99fbb30d5d1e6e81f3d92a13",
+  "prompts": {},
+  "sessions": {
+    "s_1a0096a62c009e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4cb239e5-c99c-4cf4-a459-b5a50935712e",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
