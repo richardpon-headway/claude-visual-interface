@@ -4,7 +4,6 @@ from daemon.db import apply_migrations_sync, open_db
 from daemon.mcp_server import (
     ALLOWED_TOOLS,
     CVI_CHAT_SYSTEM_PROMPT,
-    CVI_REVIEW_SYSTEM_PROMPT,
     SERVER_NAME,
     TOOLS,
     build_agent_options,
@@ -14,15 +13,14 @@ from daemon.mcp_server import (
 
 @pytest.fixture(autouse=True)
 def db(tmp_path, monkeypatch):
-    # Some primitives now persist to SQLite; isolate the DB and seed the session
-    # that upsert_finding's VALID_ARGS reference (the finding FK requires it).
+    # Isolate the DB and seed the session that the render primitives target.
     monkeypatch.setenv("CVI_DB_PATH", str(tmp_path / "cvi.db"))
     apply_migrations_sync()
     conn = open_db()
     try:
         conn.execute(
             "INSERT INTO session (id, type, status, created_at, updated_at) "
-            "VALUES ('mcp-test', 'review', 'running', 't', 't')",
+            "VALUES ('mcp-test', 'chat', 'ready', 't', 't')",
         )
         conn.commit()
     finally:
@@ -49,14 +47,11 @@ def test_server_registers_the_full_primitive_vocabulary():
     assert cvi_server["name"] == SERVER_NAME
 
 
-def test_chat_and_review_prompts_differ_and_both_drive_the_html_canvas():
-    assert CVI_CHAT_SYSTEM_PROMPT != CVI_REVIEW_SYSTEM_PROMPT
-    # The general chat prompt is not review-framed but still drives render_html.
+def test_chat_prompt_drives_the_html_canvas():
+    # The chat prompt isn't review-framed but still drives render_html.
     assert "code-review surface" not in CVI_CHAT_SYSTEM_PROMPT
     assert "render_html" in CVI_CHAT_SYSTEM_PROMPT
     assert "no JavaScript" in CVI_CHAT_SYSTEM_PROMPT
-    # The review prompt keeps the code-review framing.
-    assert "code-review surface" in CVI_REVIEW_SYSTEM_PROMPT
 
 
 def test_allowed_tools_are_fully_qualified():
@@ -78,11 +73,6 @@ def test_build_agent_options_attaches_server_and_approves_primitives():
     assert set(ALLOWED_TOOLS).issubset(options.allowed_tools)
     assert {"Read", "Grep", "Glob", "Bash"}.issubset(options.allowed_tools)
     assert options.cwd is None
-
-
-def test_build_agent_options_sets_the_review_worktree():
-    options = build_agent_options(cwd="/tmp/worktree")
-    assert options.cwd == "/tmp/worktree"
 
 
 def test_build_agent_options_passes_resume_session_id():

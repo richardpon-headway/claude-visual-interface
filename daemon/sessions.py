@@ -1,4 +1,4 @@
-"""Repository for review sessions (the `session` table)."""
+"""Repository for chat sessions (the `session` table)."""
 
 from __future__ import annotations
 
@@ -35,57 +35,21 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _insert_session(
-    *,
-    type: str,
-    status: str,
-    title: str | None = None,
-    repo: str | None = None,
-    branch: str | None = None,
-    worktree_path: str | None = None,
-    base_ref: str | None = None,
-) -> str:
-    """Insert a session row of the given type/status; return its new id. Shared by
-    create_review_session and create_chat_session so the INSERT can't drift."""
+def create_chat_session(title: str | None = None) -> str:
+    """Create a `type='chat'` session, ready to converse; return its new id."""
     conn = open_db()
     try:
         session_id = str(uuid.uuid4())
         now = _now_iso()
         conn.execute(
-            "INSERT INTO session (id, type, title, status, repo, branch, worktree_path, "
-            "base_ref, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (session_id, type, title, status, repo, branch, worktree_path, base_ref, now, now),
+            "INSERT INTO session (id, type, title, status, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (session_id, "chat", title or DEFAULT_CHAT_TITLE, "ready", now, now),
         )
         conn.commit()
         return session_id
     finally:
         conn.close()
-
-
-def create_review_session(
-    *,
-    worktree_path: str,
-    base_ref: str,
-    repo: str | None = None,
-    branch: str | None = None,
-    title: str | None = None,
-) -> str:
-    """Create a `type='review'` session in the `running` state; return its id."""
-    return _insert_session(
-        type="review",
-        status="running",
-        title=title,
-        repo=repo,
-        branch=branch,
-        worktree_path=worktree_path,
-        base_ref=base_ref,
-    )
-
-
-def create_chat_session(title: str | None = None) -> str:
-    """Create a worktree-free `type='chat'` session, ready to converse; return its
-    id. No worktree/base_ref — a general chat isn't anchored to a checkout."""
-    return _insert_session(type="chat", status="ready", title=title or DEFAULT_CHAT_TITLE)
 
 
 def list_sessions(*, include_archived: bool = False) -> list[dict[str, Any]]:
@@ -157,8 +121,9 @@ def set_generated_title(session_id: str, title: str) -> bool:
 
 
 def set_agent_session_id(session_id: str, agent_session_id: str) -> bool:
-    """Store the Claude Agent SDK session id the review ran under, so chat can
-    resume it. Returns False if no such session. Bumps updated_at."""
+    """Store the Claude Agent SDK session id this chat is running under, so it can
+    resume after an idle-close or daemon restart. Returns False if no such session.
+    Bumps updated_at."""
     now = _now_iso()
     conn = open_db()
     try:

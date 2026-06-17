@@ -1,20 +1,15 @@
 """Long-lived, interactive Claude sessions — one per surface.
 
-A review (``review_runner``) is fire-and-forget: open a client, send one prompt,
-drain, close. A *conversation* is the opposite — the client stays open and the user
-sends turns over time. The Agent SDK supports this, but with a hard constraint: the
-open client keeps a persistent reader task group alive from connect to disconnect
-and cannot be used across async contexts. So each session has a single **owner task**
-that holds the client open and drains an input queue; the WebSocket handler only
-enqueues text. That also serializes turns for free — a message that arrives mid-turn
-waits behind the current one.
+A *conversation* keeps its Claude client open while the user sends turns over time.
+The Agent SDK supports this with a hard constraint: the open client keeps a persistent
+reader task group alive from connect to disconnect and cannot be used across async
+contexts. So each session has a single **owner task** that holds the client open and
+drains an input queue; the WebSocket handler only enqueues text. That also serializes
+turns for free — a message that arrives mid-turn waits behind the current one.
 
 Sessions start lazily on the first message, are keyed by surface, survive browser
-reconnects, and are reaped on idle or daemon shutdown. A review surface runs against
-its worktree (as cwd) with the review prompt; a general chat surface has no worktree
-(cwd is None) and gets the general chat prompt. The only thing that can't chat is a
-surface with no session row at all. Read-only (the options' permission gate denies
-edits).
+reconnects, and are reaped on idle or daemon shutdown. The only thing that can't chat
+is a surface with no session row at all.
 """
 
 from __future__ import annotations
@@ -32,7 +27,6 @@ from daemon import sessions, titles
 from daemon.activity_relay import relay_message_activity
 from daemon.mcp_server import (
     CVI_CHAT_SYSTEM_PROMPT,
-    CVI_REVIEW_SYSTEM_PROMPT,
     broadcast_prompt_summary,
     broadcast_thinking,
     broadcast_title,
@@ -100,12 +94,11 @@ async def _user_message_stream(turn: ChatTurn) -> AsyncIterator[dict[str, Any]]:
 
 def with_surface_id(prompt: str, surface: str) -> str:
     """Append the agent's surface id to its system prompt so cvi tool calls target
-    the right surface. Mirrors what the review runner bakes into _review_prompt:
-    without it the chat agent guesses the surface (e.g. 'default') and renders into
-    a surface no browser is watching."""
+    the right surface. Without it the chat agent guesses the surface (e.g. 'default')
+    and renders into a surface no browser is watching."""
     return (
         f"{prompt}\n\nYour surface id is `{surface}`. Pass it as the `surface` "
-        "argument to every cvi tool (render_html, render_file). This id is fixed for "
+        "argument to every cvi tool. This id is fixed for "
         'the whole session — do not guess it, do not use "default", and do not query '
         "the daemon for it."
     )
@@ -118,14 +111,12 @@ class AgentSession:
         self,
         registry: AgentSessionRegistry,
         surface: str,
-        worktree: str | None,
         system_prompt: str,
         resume: str | None = None,
         needs_title: bool = False,
     ) -> None:
         self._registry = registry
         self._surface = surface
-        self._worktree = worktree
         self._system_prompt = system_prompt
         self._resume = resume
         # True while this chat is still on the default title; flipped off once any
@@ -151,7 +142,6 @@ class AgentSession:
 
     def _options(self, resume: str | None) -> object:
         return build_agent_options(
-            cwd=self._worktree,
             system_prompt=with_surface_id(self._system_prompt, self._surface),
             resume=resume,
         )
@@ -370,36 +360,26 @@ class AgentSessionRegistry:
     async def send(self, surface: str, text: str, image: ImageInput | None = None) -> None:
         """Route a user message (text plus an optional pasted image) to the surface's
         session, starting one if needed. A surface with no session row can't chat —
-        recorded observably, not silently. A chat session has no worktree (cwd None);
-        a review session runs against its worktree and continues its conversation via
-        the recorded SDK session id."""
+        recorded observably, not silently. A session resumes its recorded SDK session
+        id when one exists, so it continues across reconnect / restart instead of
+        starting blank."""
         if surface not in self._sessions:
             session = await asyncio.to_thread(sessions.get_session, surface)
             if session is None:
                 log.warning("no session for surface %s; cannot start chat", surface)
                 await record_activity(surface, "result", "no session for this surface")
                 return
-            worktree = session.get("worktree_path")  # None for a worktree-free chat
-            system_prompt = (
-                CVI_REVIEW_SYSTEM_PROMPT
-                if session.get("type") == "review"
-                else CVI_CHAT_SYSTEM_PROMPT
-            )
-            # Resume the review's SDK session when one was recorded, so chat
-            # continues that conversation instead of starting blank.
+            # Resume the SDK session when one was recorded, so the conversation
+            # continues instead of starting blank.
             resume = session.get("agent_session_id")
             # An untitled chat gets auto-titled from its messages. Re-derived from the
             # DB each time the session is (re)created, so it self-heals across idle
             # reaping / daemon restart.
-            needs_title = session.get("type") == "chat" and session.get("title") in (
-                None,
-                sessions.DEFAULT_CHAT_TITLE,
-            )
+            needs_title = session.get("title") in (None, sessions.DEFAULT_CHAT_TITLE)
             self._sessions[surface] = AgentSession(
                 self,
                 surface,
-                worktree,
-                system_prompt=system_prompt,
+                system_prompt=CVI_CHAT_SYSTEM_PROMPT,
                 resume=resume,
                 needs_title=needs_title,
             )

@@ -1,9 +1,9 @@
 """Relay a Claude Agent SDK message to the daemon terminal and the surface feed.
 
-Shared by both agent loops: the one-shot review runner (`review_runner`) and the
-long-lived conversational session (`agent_session`). Each streamed message becomes
-a terminal log line (headless but never invisible) and an activity entry buffered +
-broadcast to the surface (PR #20), so the activity feed reads as a live transcript.
+Used by the long-lived conversational session (`agent_session`). Each streamed
+message becomes a terminal log line (headless but never invisible) and an activity
+entry buffered + broadcast to the surface (PR #20), so the activity feed reads as a
+live transcript.
 """
 
 from __future__ import annotations
