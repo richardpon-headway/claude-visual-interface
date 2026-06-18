@@ -24,7 +24,7 @@ from typing import Any
 
 from claude_agent_sdk import AssistantMessage, ClaudeSDKClient, ResultMessage
 
-from daemon import messages, sessions, titles
+from daemon import messages, sessions, titles, token_usage
 from daemon.activity_relay import relay_message_activity
 from daemon.mcp_server import (
     CVI_CHAT_SYSTEM_PROMPT,
@@ -225,7 +225,9 @@ class AgentSession:
         self._interrupting = False
         try:
             for attempt in range(1, _MAX_TURN_ATTEMPTS + 1):
-                relayed_content, retry_status = await self._attempt_turn(client, turn)
+                relayed_content, retry_status = await self._attempt_turn(
+                    client, turn, entry.message_id
+                )
                 if retry_status is None:
                     return  # completed: success, or an error already relayed
                 # Once content has streamed we can't cleanly re-run (it would
@@ -258,7 +260,7 @@ class AgentSession:
             await broadcast_thinking(self._surface, False)
 
     async def _attempt_turn(
-        self, client: ClaudeSDKClient, turn: ChatTurn
+        self, client: ClaudeSDKClient, turn: ChatTurn, prompt_message_id: int | None
     ) -> tuple[bool, int | None]:
         """Run one query attempt, relaying messages as they stream. Returns
         ``(relayed_content, retry_status)``: ``retry_status`` is the HTTP status of
@@ -286,10 +288,37 @@ class AgentSession:
                 return relayed_content, message.api_error_status
             if isinstance(message, ResultMessage):
                 await self._remember_sdk_session(message.session_id)
+                out, inp = token_usage.usage_tokens(message.usage)
+                await self._record_usage("turn", out, inp, prompt_message_id)
             await relay_message_activity(self._surface, message)
             if isinstance(message, AssistantMessage):
                 relayed_content = True
         return relayed_content, None
+
+    async def _record_usage(
+        self, kind: str, output_tokens: int, input_tokens: int, message_id: int | None = None
+    ) -> None:
+        """Record one LLM call's token usage toward the session total, and log it.
+        No-op when the call reported nothing (e.g. a failed sub-call)."""
+        if not (output_tokens or input_tokens):
+            return
+        await asyncio.to_thread(
+            token_usage.append_usage,
+            self._surface,
+            kind,
+            output_tokens,
+            input_tokens,
+            message_id,
+        )
+        log.info(
+            "token usage",
+            extra={
+                "surface": self._surface,
+                "kind": kind,
+                "output_tokens": output_tokens,
+                "input_tokens": input_tokens,
+            },
+        )
 
     async def _remember_sdk_session(self, session_id: str | None) -> None:
         """Persist the SDK session id so a later session for this surface resumes the
@@ -349,16 +378,19 @@ class AgentSession:
 
     async def _run_titling(self, title_input: str) -> None:
         try:
-            title = await titles.generator.generate(title_input)
-            if not title:
+            result = await titles.generator.generate(title_input)
+            await self._record_usage("title", result.output_tokens, result.input_tokens)
+            if not result.title:
                 return  # leave _needs_title set — retried on the next message
             # The title is resolved now (this attempt or a concurrent one), so stop
             # spawning more. The conditional write keeps the first successful attempt:
             # only the one that actually changed the row broadcasts the live update.
             self._needs_title = False
-            changed = await asyncio.to_thread(sessions.set_generated_title, self._surface, title)
+            changed = await asyncio.to_thread(
+                sessions.set_generated_title, self._surface, result.title
+            )
             if changed:
-                await broadcast_title(self._surface, title)
+                await broadcast_title(self._surface, result.title)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -370,11 +402,12 @@ class AgentSession:
         the result — we don't track the current title in memory, and re-broadcasting an
         unchanged title is harmless."""
         try:
-            title = await titles.generator.generate(title_input)
-            if not title:
+            result = await titles.generator.generate(title_input)
+            await self._record_usage("title", result.output_tokens, result.input_tokens)
+            if not result.title:
                 return
-            await asyncio.to_thread(sessions.overwrite_title, self._surface, title)
-            await broadcast_title(self._surface, title)
+            await asyncio.to_thread(sessions.overwrite_title, self._surface, result.title)
+            await broadcast_title(self._surface, result.title)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -394,7 +427,11 @@ class AgentSession:
 
     async def _run_summary(self, index: int, entry: ActivityEntry, text: str) -> None:
         try:
-            summary = await titles.summarizer.generate(text)
+            result = await titles.summarizer.generate(text)
+            await self._record_usage(
+                "summary", result.output_tokens, result.input_tokens, entry.message_id
+            )
+            summary = result.title
             if not summary:
                 return
             entry.summary = summary  # rides the connect snapshot for late joiners

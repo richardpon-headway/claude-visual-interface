@@ -19,6 +19,21 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def usage_tokens(usage: dict | None) -> tuple[int, int]:
+    """Pull (uncached output, input) token counts from an SDK ResultMessage's usage
+    dict. Output tokens are never cached, so they're the uncached-output figure as-is;
+    input is the full input footprint (fresh + cache-creation + cache-read), matching
+    how the token monitor counts input. Reads defensively — usage is `dict|None`."""
+    u = usage or {}
+    output = u.get("output_tokens") or 0
+    input_ = (
+        (u.get("input_tokens") or 0)
+        + (u.get("cache_creation_input_tokens") or 0)
+        + (u.get("cache_read_input_tokens") or 0)
+    )
+    return int(output), int(input_)
+
+
 def append_usage(
     surface: str,
     kind: str,

@@ -10,9 +10,18 @@ the dependency one-directional. Swap ``generator`` for a fake in tests.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Protocol
 
-from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, TextBlock
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeAgentOptions,
+    ClaudeSDKClient,
+    ResultMessage,
+    TextBlock,
+)
+
+from daemon import token_usage
 
 log = logging.getLogger(__name__)
 
@@ -55,18 +64,31 @@ def _clean_title(raw: str) -> str | None:
     return None
 
 
+@dataclass
+class TitleResult:
+    """A title call's outcome: the cleaned title (or None) plus the call's token
+    usage, so the caller can record it toward the session total."""
+
+    title: str | None
+    output_tokens: int = 0
+    input_tokens: int = 0
+
+
 class TitleGenerator(Protocol):
-    async def generate(self, message: str) -> str | None: ...
+    async def generate(self, message: str) -> TitleResult: ...
 
 
 class AgentTitleGenerator:
-    async def generate(self, message: str) -> str | None:
+    async def generate(self, message: str) -> TitleResult:
         """Run a one-shot, tool-free Claude call to title ``message``. Best-effort:
-        any failure logs a warning and returns None (the caller leaves the chat
-        untitled and retries on the next message)."""
+        any failure logs a warning and returns an empty TitleResult (the caller leaves
+        the chat untitled and retries on the next message). Reports the call's token
+        usage so it counts toward the session total."""
         try:
             options = ClaudeAgentOptions(system_prompt=_TITLE_SYSTEM_PROMPT)
             parts: list[str] = []
+            output_tokens = 0
+            input_tokens = 0
             async with ClaudeSDKClient(options=options) as client:
                 await client.query(message[:MAX_TITLE_INPUT_CHARS])
                 async for response in client.receive_response():
@@ -74,10 +96,14 @@ class AgentTitleGenerator:
                         parts.extend(
                             block.text for block in response.content if isinstance(block, TextBlock)
                         )
-            return _clean_title("".join(parts))
+                    elif isinstance(response, ResultMessage):
+                        out, inp = token_usage.usage_tokens(response.usage)
+                        output_tokens += out
+                        input_tokens += inp
+            return TitleResult(_clean_title("".join(parts)), output_tokens, input_tokens)
         except Exception:
             log.warning("title generation failed", exc_info=True)
-            return None
+            return TitleResult(None)
 
 
 # The active generators. `generator` titles a whole chat session (from its first
