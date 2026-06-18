@@ -49,6 +49,18 @@ def summarize_tool_use(block: ToolUseBlock) -> str:
     return _truncate(f"{name} {detail}".strip())
 
 
+async def _relay_ask(session_id: str, block: ToolUseBlock) -> None:
+    """Record an AskUserQuestion call as a structured `ask` entry the browser renders
+    as a selectable picker. Carries the tool-use id (echoed back when answering) and the
+    `questions` payload; the text is a plain fallback for any non-picker renderer."""
+    args = block.input if isinstance(block.input, dict) else {}
+    questions = args.get("questions") or []
+    first = questions[0].get("question", "") if questions else ""
+    fallback = _truncate(f"AskUserQuestion: {first}".strip())
+    log.info("[chat %s] ask: %s", session_id, fallback)
+    await record_activity(session_id, "ask", fallback, ask_id=block.id, questions=questions)
+
+
 async def relay_message_activity(session_id: str, message: object) -> None:
     """Log a streamed agent message and push it to the surface as activity."""
     if isinstance(message, AssistantMessage):
@@ -57,9 +69,12 @@ async def relay_message_activity(session_id: str, message: object) -> None:
                 log.info("[chat %s] %s", session_id, block.text)
                 await record_activity(session_id, "text", block.text)
             elif isinstance(block, ToolUseBlock):
-                summary = summarize_tool_use(block)
-                log.info("[chat %s] tool: %s", session_id, summary)
-                await record_activity(session_id, "tool", summary)
+                if block.name.split("__")[-1] == "AskUserQuestion":
+                    await _relay_ask(session_id, block)
+                else:
+                    summary = summarize_tool_use(block)
+                    log.info("[chat %s] tool: %s", session_id, summary)
+                    await record_activity(session_id, "tool", summary)
     elif isinstance(message, ResultMessage):
         log.info(
             "[chat %s] result: subtype=%s is_error=%s",

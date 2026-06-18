@@ -73,21 +73,31 @@ async def hydrate_surface(surface: str) -> None:
 
 
 async def record_activity(
-    surface: str, kind: str, text: str, html: str | None = None
+    surface: str,
+    kind: str,
+    text: str,
+    html: str | None = None,
+    ask_id: str | None = None,
+    questions: list | None = None,
 ):
     """Append a conversation segment on a surface and push it to subscribers; return
     the stored entry (callers that need to enrich it later — e.g. a prompt's summary —
-    hold the reference). `html` carries an artifact's page; it's omitted from the
-    payload otherwise."""
-    entry = store.append_activity(surface, kind, text, html)
+    hold the reference). `html` carries an artifact's page; `ask_id`/`questions` carry an
+    AskUserQuestion picker's payload; each is omitted from the broadcast otherwise."""
+    entry = store.append_activity(surface, kind, text, html, ask_id, questions)
     # Write the segment through to SQLite so the transcript survives a daemon
-    # restart; hold the row id on the entry so a later summary can target it.
+    # restart; hold the row id on the entry so a later summary can target it. (The
+    # structured `questions` aren't persisted — a restarted picker falls back to text.)
     entry.message_id = await asyncio.to_thread(
         messages.append_message, surface, kind, text, html
     )
     payload: dict[str, Any] = {"kind": kind, "text": text}
     if html is not None:
         payload["html"] = html
+    if ask_id is not None:
+        payload["ask_id"] = ask_id
+    if questions is not None:
+        payload["questions"] = questions
     await hub.broadcast(
         surface,
         {"type": "activity", "surface": surface, "payload": payload},

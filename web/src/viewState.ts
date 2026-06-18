@@ -5,11 +5,24 @@
 // One conversation segment (mirrors daemon ActivityEntry): the user's prompt,
 // Claude's text, a tool call, a run result, or an inline artifact (kind "artifact":
 // `html` is the page, `text` its title).
+// One option in an AskUserQuestion question, and a question itself (mirrors the
+// AskUserQuestion tool's `input.questions` shape).
+export type AskOption = { label: string; description?: string };
+export type AskQuestion = {
+  question: string;
+  header?: string;
+  multiSelect?: boolean;
+  options: AskOption[];
+};
+
 export type ActivityEntry = {
   kind: string;
   text: string;
   html?: string | null;
   summary?: string | null; // for a user prompt: its generated outline-rail label
+  ask_id?: string | null; // for an "ask" entry: the tool-use id, echoed back to answer
+  questions?: AskQuestion[] | null; // for an "ask" entry: the picker's questions
+  answer?: string | null; // for an "ask" entry: the chosen value, once answered
 };
 
 // Transient view state — mirrors daemon ViewState (store.snapshot): the conversation

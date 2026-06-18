@@ -15,12 +15,19 @@ from typing import Any
 @dataclass
 class ActivityEntry:
     # One segment of the conversation: the user's prompt, Claude's text, a tool
-    # call, a run result, or an inline artifact (kind="artifact": `html` is the page,
-    # `text` its title). `summary` is a user prompt's generated outline-rail label.
-    kind: str  # "user" | "text" | "tool" | "result" | "artifact"
+    # call, a run result, an inline artifact (kind="artifact": `html` is the page,
+    # `text` its title), or an AskUserQuestion picker (kind="ask"). `summary` is a user
+    # prompt's generated outline-rail label.
+    kind: str  # "user" | "text" | "tool" | "result" | "artifact" | "ask"
     text: str
     html: str | None = None
     summary: str | None = None
+    # For an "ask" entry: the tool-use id (a stable handle the browser echoes back when
+    # answering) and the structured AskUserQuestion `questions` payload to render as a
+    # picker. `answer` is the user's chosen value, set once they pick.
+    ask_id: str | None = None
+    questions: list | None = None
+    answer: str | None = None
     # The persisted `message` row id, so a prompt's summary can be written back to
     # the right row. Server-only — stripped from the snapshot (see ViewStore.snapshot).
     message_id: int | None = None
@@ -76,10 +83,16 @@ class ViewStore:
         state.session_input_tokens = input_tokens
 
     def append_activity(
-        self, surface: str, kind: str, text: str, html: str | None = None
+        self,
+        surface: str,
+        kind: str,
+        text: str,
+        html: str | None = None,
+        ask_id: str | None = None,
+        questions: list | None = None,
     ) -> ActivityEntry:
         activity = self.get_or_create(surface).activity
-        entry = ActivityEntry(kind=kind, text=text, html=html)
+        entry = ActivityEntry(kind=kind, text=text, html=html, ask_id=ask_id, questions=questions)
         activity.append(entry)
         return entry
 

@@ -52,4 +52,34 @@ describe("ActivityFeed", () => {
     expect(screen.getByText("open utils.py")).toBeInTheDocument();
     expect(container.querySelector("li.justify-end")).toBeInTheDocument();
   });
+
+  it("renders an ask entry as a question card with its options", () => {
+    render(
+      <ActivityFeed
+        activity={[
+          {
+            kind: "ask",
+            text: "AskUserQuestion: Which approach?",
+            ask_id: "ask-1",
+            questions: [
+              {
+                question: "Which approach?",
+                header: "Approach",
+                options: [{ label: "Custom modal", description: "themed" }, { label: "Native" }],
+              },
+            ],
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText("Which approach?")).toBeInTheDocument();
+    expect(screen.getByText("Custom modal")).toBeInTheDocument();
+    expect(screen.getByText("Native")).toBeInTheDocument();
+    expect(screen.getByText("Approach")).toBeInTheDocument();
+  });
+
+  it("falls back to a plain line for an ask entry with no structured questions", () => {
+    render(<ActivityFeed activity={[{ kind: "ask", text: "AskUserQuestion: pick one" }]} />);
+    expect(screen.getByText("AskUserQuestion: pick one")).toBeInTheDocument();
+  });
 });
