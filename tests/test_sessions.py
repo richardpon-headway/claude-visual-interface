@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from daemon import sessions
+from daemon import messages, sessions
 from daemon.db import apply_migrations_sync, open_db
 from daemon.main import app
 
@@ -52,6 +52,51 @@ def test_create_chat_endpoint_honors_a_title():
     with TestClient(app) as client:
         session_id = client.post("/chats", json={"title": "scratchpad"}).json()["session_id"]
     assert sessions.get_session(session_id)["title"] == "scratchpad"
+
+
+def test_open_or_create_creates_when_no_reusable_chat():
+    session_id = sessions.open_or_create_chat()
+    row = sessions.get_session(session_id)
+    assert (row["type"], row["title"]) == ("chat", "New chat")
+
+
+def test_open_or_create_reuses_the_newest_empty_chat():
+    older = sessions.create_chat_session()
+    newer = sessions.create_chat_session()
+    # Both are empty "New chat" sessions → reuse the newest, create nothing new.
+    assert sessions.open_or_create_chat() == newer
+    assert sessions.list_sessions() and len(sessions.list_sessions()) == 2  # no third row
+    assert older != newer
+
+
+def test_open_or_create_skips_a_chat_that_has_messages():
+    used = sessions.create_chat_session()
+    messages.append_message(used, "user", "hello")
+    opened = sessions.open_or_create_chat()
+    assert opened != used  # a fresh chat, since `used` is no longer empty
+    assert sessions.get_session(opened)["title"] == "New chat"
+
+
+def test_open_or_create_skips_titled_archived_and_deleted_chats():
+    sessions.create_chat_session("Renamed")  # not on the default title → not reusable
+    archived = sessions.create_chat_session()
+    sessions.set_archived(archived, True)
+    deleted = sessions.create_chat_session()
+    sessions.set_deleted(deleted, True)
+
+    opened = sessions.open_or_create_chat()
+    assert opened not in {archived, deleted}
+    assert sessions.get_session(opened)["title"] == "New chat"
+
+
+def test_open_chat_endpoint_reuses_on_repeat():
+    with TestClient(app) as client:
+        first = client.post("/chats/open")
+        assert first.status_code == 200
+        first_id = first.json()["session_id"]
+        # No messages added → the second open reuses the same empty chat.
+        second_id = client.post("/chats/open").json()["session_id"]
+    assert first_id == second_id
 
 
 def test_lists_newest_activity_first():

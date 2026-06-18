@@ -5,8 +5,12 @@ import { filterSessions } from "./session";
 import type { Session } from "./session";
 
 describe("routeFromPath", () => {
-  it("routes the root to the home page", () => {
+  it("routes the root to the launch landing (home)", () => {
     expect(routeFromPath("/")).toEqual({ kind: "home" });
+  });
+
+  it("routes /sessions to the session list", () => {
+    expect(routeFromPath("/sessions")).toEqual({ kind: "sessions" });
   });
 
   it("routes /s/<id> to that surface, decoding the id", () => {
