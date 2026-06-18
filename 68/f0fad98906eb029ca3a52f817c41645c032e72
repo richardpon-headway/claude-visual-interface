@@ -1,0 +1,23 @@
+CLAUDE.md
+  s_615aafd18b9701::t_f10245c003fa15 1-16,30-34
+  s_615aafd18b9701::t_24e6f439642ce8 17-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "68f0fad98906eb029ca3a52f817c41645c032e72",
+  "prompts": {},
+  "sessions": {
+    "s_615aafd18b9701": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1242156c-18f4-46de-ba24-03f8af298faa",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
