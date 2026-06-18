@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from daemon import agent_session
 from daemon.agent_session import ImageInput
 from daemon.hub import hub
-from daemon.main import _handle_inbound, _parse_image, app
+from daemon.main import _handle_inbound, _parse_image, _parse_images, app
 
 
 @pytest.fixture(autouse=True)
@@ -40,8 +40,8 @@ async def test_inbound_message_frame_routes_to_the_agent_registry(monkeypatch):
     surface = "ws-msg"
     sent: list[tuple[str, str, object]] = []
 
-    async def fake_send(s, text, image=None):
-        sent.append((s, text, image))
+    async def fake_send(s, text, images=None):
+        sent.append((s, text, images))
 
     monkeypatch.setattr(agent_session.agents, "send", fake_send)
 
@@ -49,30 +49,38 @@ async def test_inbound_message_frame_routes_to_the_agent_registry(monkeypatch):
     # Blank / whitespace-only text with no image is ignored, not routed.
     await _handle_inbound(surface, json.dumps({"type": "message", "payload": {"text": "  "}}))
 
-    assert sent == [(surface, "hi", None)]
+    assert sent == [(surface, "hi", [])]
 
 
-async def test_inbound_message_frame_routes_a_pasted_image(monkeypatch):
+async def test_inbound_message_frame_routes_pasted_images(monkeypatch):
     surface = "ws-img"
     sent: list[tuple[str, str, object]] = []
 
-    async def fake_send(s, text, image=None):
-        sent.append((s, text, image))
+    async def fake_send(s, text, images=None):
+        sent.append((s, text, images))
 
     monkeypatch.setattr(agent_session.agents, "send", fake_send)
 
-    async def message(text, image):
-        frame = {"type": "message", "payload": {"text": text, "image": image}}
-        await _handle_inbound(surface, json.dumps(frame))
+    async def message(payload):
+        await _handle_inbound(surface, json.dumps({"type": "message", "payload": payload}))
 
-    img = {"media_type": "image/png", "data": "QUJD"}
-    await message("look", img)
-    await message("", img)  # image with blank text still routes (image-only turn)
-    await message("", {"media_type": "text/plain", "data": "QUJD"})  # malformed → dropped
+    png = {"media_type": "image/png", "data": "QUJD"}
+    jpg = {"media_type": "image/jpeg", "data": "WFla"}
+    bad = {"media_type": "text/plain", "data": "QUJD"}
+
+    await message({"text": "look", "images": [png, jpg]})  # both kept, in order
+    await message({"text": "", "images": [png]})  # image-only turn still routes
+    await message({"text": "x", "images": [png, bad]})  # malformed entry dropped
+    await message({"text": "y", "images": []})  # empty list + text → text-only
+    # Legacy single `image` key still routes one image (old front-end compat).
+    await message({"text": "legacy", "image": png})
 
     assert sent == [
-        (surface, "look", ImageInput(media_type="image/png", data="QUJD")),
-        (surface, "", ImageInput(media_type="image/png", data="QUJD")),
+        (surface, "look", [ImageInput("image/png", "QUJD"), ImageInput("image/jpeg", "WFla")]),
+        (surface, "", [ImageInput("image/png", "QUJD")]),
+        (surface, "x", [ImageInput("image/png", "QUJD")]),
+        (surface, "y", []),
+        (surface, "legacy", [ImageInput("image/png", "QUJD")]),
     ]
 
 
@@ -121,3 +129,17 @@ def test_parse_image_accepts_valid_and_fails_closed_on_malformed():
     assert _parse_image({"media_type": "image/png", "data": ""}) is None  # empty data
     assert _parse_image({"data": "QUJD"}) is None  # missing media_type
     assert _parse_image("nope") is None  # not an object
+
+
+def test_parse_images_validates_a_list_and_caps_at_eight():
+    png = {"media_type": "image/png", "data": "QUJD"}
+    bad = {"media_type": "text/plain", "data": "QUJD"}
+
+    assert _parse_images(None) == []  # absent
+    assert _parse_images("nope") == []  # not a list
+    # A valid list keeps every image, in order.
+    assert _parse_images([png, png]) == [ImageInput("image/png", "QUJD")] * 2
+    # A mixed list drops only the malformed entries.
+    assert _parse_images([png, bad, png]) == [ImageInput("image/png", "QUJD")] * 2
+    # An over-cap list is truncated to the per-turn maximum.
+    assert _parse_images([png] * 12) == [ImageInput("image/png", "QUJD")] * 8

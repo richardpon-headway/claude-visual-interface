@@ -238,7 +238,7 @@ async def test_image_turn_sends_an_image_block_and_marks_the_feed():
     reg = AgentSessionRegistry()
 
     image = agent_session.ImageInput(media_type="image/png", data="QUJD")
-    await reg.send("img", "what is this?", image=image)
+    await reg.send("img", "what is this?", images=[image])
     await _wait_until(
         lambda: any(e.kind == "result" for e in store.get_or_create("img").activity)
     )
@@ -258,12 +258,45 @@ async def test_image_turn_sends_an_image_block_and_marks_the_feed():
     await reg.shutdown_all()
 
 
+async def test_multi_image_turn_sends_each_block_in_order_and_marks_the_count():
+    _seed_session("imgs", session_type="chat")
+    store.get_or_create("imgs").activity.clear()
+    reg = AgentSessionRegistry()
+
+    images = [
+        agent_session.ImageInput(media_type="image/png", data="QUJD"),
+        agent_session.ImageInput(media_type="image/jpeg", data="WFla"),
+    ]
+    await reg.send("imgs", "compare these", images=images)
+    await _wait_until(
+        lambda: any(e.kind == "result" for e in store.get_or_create("imgs").activity)
+    )
+
+    # One multimodal message carrying the text then both images, in order.
+    sent = FakeClient.instances[0].queried
+    assert len(sent) == 1
+    blocks = sent[0]["message"]["content"]
+    assert [b["type"] for b in blocks] == ["text", "image", "image"]
+    assert [b["source"] for b in blocks[1:]] == [
+        {"type": "base64", "media_type": "image/png", "data": "QUJD"},
+        {"type": "base64", "media_type": "image/jpeg", "data": "WFla"},
+    ]
+
+    # The feed marks the count, not the bytes.
+    kinds = [(e.kind, e.text) for e in store.get_or_create("imgs").activity]
+    assert ("user", "[2 images] compare these") in kinds
+    assert "QUJD" not in str(kinds)
+    await reg.shutdown_all()
+
+
 async def test_image_only_turn_marks_the_feed_and_sends_just_the_image():
     _seed_session("img2", session_type="chat")
     store.get_or_create("img2").activity.clear()
     reg = AgentSessionRegistry()
 
-    await reg.send("img2", "", image=agent_session.ImageInput(media_type="image/png", data="QUJD"))
+    await reg.send(
+        "img2", "", images=[agent_session.ImageInput(media_type="image/png", data="QUJD")]
+    )
     await _wait_until(
         lambda: any(e.kind == "result" for e in store.get_or_create("img2").activity)
     )
@@ -678,7 +711,7 @@ async def test_image_only_first_turn_defers_titling_to_the_next_text_message(mon
     reg = AgentSessionRegistry()
 
     # An image-only first turn has no text basis — titling is skipped, not attempted.
-    await reg.send(chat, "", image=agent_session.ImageInput(media_type="image/png", data="QUJD"))
+    await reg.send(chat, "", images=[agent_session.ImageInput(media_type="image/png", data="QUJD")])
     await _wait_until(lambda: len(FakeClient.instances) == 1)
     assert gen.calls == 0
     assert sessions.get_session(chat)["title"] == "New chat"
@@ -846,7 +879,7 @@ async def test_image_only_turn_does_not_advance_the_refresh_cadence(monkeypatch)
     await _wait_until(lambda: sessions.get_session(chat)["title"] == "Title 1")
 
     # An image-only turn carries no text — it must not count toward the cadence.
-    await reg.send(chat, "", image=agent_session.ImageInput(media_type="image/png", data="QUJD"))
+    await reg.send(chat, "", images=[agent_session.ImageInput(media_type="image/png", data="QUJD")])
     for text in ("two", "three", "four"):
         await reg.send(chat, text)
     await _wait_until(
