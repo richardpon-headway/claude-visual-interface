@@ -127,7 +127,7 @@ export function ChatInput({
           </button>
         </div>
       ) : null}
-      <div className="flex items-end gap-2">
+      <div className="relative">
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -136,14 +136,14 @@ export function ChatInput({
           rows={4}
           placeholder="Ask the agent — paste a screenshot, or “review the diff”… (Shift+Enter for newline)"
           aria-label="Message the agent"
-          className="min-w-0 flex-1 resize-none rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-sm"
+          className="block w-full min-w-0 resize-none rounded border border-zinc-800 bg-zinc-900 px-2 pt-1 pb-11 text-sm"
         />
         {busy ? (
           <button
             type="button"
             onClick={onStop}
             aria-label="Stop the agent"
-            className="rounded border border-zinc-700 px-3 py-1 text-sm text-zinc-200 hover:bg-zinc-800"
+            className="absolute bottom-2 right-2 rounded border border-zinc-700 px-3 py-1 text-sm text-zinc-200 hover:bg-zinc-800"
           >
             Stop
           </button>
@@ -151,7 +151,7 @@ export function ChatInput({
           <button
             type="submit"
             disabled={!text.trim() && !image}
-            className="rounded border border-zinc-700 px-3 py-1 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-40"
+            className="absolute bottom-2 right-2 rounded border border-zinc-700 px-3 py-1 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-40"
           >
             Send
           </button>
