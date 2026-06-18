@@ -31,7 +31,8 @@ function StatusChip({ status }: { status: string | null }) {
 // of the user's prompts. The transcript scrolls; the composer is pinned at the
 // bottom; the rail jumps to a prompt and tracks the active one as you scroll.
 export function Surface({ surface }: { surface: string }) {
-  const [{ view, status, title }, sendMessage, stop, sendAnswer] = useSurfaceSocket(surface);
+  const [{ view, status, title }, sendMessage, stop, sendAnswer, connection] =
+    useSurfaceSocket(surface);
   const busy = view.thinking || status === "running";
   const prompts = promptLandmarks(view.activity);
 
@@ -132,6 +133,12 @@ export function Surface({ surface }: { surface: string }) {
         <div className="mx-auto max-w-3xl">
           <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-400">
             {busy ? <ThinkingIndicator active={view.thinking} /> : null}
+            {connection !== "open" ? (
+              <span className="flex items-center gap-1.5 text-amber-400/90">
+                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-500" />
+                reconnecting…
+              </span>
+            ) : null}
             <span className="ml-auto text-zinc-500">
               <span className="text-zinc-300">
                 {view.session_output_tokens.toLocaleString()} output
