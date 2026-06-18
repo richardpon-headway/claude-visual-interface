@@ -83,7 +83,7 @@ export function Surface({ surface }: { surface: string }) {
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center gap-3 border-b border-zinc-800 px-4 py-2 text-sm">
-        <a href="/" className="text-zinc-400 hover:text-zinc-100">
+        <a href="/sessions" className="text-zinc-400 hover:text-zinc-100">
           ← sessions
         </a>
         {prompts.length > 0 ? (

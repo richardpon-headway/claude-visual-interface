@@ -109,6 +109,15 @@ async def create_chat(req: ChatRequest | None = None) -> dict[str, str]:
     return {"session_id": session_id}
 
 
+@app.post("/chats/open")
+async def open_chat() -> dict[str, str]:
+    """The chat to open on launch: reuse the newest empty 'New chat' if one exists,
+    else create one. Lets the root route drop straight into a chat without piling up
+    empty sessions on every launch."""
+    session_id = await asyncio.to_thread(sessions.open_or_create_chat)
+    return {"session_id": session_id}
+
+
 class EmitRequest(BaseModel):
     tool: str
     args: dict[str, Any] = Field(default_factory=dict)

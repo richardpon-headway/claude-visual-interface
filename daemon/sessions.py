@@ -48,6 +48,28 @@ def create_chat_session(title: str | None = None) -> str:
         conn.close()
 
 
+def open_or_create_chat() -> str:
+    """The chat to drop into on launch: reuse the newest empty 'New chat' if one exists,
+    else create a fresh one. Empty = a live (not archived/deleted) chat still on the
+    default title with no messages. Reusing avoids piling up empty sessions on every
+    launch/refresh."""
+    conn = open_db()
+    try:
+        row = conn.execute(
+            "SELECT id FROM session "
+            "WHERE type = 'chat' AND title = ? "
+            "AND archived_at IS NULL AND deleted_at IS NULL "
+            "AND NOT EXISTS (SELECT 1 FROM message WHERE message.surface = session.id) "
+            "ORDER BY updated_at DESC LIMIT 1",
+            (DEFAULT_CHAT_TITLE,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is not None:
+        return str(row[0])
+    return create_chat_session()
+
+
 def list_sessions(*, include_archived: bool = False) -> list[dict[str, Any]]:
     """Sessions for the home page, newest-activity first. Soft-deleted sessions are
     always excluded; archived ones only when include_archived is False."""
