@@ -1,0 +1,28 @@
+tests/test_token_usage.py
+  s_615aafd18b9701::t_f035548f58fa83 1-41
+daemon/migrations/006_token_usage.sql
+  s_615aafd18b9701::t_4ff1e9b440a524 1-29
+daemon/token_usage.py
+  s_615aafd18b9701::t_550fb030b82d81 1-71
+tests/test_migrations.py
+  s_615aafd18b9701::t_f70ce7137aff43 48-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "31516c15fc9b741a01ed6180b5f9e13d811795cf",
+  "prompts": {},
+  "sessions": {
+    "s_615aafd18b9701": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1242156c-18f4-46de-ba24-03f8af298faa",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
