@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from daemon import messages
+from daemon import messages, token_usage
 from daemon.db import apply_migrations_sync
 from daemon.hub import hub
 from daemon.mcp_server import (
@@ -13,6 +13,7 @@ from daemon.mcp_server import (
     broadcast_status,
     broadcast_thinking,
     broadcast_title,
+    broadcast_tokens,
     hydrate_surface,
     record_activity,
     render_html,
@@ -140,6 +141,36 @@ async def test_hydrate_marks_empty_surfaces_so_they_are_not_requeried():
     await hydrate_surface(surface)
     assert store.is_hydrated(surface) is True
     assert store.get_or_create(surface).activity == []
+
+
+async def test_hydrate_seeds_the_session_token_total_from_persisted_usage():
+    # Simulate a prior run's recorded usage; hydration must rebuild the running total.
+    surface = "vc-hydrate-tokens"
+    token_usage.append_usage(surface, "turn", 30, 1500)
+    token_usage.append_usage(surface, "title", 5, 40)
+
+    await hydrate_surface(surface)
+
+    snap = store.snapshot(surface)
+    assert snap["session_output_tokens"] == 35
+    assert snap["session_input_tokens"] == 1540
+
+
+async def test_broadcast_tokens_accumulates_and_broadcasts_the_running_total():
+    surface = "vc-tokens"
+    ws = FakeWS()
+    hub.register(surface, ws)
+    try:
+        await broadcast_tokens(surface, 30, 500)
+        await broadcast_tokens(surface, 5, 40)
+    finally:
+        hub.unregister(surface, ws)
+
+    # Each broadcast carries the new running total, not the per-call delta.
+    assert ws.received == [
+        {"type": "tokens", "surface": surface, "payload": {"output": 30, "input": 500}},
+        {"type": "tokens", "surface": surface, "payload": {"output": 35, "input": 540}},
+    ]
 
 
 async def test_broadcast_status_broadcasts_without_storing():

@@ -27,7 +27,13 @@ describe("parseMessage", () => {
 
 describe("applyMessage", () => {
   it("emptyViewState starts blank", () => {
-    expect(emptyViewState("s")).toEqual({ surface: "s", activity: [], thinking: false });
+    expect(emptyViewState("s")).toEqual({
+      surface: "s",
+      activity: [],
+      thinking: false,
+      session_output_tokens: 0,
+      session_input_tokens: 0,
+    });
   });
 
   it("replaces the view on a snapshot", () => {
@@ -35,6 +41,8 @@ describe("applyMessage", () => {
       surface: "s",
       activity: [{ kind: "text", text: "buffered" }],
       thinking: true,
+      session_output_tokens: 0,
+      session_input_tokens: 0,
     };
     let state = emptySurface("s");
     state = applyMessage(state, { type: "snapshot", surface: "s", payload: incoming });
@@ -71,6 +79,16 @@ describe("applyMessage", () => {
       payload: { title: "Fix the parser" },
     });
     expect(state.title).toBe("Fix the parser");
+  });
+
+  it("sets the running session token totals", () => {
+    const state = applyMessage(emptySurface("s"), {
+      type: "tokens",
+      surface: "s",
+      payload: { output: 1234, input: 56789 },
+    });
+    expect(state.view.session_output_tokens).toBe(1234);
+    expect(state.view.session_input_tokens).toBe(56789);
   });
 
   it("attaches a prompt summary to the matching user prompt", () => {
