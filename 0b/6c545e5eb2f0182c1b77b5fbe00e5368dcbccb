@@ -1,0 +1,48 @@
+tests/test_titles.py
+  s_615aafd18b9701::t_b5212881a660d1 50,72,80-81,85,89-95,105,110-112
+  s_615aafd18b9701::t_a21156b36614fd 43-45
+  s_615aafd18b9701::t_03f2f0a941e247 86-88
+daemon/agent_session.py
+  s_615aafd18b9701::t_e206be01f9c955 27
+  s_615aafd18b9701::t_6a9579c55c4937 291-292
+  s_615aafd18b9701::t_018aef02bd8e04 298-322
+  s_615aafd18b9701::t_39a26306af5d85 381-383,389-391,393,405-407,409-410
+  s_615aafd18b9701::t_cdd767034b0ea8 430-434
+  s_615aafd18b9701::t_a7ce5a211723e4 263
+  s_615aafd18b9701::t_b7742adf07235c 228-230
+daemon/titles.py
+  s_615aafd18b9701::t_285d2a24951f39 16-22
+  s_615aafd18b9701::t_c853a291276021 67-76,78,82,84-86,90-91,99-103,106
+  s_615aafd18b9701::t_35c66b7c3524c8 13,23-24
+tests/test_agent_session.py
+  s_615aafd18b9701::t_b41e41db172845 10
+  s_615aafd18b9701::t_504415ea94f410 632
+  s_615aafd18b9701::t_f177e1b5cb3dfe 896-898
+  s_615aafd18b9701::t_789a8ce789dc08 620
+  s_615aafd18b9701::t_2868de0767b61b 864-877,883-895,899-920
+  s_615aafd18b9701::t_5f3bd073dd32d6 32
+  s_615aafd18b9701::t_f5cbe85c0d473a 878-882
+  s_615aafd18b9701::t_7f01b2a49a73cb 802
+  s_615aafd18b9701::t_a23e776f046ce7 654
+daemon/token_usage.py
+  s_615aafd18b9701::t_9b560c53d51f52 22-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "0b6c545e5eb2f0182c1b77b5fbe00e5368dcbccb",
+  "prompts": {},
+  "sessions": {
+    "s_615aafd18b9701": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1242156c-18f4-46de-ba24-03f8af298faa",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
