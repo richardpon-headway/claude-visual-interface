@@ -136,13 +136,16 @@ async def ws_surface(websocket: WebSocket, surface: str) -> None:
     """
     await websocket.accept()
     hub.register(surface, websocket)
-    # Load any persisted transcript before snapshotting so a conversation that
-    # outlived a daemon restart replays on connect (no-op after the first connect).
-    await hydrate_surface(surface)
-    await websocket.send_json(
-        {"type": "snapshot", "surface": surface, "payload": store.snapshot(surface)}
-    )
     try:
+        # Load any persisted transcript before snapshotting so a conversation that
+        # outlived a daemon restart replays on connect (no-op after the first connect).
+        # The snapshot send is inside the try so a client that vanishes mid-connect
+        # (a quick refresh) is handled like any disconnect — no unhandled error, and
+        # the finally still unregisters the dead socket.
+        await hydrate_surface(surface)
+        await websocket.send_json(
+            {"type": "snapshot", "surface": surface, "payload": store.snapshot(surface)}
+        )
         while True:
             await _handle_inbound(surface, await websocket.receive_text())
     except WebSocketDisconnect:

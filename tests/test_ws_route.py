@@ -76,6 +76,27 @@ async def test_inbound_message_frame_routes_a_pasted_image(monkeypatch):
     ]
 
 
+async def test_inbound_answer_frame_routes_to_the_agent_registry(monkeypatch):
+    surface = "ws-answer"
+    answered: list[tuple[str, str, str]] = []
+
+    async def fake_answer(s, ask_id, answer):
+        answered.append((s, ask_id, answer))
+
+    monkeypatch.setattr(agent_session.agents, "answer", fake_answer)
+
+    await _handle_inbound(
+        surface, json.dumps({"type": "answer", "payload": {"id": "a1", "answer": "Custom modal"}})
+    )
+    # Missing id / blank answer is ignored, not routed.
+    await _handle_inbound(surface, json.dumps({"type": "answer", "payload": {"answer": "x"}}))
+    await _handle_inbound(
+        surface, json.dumps({"type": "answer", "payload": {"id": "a2", "answer": ""}})
+    )
+
+    assert answered == [(surface, "a1", "Custom modal")]
+
+
 async def test_inbound_stop_frame_interrupts_the_turn(monkeypatch):
     surface = "ws-stop"
     called: dict[str, object] = {}
