@@ -1,0 +1,77 @@
+web/src/ChatInput.tsx
+  s_77377e6b9be62d::t_683c694bd2d8d1 25,28-29,38-40
+  s_615aafd18b9701::t_5def7c97260ca0 82-87,89
+  s_dc98a26d6bf97a::t_cceea8a419ed4a 95-96,98
+  s_77377e6b9be62d::t_78ed7ae5594650 65-66,69
+  s_dc98a26d6bf97a::t_fcd280b21ad518 123-141
+  s_dc98a26d6bf97a::t_1d00f79411d467 167
+  s_77377e6b9be62d::t_d9fde14ad56ec0 5-9,12-14
+web/src/ChatInput.test.tsx
+  s_615aafd18b9701::t_7858ef40ac61ac 45-48,50-55,58,65,73,75-77,79-117,125,131,134,139-143,149,151-153
+tests/test_ws_route.py
+  s_77377e6b9be62d::t_8ba352079ef745 9
+  s_77377e6b9be62d::t_cf42330cdd99b2 43-44,52,55,59-60,64-65,67-76,79-83
+  s_77377e6b9be62d::t_50e3fe39b6d5d9 132-145
+web/src/useSurfaceSocket.test.ts
+  s_615aafd18b9701::t_189bffc8fced8c 71,74-82,87-93,95-96
+daemon/agent_session.py
+  s_77377e6b9be62d::t_891091afc8a36a 499,502-503
+  s_77377e6b9be62d::t_7308911b366da9 101-111
+  s_77377e6b9be62d::t_6a7d417aa561fe 299
+  s_77377e6b9be62d::t_2772680ca1a0cb 67-69,71,79,83,89-90
+  s_77377e6b9be62d::t_3dc0f37e2ce3fc 537-539
+  s_77377e6b9be62d::t_036b394d788ff4 22
+  s_77377e6b9be62d::t_582ba31ff061f8 243
+daemon/main.py
+  s_77377e6b9be62d::t_96b4ed5ad5c1bb 228-236
+  s_77377e6b9be62d::t_05c53882e34c5d 157-162,164-166,181-199
+web/src/useSurfaceSocket.ts
+  s_77377e6b9be62d::t_105ecd523d6c4f 119,121-124
+  s_77377e6b9be62d::t_22fe1c73d0f14e 14
+tests/test_agent_session.py
+  s_77377e6b9be62d::t_8a6410e82c96b3 714
+  s_77377e6b9be62d::t_fe7ded81788a0d 297-299
+  s_77377e6b9be62d::t_3c657cdd59f69b 882
+  s_77377e6b9be62d::t_73418f40645a3f 241,261-287
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "3f454a5266d44dd8f7335c8fbc78f0661eaa3966",
+  "prompts": {},
+  "sessions": {
+    "s_615aafd18b9701": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1242156c-18f4-46de-ba24-03f8af298faa",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    },
+    "s_77377e6b9be62d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8eb9ef15-6eb1-4f10-abcd-dc0bddd61a6c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    },
+    "s_dc98a26d6bf97a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "209397a8-80bd-4884-9525-7a7fdb99bbbc",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
