@@ -130,7 +130,7 @@ export function Surface({ surface }: { surface: string }) {
 
       <div className="shrink-0 border-t border-zinc-800">
         <div className="mx-auto max-w-3xl">
-          <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-400">
+          <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-400">
             {busy ? <ThinkingIndicator active={view.thinking} /> : null}
             <span className="ml-auto text-zinc-500">
               <span className="text-zinc-300">
