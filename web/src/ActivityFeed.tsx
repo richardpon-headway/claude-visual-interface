@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Markdown } from "./Markdown";
-import type { ActivityEntry } from "./viewState";
+import type { ActivityEntry, AskQuestion } from "./viewState";
 
 // A model-authored HTML page, rendered inline as a sandboxed iframe block with a
 // collapse/expand toggle (sandboxed iframes can't self-size).
@@ -40,11 +40,107 @@ function kindLabel(kind: string): string {
   }
 }
 
-// An AskUserQuestion call, rendered as one card per question. Static for now (the
-// options aren't yet clickable — that lands in a follow-up); falls back to a plain
-// line when the structured payload isn't available (e.g. rehydrated after a restart).
-function AskQuestions({ entry }: { entry: ActivityEntry }) {
+// A pick per question: a single chosen option index (or null), or a sorted list of
+// indices for a multi-select question.
+type Pick = number | number[] | null;
+
+function formatAnswer(questions: AskQuestion[], picks: Pick[]): string {
+  // One readable line per question so the agent can map answers back to questions.
+  return questions
+    .map((q, qi) => {
+      const label = q.header || q.question;
+      const p = picks[qi];
+      const chosen = q.multiSelect
+        ? (p as number[]).map((i) => q.options[i].label).join(", ")
+        : q.options[p as number].label;
+      return `${label}: ${chosen}`;
+    })
+    .join("\n");
+}
+
+// An AskUserQuestion call, rendered as an interactive picker — one card per question.
+// Selecting sends the answer as the next message (the only feasible path with the
+// built-in tool). Falls back to a plain line when the structured payload isn't
+// available (e.g. rehydrated after a restart).
+function AskPicker({
+  entry,
+  onSend,
+  isLatest,
+}: {
+  entry: ActivityEntry;
+  onSend?: (text: string) => void;
+  isLatest: boolean;
+}) {
   const questions = entry.questions ?? [];
+  const [picks, setPicks] = useState<Pick[]>(() =>
+    questions.map((q) => (q.multiSelect ? [] : null)),
+  );
+  const [cursor, setCursor] = useState(0);
+  const [submitted, setSubmitted] = useState(false);
+
+  // Flat (question, option) positions so ↑↓ can move across every option in the entry.
+  const positions: { qi: number; oi: number }[] = [];
+  questions.forEach((q, qi) => q.options.forEach((_, oi) => positions.push({ qi, oi })));
+
+  const answered = (p: Pick[], qi: number) =>
+    questions[qi].multiSelect ? (p[qi] as number[]).length > 0 : p[qi] !== null;
+  const allAnswered = (p: Pick[]) => questions.every((_, qi) => answered(p, qi));
+  const hasMulti = questions.some((q) => q.multiSelect);
+
+  function submit(p: Pick[]) {
+    if (submitted || !allAnswered(p) || !onSend) return;
+    onSend(formatAnswer(questions, p));
+    setSubmitted(true);
+  }
+
+  // Single-select sends as soon as every question is answered; multi-select waits for
+  // an explicit Enter / Submit (so you can toggle several before committing).
+  function selectAt(qi: number, oi: number) {
+    if (submitted) return;
+    const np = [...picks];
+    if (questions[qi].multiSelect) {
+      const set = new Set(np[qi] as number[]);
+      set.has(oi) ? set.delete(oi) : set.add(oi);
+      np[qi] = [...set].sort((a, b) => a - b);
+      setPicks(np);
+    } else {
+      np[qi] = oi;
+      setPicks(np);
+      if (!hasMulti) submit(np);
+    }
+  }
+
+  const active = isLatest && !submitted && questions.length > 0;
+  useEffect(() => {
+    if (!active) return;
+    function onKey(e: KeyboardEvent) {
+      const ae = document.activeElement;
+      // The composer owns the keyboard while it's focused — don't hijack typing.
+      if (ae && (ae.tagName === "TEXTAREA" || ae.tagName === "INPUT")) return;
+      const pos = positions[cursor];
+      if (!pos) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setCursor((c) => Math.min(c + 1, positions.length - 1));
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setCursor((c) => Math.max(c - 1, 0));
+      } else if (e.key === " " && questions[pos.qi].multiSelect) {
+        e.preventDefault();
+        selectAt(pos.qi, pos.oi);
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        if (allAnswered(picks)) submit(picks);
+        else if (!questions[pos.qi].multiSelect) selectAt(pos.qi, pos.oi);
+      } else if (/^[1-9]$/.test(e.key) && Number(e.key) <= questions[pos.qi].options.length) {
+        e.preventDefault();
+        selectAt(pos.qi, Number(e.key) - 1);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active, cursor, picks]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (questions.length === 0) {
     return (
       <li className="text-xs text-zinc-500">
@@ -52,6 +148,12 @@ function AskQuestions({ entry }: { entry: ActivityEntry }) {
       </li>
     );
   }
+
+  const selectedCount = picks.reduce<number>(
+    (n, p) => n + (Array.isArray(p) ? p.length : p !== null ? 1 : 0),
+    0,
+  );
+
   return (
     <li className="space-y-2">
       {questions.map((q, qi) => (
@@ -63,22 +165,66 @@ function AskQuestions({ entry }: { entry: ActivityEntry }) {
           ) : null}
           <div className="mb-2 text-sm font-medium text-zinc-100">{q.question}</div>
           <div className="space-y-1">
-            {q.options.map((o, oi) => (
-              <div key={oi} className="flex items-start gap-3 rounded-lg px-3 py-2">
-                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded bg-zinc-800 text-xs font-semibold text-zinc-300">
-                  {oi + 1}
-                </span>
-                <div className="min-w-0">
-                  <div className="text-sm text-zinc-100">{o.label}</div>
-                  {o.description ? (
-                    <div className="mt-0.5 text-xs text-zinc-500">{o.description}</div>
-                  ) : null}
-                </div>
-              </div>
-            ))}
+            {q.options.map((o, oi) => {
+              const isCursor =
+                active && positions[cursor]?.qi === qi && positions[cursor]?.oi === oi;
+              const chosen = q.multiSelect
+                ? (picks[qi] as number[]).includes(oi)
+                : picks[qi] === oi;
+              return (
+                <button
+                  key={oi}
+                  type="button"
+                  disabled={submitted}
+                  onClick={() => {
+                    setCursor(positions.findIndex((p) => p.qi === qi && p.oi === oi));
+                    selectAt(qi, oi);
+                  }}
+                  className={`flex w-full items-start gap-3 rounded-lg border px-3 py-2 text-left ${
+                    chosen
+                      ? "border-sky-800 bg-sky-950"
+                      : isCursor
+                        ? "border-zinc-700 bg-zinc-900"
+                        : "border-transparent hover:bg-zinc-900"
+                  } ${submitted && !chosen ? "opacity-40" : ""}`}
+                >
+                  {q.multiSelect ? (
+                    <span
+                      className={`mt-0.5 shrink-0 font-mono text-sm ${chosen ? "text-sky-400" : "text-zinc-600"}`}
+                    >
+                      {chosen ? "[x]" : "[ ]"}
+                    </span>
+                  ) : (
+                    <span
+                      className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-xs font-semibold ${chosen ? "bg-sky-800 text-sky-100" : "bg-zinc-800 text-zinc-300"}`}
+                    >
+                      {oi + 1}
+                    </span>
+                  )}
+                  <span className="min-w-0">
+                    <span className="block text-sm text-zinc-100">{o.label}</span>
+                    {o.description ? (
+                      <span className="mt-0.5 block text-xs text-zinc-500">{o.description}</span>
+                    ) : null}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
       ))}
+      {submitted ? (
+        <div className="text-xs text-emerald-400">✓ answered</div>
+      ) : hasMulti ? (
+        <button
+          type="button"
+          disabled={!allAnswered(picks)}
+          onClick={() => submit(picks)}
+          className="rounded border border-sky-900 bg-sky-950 px-3 py-1 text-xs text-sky-300 hover:bg-sky-900 disabled:opacity-40"
+        >
+          Submit{selectedCount ? ` ${selectedCount}` : ""} ↵
+        </button>
+      ) : null}
     </li>
   );
 }
@@ -86,9 +232,13 @@ function AskQuestions({ entry }: { entry: ActivityEntry }) {
 function ActivityRow({
   entry,
   promptId,
+  onSend,
+  isLatestAsk,
 }: {
   entry: ActivityEntry;
   promptId?: string;
+  onSend?: (text: string) => void;
+  isLatestAsk?: boolean;
 }) {
   // Your prompts read as right-aligned bubbles; each carries a stable anchor id so
   // the outline rail can scroll to it.
@@ -111,7 +261,7 @@ function ActivityRow({
   }
   // An AskUserQuestion picker.
   if (entry.kind === "ask") {
-    return <AskQuestions entry={entry} />;
+    return <AskPicker entry={entry} onSend={onSend} isLatest={isLatestAsk ?? false} />;
   }
   // A model-rendered HTML page, inline in the flow.
   if (entry.kind === "artifact") {
@@ -139,8 +289,10 @@ function ActivityRow({
 // compact tool/result lines, in arrival order. The parent owns scrolling and width.
 export function ActivityFeed({
   activity,
+  onSend,
 }: {
   activity: ActivityEntry[];
+  onSend?: (text: string) => void;
 }) {
   if (activity.length === 0) {
     return (
@@ -150,12 +302,26 @@ export function ActivityFeed({
   // A successful run result is implied by the answer above it; hide it as noise.
   // Failures (error / stopped / API error / …) still surface.
   const shown = activity.filter((e) => !(e.kind === "result" && e.text === "success"));
+  // Only the last unanswered picker captures the keyboard, so stray keys can't drive
+  // an old picker further up the transcript.
+  let lastAsk = -1;
+  shown.forEach((e, i) => {
+    if (e.kind === "ask" && !e.answer) lastAsk = i;
+  });
   let userCount = 0;
   return (
     <ul className="space-y-3">
       {shown.map((entry, i) => {
         const promptId = entry.kind === "user" ? `prompt-${userCount++}` : undefined;
-        return <ActivityRow key={i} entry={entry} promptId={promptId} />;
+        return (
+          <ActivityRow
+            key={i}
+            entry={entry}
+            promptId={promptId}
+            onSend={onSend}
+            isLatestAsk={i === lastAsk}
+          />
+        );
       })}
     </ul>
   );
