@@ -1,0 +1,39 @@
+daemon/main.py
+  s_615aafd18b9701::t_9619f729b81a12 112-120
+web/src/router.test.ts
+  s_615aafd18b9701::t_751a788f8f610b 8,12-13
+web/src/NewChatLanding.test.tsx
+  s_615aafd18b9701::t_03b62b4bdb58a1 1-48
+web/src/NewChatLanding.tsx
+  s_615aafd18b9701::t_2c719e98024edf 1-32
+web/src/App.tsx
+  s_615aafd18b9701::t_5e94e817f2538d 2,8-10
+tests/test_sessions.py
+  s_615aafd18b9701::t_4e15a167e49c22 4
+  s_615aafd18b9701::t_532aa9d712d596 57-101
+web/src/router.ts
+  s_615aafd18b9701::t_c0c21ccca83da1 1-4,6-9,16-17
+web/src/Surface.tsx
+  s_615aafd18b9701::t_867b6fd1321ead 86
+daemon/sessions.py
+  s_615aafd18b9701::t_b3ab816fb01829 51-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "2f7dce4124271144efd5d606be1148d19a819af2",
+  "prompts": {},
+  "sessions": {
+    "s_615aafd18b9701": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1242156c-18f4-46de-ba24-03f8af298faa",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
