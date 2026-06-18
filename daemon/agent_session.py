@@ -158,6 +158,11 @@ class AgentSession:
     def enqueue(self, turn: ChatTurn) -> None:
         self._queue.put_nowait(turn)
 
+    def is_live(self) -> bool:
+        """True while the owner task is still consuming the queue. False once it has
+        exited (idle timeout / error), so the registry won't enqueue onto a dead queue."""
+        return not self._task.done()
+
     def _options(self, resume: str | None) -> object:
         return build_agent_options(
             system_prompt=with_surface_id(self._system_prompt, self._surface),
@@ -191,7 +196,7 @@ class AgentSession:
             log.warning("agent session failed (surface=%s)", self._surface, exc_info=True)
             await record_activity(self._surface, "result", "session error")
         finally:
-            self._registry._discard(self._surface)
+            self._registry._discard(self._surface, self)
 
     async def _serve(self, resume: str | None) -> None:
         async with ClaudeSDKClient(options=self._options(resume)) as client:
@@ -489,7 +494,12 @@ class AgentSessionRegistry:
         id when one exists, so it continues across reconnect / restart instead of
         starting blank. `record_user=False` feeds the turn without a user bubble (a
         picker answer, already shown on its picker entry)."""
-        if surface not in self._sessions:
+        # Recreate when there's no session OR the existing one's consumer task has
+        # already exited (idle timeout). Otherwise a message arriving in the window
+        # between the serve loop returning and _discard running would enqueue onto a
+        # dead queue and be silently lost.
+        existing = self._sessions.get(surface)
+        if existing is None or not existing.is_live():
             session = await asyncio.to_thread(sessions.get_session, surface)
             if session is None:
                 log.warning("no session for surface %s; cannot start chat", surface)
@@ -529,8 +539,11 @@ class AgentSessionRegistry:
         if session is not None:
             await session.interrupt()
 
-    def _discard(self, surface: str) -> None:
-        self._sessions.pop(surface, None)
+    def _discard(self, surface: str, session: AgentSession | None = None) -> None:
+        # Only remove if the registered session is the one asking to be discarded, so a
+        # replacement created after an idle reap (see send) isn't accidentally dropped.
+        if session is None or self._sessions.get(surface) is session:
+            self._sessions.pop(surface, None)
 
     def active_surfaces(self) -> list[str]:
         return list(self._sessions)

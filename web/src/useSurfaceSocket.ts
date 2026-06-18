@@ -15,31 +15,50 @@ export type SendMessage = (text: string, image?: ImageAttachment) => void;
 export type StopAgent = () => void;
 // Submit an AskUserQuestion picker selection: the entry's ask id + the chosen value(s).
 export type SendAnswer = (askId: string, answer: string) => void;
+// Socket connectivity, surfaced so the UI can show a reconnecting state.
+export type Connection = "connecting" | "open" | "closed";
+
+// Reconnect backoff after an unexpected close: start low, double, cap — so the tab
+// recovers quickly after a daemon restart (Ctrl-C) without hammering while it's down.
+const RECONNECT_MIN_MS = 500;
+const RECONNECT_MAX_MS = 5000;
 
 /**
- * Subscribe to a surface. Returns its full state — the live view plus findings —
- * a `sendMessage` that pushes a chat turn to the surface's agent over the same
- * socket, and a `stop` that aborts whatever the agent is currently doing. On
- * (re)subscribe it fetches the current findings + status once over HTTP, then
- * stays current from WebSocket events. Re-subscribes when `surface` changes.
+ * Subscribe to a surface. Returns its full state, a `sendMessage`/`stop`/`sendAnswer`
+ * trio that push over the socket, and the live `connection` state. The socket
+ * auto-reconnects with backoff after an unexpected close (e.g. a daemon restart), and
+ * outbound `message`/`answer` frames sent while disconnected are queued and flushed in
+ * order on reconnect — so a message typed during the gap is never lost. `stop` is
+ * best-effort (not queued): there's nothing to stop while disconnected, and run state
+ * resyncs from the connect snapshot. Re-subscribes when `surface` changes.
  */
 export function useSurfaceSocket(
   surface: string,
-): [SurfaceState, SendMessage, StopAgent, SendAnswer] {
+): [SurfaceState, SendMessage, StopAgent, SendAnswer, Connection] {
   const [state, setState] = useState<SurfaceState>(() => emptySurface(surface));
+  const [connection, setConnection] = useState<Connection>("connecting");
   const wsRef = useRef<WebSocket | null>(null);
+  // Outbound frames buffered while the socket is down; flushed in order on open.
+  const pendingRef = useRef<string[]>([]);
 
   useEffect(() => {
     setState(emptySurface(surface));
-    let cancelled = false;
+    setConnection("connecting");
+    pendingRef.current = [];
+    let closedByCleanup = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let backoff = RECONNECT_MIN_MS;
 
+    // Seed status/title once over HTTP; live events (and the connect snapshot sent on
+    // every reconnect) keep state current afterward. A live event wins if they race.
     fetch(`/sessions/${encodeURIComponent(surface)}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data: unknown) => {
-        if (cancelled) return;
-        // Trust boundary: only adopt string status/title. A live `status`/`title`
-        // event wins if the two race (the field is set already), matching findings.
-        const row = typeof data === "object" && data !== null ? (data as { status?: unknown; title?: unknown }) : {};
+        if (closedByCleanup) return;
+        const row =
+          typeof data === "object" && data !== null
+            ? (data as { status?: unknown; title?: unknown })
+            : {};
         setState((prev) => {
           let next = prev;
           if (typeof row.status === "string" && prev.status === null) next = { ...next, status: row.status };
@@ -48,44 +67,77 @@ export function useSurfaceSocket(
         });
       })
       .catch(() => {
-        /* daemon unreachable — the status chip stays unknown, live events still flow */
+        /* daemon unreachable — live events still flow once the socket connects */
       });
 
-    const ws = new WebSocket(surfaceUrl(surface));
-    wsRef.current = ws;
-    ws.onmessage = (event) => {
-      const msg = parseMessage(event.data);
-      if (msg) {
-        setState((prev) => applyMessage(prev, msg));
-      }
-    };
+    function connect() {
+      setConnection("connecting");
+      const ws = new WebSocket(surfaceUrl(surface));
+      wsRef.current = ws;
+      ws.onopen = () => {
+        backoff = RECONNECT_MIN_MS;
+        setConnection("open");
+        // Flush anything typed while disconnected, in order.
+        const pending = pendingRef.current;
+        pendingRef.current = [];
+        for (const frame of pending) ws.send(frame);
+      };
+      ws.onmessage = (event) => {
+        const msg = parseMessage(event.data);
+        if (msg) setState((prev) => applyMessage(prev, msg));
+      };
+      ws.onclose = () => {
+        if (closedByCleanup) return; // unmount / surface change — don't reconnect
+        setConnection("closed");
+        // Retry until the daemon is back (e.g. after a Ctrl-C restart).
+        reconnectTimer = setTimeout(connect, backoff);
+        backoff = Math.min(backoff * 2, RECONNECT_MAX_MS);
+      };
+      ws.onerror = () => {
+        // An error is followed by close; close explicitly so onclose drives reconnect.
+        ws.close();
+      };
+    }
+    connect();
+
     return () => {
-      cancelled = true;
+      closedByCleanup = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      wsRef.current?.close();
       wsRef.current = null;
-      ws.close();
     };
   }, [surface]);
 
-  const sendMessage = useCallback<SendMessage>((text, image) => {
+  // Send the frame now if the socket is open, else buffer it for flush on reconnect.
+  const enqueueOrSend = useCallback((frame: string) => {
     const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "message", payload: { text, ...(image ? { image } : {}) } }));
-    }
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(frame);
+    else pendingRef.current.push(frame);
   }, []);
 
+  const sendMessage = useCallback<SendMessage>(
+    (text, image) => {
+      enqueueOrSend(
+        JSON.stringify({ type: "message", payload: { text, ...(image ? { image } : {}) } }),
+      );
+    },
+    [enqueueOrSend],
+  );
+
+  const sendAnswer = useCallback<SendAnswer>(
+    (askId, answer) => {
+      enqueueOrSend(JSON.stringify({ type: "answer", payload: { id: askId, answer } }));
+    },
+    [enqueueOrSend],
+  );
+
   const stop = useCallback<StopAgent>(() => {
+    // Best-effort, not queued: a stop only makes sense against a live, open socket.
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "stop" }));
     }
   }, []);
 
-  const sendAnswer = useCallback<SendAnswer>((askId, answer) => {
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "answer", payload: { id: askId, answer } }));
-    }
-  }, []);
-
-  return [state, sendMessage, stop, sendAnswer];
+  return [state, sendMessage, stop, sendAnswer, connection];
 }

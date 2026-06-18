@@ -946,3 +946,39 @@ async def test_answer_records_the_choice_and_runs_a_non_recording_turn(monkeypat
     # The agent still received the answer and ran the turn.
     assert FakeClient.instances[0].queried == ["Approach: Custom modal"]
     await reg.shutdown_all()
+
+
+async def test_send_recreates_a_session_whose_consumer_has_exited(monkeypatch):
+    # Simulate the window between a session's idle serve-loop returning and _discard:
+    # a dead session is still registered. A new send must recreate it and actually run
+    # the turn, not enqueue onto the dead queue and vanish.
+    _seed_session(SESSION)
+    store.get_or_create(SESSION).activity.clear()
+    reg = AgentSessionRegistry()
+
+    await reg.send(SESSION, "first")
+    await _wait_until(lambda: reg.active_surfaces() == [SESSION])
+    dead = reg._sessions[SESSION]
+
+    # Force the consumer task to finish, then re-register the now-dead session to model
+    # the pre-_discard window.
+    dead._task.cancel()
+    try:
+        await dead._task
+    except asyncio.CancelledError:
+        pass
+    reg._sessions[SESSION] = dead
+    assert dead.is_live() is False
+
+    FakeClient.instances.clear()
+    store.get_or_create(SESSION).activity.clear()
+
+    await reg.send(SESSION, "second")
+    await _wait_until(
+        lambda: ("text", "on it")
+        in [(e.kind, e.text) for e in store.get_or_create(SESSION).activity]
+    )
+    # A fresh session ran the turn (not the dead one).
+    assert reg._sessions[SESSION] is not dead
+    assert FakeClient.instances[-1].queried == ["second"]
+    await reg.shutdown_all()
