@@ -54,6 +54,13 @@ _MAX_TURN_ATTEMPTS = 4
 _RETRY_BASE_DELAY = 1.0
 _RETRY_MAX_DELAY = 30.0
 
+# After an interrupt, the SDK leaves the turn's terminal abort result pending in its
+# single shared stream; the turn loop drains it (see _attempt_turn / _drain_interrupted)
+# so it can't leak into the next turn and shift the feed. Bound the drain so a terminal
+# that never arrives can't wedge the session — a possibly-dirty next turn beats a
+# permanently stuck one.
+_INTERRUPT_DRAIN_SECONDS = 5.0
+
 
 @dataclass
 class ImageInput:
@@ -301,11 +308,18 @@ class AgentSession:
         else:
             await client.query(_user_message_stream(turn))
         relayed_content = False
-        async for message in client.receive_response():
-            # An interrupt aborts the turn; stop relaying so the SDK's terminal
-            # abort result doesn't show up in the feed (the clean "stopped" line
-            # is recorded by interrupt() instead).
+        response = client.receive_response()
+        async for message in response:
+            # An interrupt aborts the turn. Don't relay (the clean "stopped" line is
+            # recorded by interrupt()), but don't abandon the stream either: the SDK
+            # leaves this turn's terminal abort result pending in its single shared
+            # stream. Drain it here, within the interrupted turn. Abandoning instead
+            # would leave that result buffered for the *next* turn's receive_response()
+            # to pick up — relayed against the wrong prompt and shifting every later
+            # reply down one. The turn loop stays the sole stream consumer (interrupt()
+            # never reads it), so there's no two-readers race.
             if self._interrupting:
+                await self._drain_interrupted(response)
                 return relayed_content, None
             if (
                 isinstance(message, ResultMessage)
@@ -321,6 +335,27 @@ class AgentSession:
             if isinstance(message, AssistantMessage):
                 relayed_content = True
         return relayed_content, None
+
+    async def _drain_interrupted(self, response: AsyncIterator[Any]) -> None:
+        """Consume and discard the rest of an interrupted turn's messages until
+        receive_response() ends on the SDK's terminal abort result, so that result
+        can't leak into the next turn's shared stream. Bounded by
+        _INTERRUPT_DRAIN_SECONDS (mirroring the idle-read wait_for) so a terminal that
+        never arrives can't wedge the session — the next turn opening on a possibly
+        dirty stream is strictly better than a permanently stuck one (logged, P4)."""
+
+        async def _drain() -> None:
+            async for _ in response:
+                pass
+
+        try:
+            await asyncio.wait_for(_drain(), _INTERRUPT_DRAIN_SECONDS)
+        except TimeoutError:
+            log.warning(
+                "interrupt drain timed out (surface=%s); SDK emitted no terminal "
+                "result after interrupt",
+                self._surface,
+            )
 
     async def _record_usage(
         self, kind: str, output_tokens: int, input_tokens: int, message_id: int | None = None
