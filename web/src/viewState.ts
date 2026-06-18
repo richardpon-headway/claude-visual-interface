@@ -18,6 +18,8 @@ export type ViewState = {
   surface: string;
   activity: ActivityEntry[]; // the conversation, oldest-first
   thinking: boolean; // an agent turn is in flight (drives the thinking indicator)
+  session_output_tokens: number; // running session token totals across every LLM call
+  session_input_tokens: number;
 };
 
 // The full client state for a surface: the live view, the session's run status
@@ -37,7 +39,8 @@ export type WsMessage =
   | { type: "status"; surface: string; payload: { status: string } }
   | { type: "thinking"; surface: string; payload: { active: boolean } }
   | { type: "title"; surface: string; payload: { title: string } }
-  | { type: "prompt_summary"; surface: string; payload: { index: number; text: string } };
+  | { type: "prompt_summary"; surface: string; payload: { index: number; text: string } }
+  | { type: "tokens"; surface: string; payload: { output: number; input: number } };
 
 const MESSAGE_TYPES = [
   "snapshot",
@@ -46,6 +49,7 @@ const MESSAGE_TYPES = [
   "thinking",
   "title",
   "prompt_summary",
+  "tokens",
 ];
 
 export function emptyViewState(surface: string): ViewState {
@@ -53,6 +57,8 @@ export function emptyViewState(surface: string): ViewState {
     surface,
     activity: [],
     thinking: false,
+    session_output_tokens: 0,
+    session_input_tokens: 0,
   };
 }
 
@@ -93,6 +99,15 @@ export function applyMessage(state: SurfaceState, msg: WsMessage): SurfaceState 
       return { ...state, view: { ...state.view, thinking: msg.payload.active } };
     case "title":
       return { ...state, title: msg.payload.title };
+    case "tokens":
+      return {
+        ...state,
+        view: {
+          ...state.view,
+          session_output_tokens: msg.payload.output,
+          session_input_tokens: msg.payload.input,
+        },
+      };
     case "prompt_summary": {
       // Attach the summary to the index-th user prompt (the rail's `prompt-N`).
       const { index, text } = msg.payload;

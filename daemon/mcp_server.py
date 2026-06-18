@@ -22,7 +22,7 @@ from claude_agent_sdk import (
     tool,
 )
 
-from daemon import messages
+from daemon import messages, token_usage
 from daemon.hub import hub
 from daemon.view_state import ActivityEntry, store
 
@@ -66,6 +66,10 @@ async def hydrate_surface(surface: str) -> None:
         ],
     )
     store.mark_hydrated(surface)
+    # Rebuild the running token total from the persisted per-call rows, so the footer
+    # counter is correct after a daemon restart (before any new turns accumulate).
+    out, inp = await asyncio.to_thread(token_usage.session_totals, surface)
+    store.seed_tokens(surface, out, inp)
 
 
 async def record_activity(
@@ -123,6 +127,22 @@ async def broadcast_title(surface: str, title: str) -> None:
     await hub.broadcast(
         surface,
         {"type": "title", "surface": surface, "payload": {"title": title}},
+    )
+
+
+async def broadcast_tokens(surface: str, output_tokens: int, input_tokens: int) -> None:
+    """Add one LLM call's tokens to the surface's running session total and push the new
+    total to subscribers so the footer counter updates live. Like the thinking flag, the
+    total has no DB home of its own (it's summed from token_usage on hydration), so it's
+    held on the ViewState to ride the connect snapshot."""
+    total_out, total_in = store.add_tokens(surface, output_tokens, input_tokens)
+    await hub.broadcast(
+        surface,
+        {
+            "type": "tokens",
+            "surface": surface,
+            "payload": {"output": total_out, "input": total_in},
+        },
     )
 
 

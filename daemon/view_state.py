@@ -35,6 +35,11 @@ class ViewState:
     # Whether an agent turn is currently in flight (drives the thinking indicator);
     # snapshot-carried so a browser connecting mid-turn sees it.
     thinking: bool = False
+    # Running session token totals across every LLM call (turn + title + summary).
+    # Seeded from the persisted token_usage rows on hydration (so they survive a daemon
+    # restart) and accumulated live; snapshot-carried so a refresh keeps the count.
+    session_output_tokens: int = 0
+    session_input_tokens: int = 0
 
 
 class ViewStore:
@@ -55,6 +60,20 @@ class ViewStore:
 
     def set_thinking(self, surface: str, active: bool) -> None:
         self.get_or_create(surface).thinking = active
+
+    def add_tokens(self, surface: str, output_tokens: int, input_tokens: int) -> tuple[int, int]:
+        """Add one call's tokens to the running session totals; return the new totals."""
+        state = self.get_or_create(surface)
+        state.session_output_tokens += output_tokens
+        state.session_input_tokens += input_tokens
+        return state.session_output_tokens, state.session_input_tokens
+
+    def seed_tokens(self, surface: str, output_tokens: int, input_tokens: int) -> None:
+        """Set the session totals to a known baseline (the persisted sum), so a restart
+        rebuilds the count before live accumulation resumes."""
+        state = self.get_or_create(surface)
+        state.session_output_tokens = output_tokens
+        state.session_input_tokens = input_tokens
 
     def append_activity(
         self, surface: str, kind: str, text: str, html: str | None = None

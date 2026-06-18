@@ -31,6 +31,7 @@ from daemon.mcp_server import (
     broadcast_prompt_summary,
     broadcast_thinking,
     broadcast_title,
+    broadcast_tokens,
     build_agent_options,
     record_activity,
 )
@@ -319,6 +320,7 @@ class AgentSession:
                 "input_tokens": input_tokens,
             },
         )
+        await broadcast_tokens(self._surface, output_tokens, input_tokens)
 
     async def _remember_sdk_session(self, session_id: str | None) -> None:
         """Persist the SDK session id so a later session for this surface resumes the

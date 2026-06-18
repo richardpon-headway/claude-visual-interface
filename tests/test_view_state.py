@@ -7,7 +7,26 @@ def test_snapshot_is_json_shaped_and_starts_empty():
         "surface": "fresh",
         "activity": [],
         "thinking": False,
+        "session_output_tokens": 0,
+        "session_input_tokens": 0,
     }
+
+
+def test_add_tokens_accumulates_and_rides_the_snapshot():
+    store = ViewStore()
+    assert store.add_tokens("s", 30, 500) == (30, 500)
+    assert store.add_tokens("s", 5, 40) == (35, 540)
+    snap = store.snapshot("s")
+    assert snap["session_output_tokens"] == 35
+    assert snap["session_input_tokens"] == 540
+
+
+def test_seed_tokens_sets_the_baseline():
+    store = ViewStore()
+    store.seed_tokens("s", 1000, 20000)
+    assert store.snapshot("s")["session_output_tokens"] == 1000
+    store.add_tokens("s", 10, 10)
+    assert store.snapshot("s")["session_output_tokens"] == 1010
 
 
 def test_set_thinking_flips_the_flag_and_rides_the_snapshot():

@@ -130,11 +130,16 @@ export function Surface({ surface }: { surface: string }) {
 
       <div className="shrink-0 border-t border-zinc-800">
         <div className="mx-auto max-w-3xl">
-          {busy ? (
-            <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-400">
-              <ThinkingIndicator active={view.thinking} />
-            </div>
-          ) : null}
+          <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-400">
+            {busy ? <ThinkingIndicator active={view.thinking} /> : null}
+            <span className="ml-auto text-zinc-500">
+              <span className="text-zinc-300">
+                {view.session_output_tokens.toLocaleString()} output
+              </span>
+              {" · "}
+              {view.session_input_tokens.toLocaleString()} in
+            </span>
+          </div>
           <ChatInput onSend={sendMessage} busy={busy} onStop={stop} />
         </div>
       </div>
