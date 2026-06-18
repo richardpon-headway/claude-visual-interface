@@ -9,6 +9,7 @@ from daemon import messages, token_usage
 from daemon.db import apply_migrations_sync
 from daemon.hub import hub
 from daemon.mcp_server import (
+    broadcast_answer,
     broadcast_prompt_summary,
     broadcast_status,
     broadcast_thinking,
@@ -154,6 +155,24 @@ async def test_hydrate_seeds_the_session_token_total_from_persisted_usage():
     snap = store.snapshot(surface)
     assert snap["session_output_tokens"] == 35
     assert snap["session_input_tokens"] == 1540
+
+
+async def test_broadcast_answer_records_the_choice_and_broadcasts():
+    surface = "vc-answer"
+    await record_activity(surface, "ask", "pick", ask_id="a1", questions=[])
+    ws = FakeWS()
+    hub.register(surface, ws)
+    try:
+        await broadcast_answer(surface, "a1", "Chosen")
+    finally:
+        hub.unregister(surface, ws)
+
+    assert store.get_or_create(surface).activity[-1].answer == "Chosen"
+    assert {
+        "type": "answer",
+        "surface": surface,
+        "payload": {"id": "a1", "answer": "Chosen"},
+    } in ws.received
 
 
 async def test_broadcast_tokens_accumulates_and_broadcasts_the_running_total():

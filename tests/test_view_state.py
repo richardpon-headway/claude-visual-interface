@@ -114,6 +114,19 @@ def test_load_activity_replaces_the_transcript_and_rides_the_snapshot():
     ]
 
 
+def test_set_answer_records_the_choice_on_the_matching_ask_entry():
+    store = ViewStore()
+    store.append_activity(
+        "s", "ask", "pick", ask_id="a1", questions=[{"question": "Q", "options": []}]
+    )
+    assert store.set_answer("s", "a1", "Chosen") is True
+    assert store.get_or_create("s").activity[-1].answer == "Chosen"
+    # The answer rides the snapshot so a reload re-renders the picker answered.
+    assert store.snapshot("s")["activity"][-1]["answer"] == "Chosen"
+    # An unknown ask id is a no-op.
+    assert store.set_answer("s", "missing", "x") is False
+
+
 def test_hydration_flag_tracks_per_surface():
     store = ViewStore()
     assert store.is_hydrated("s") is False

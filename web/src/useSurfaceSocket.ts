@@ -13,6 +13,8 @@ function surfaceUrl(surface: string): string {
 export type ImageAttachment = { media_type: string; data: string };
 export type SendMessage = (text: string, image?: ImageAttachment) => void;
 export type StopAgent = () => void;
+// Submit an AskUserQuestion picker selection: the entry's ask id + the chosen value(s).
+export type SendAnswer = (askId: string, answer: string) => void;
 
 /**
  * Subscribe to a surface. Returns its full state — the live view plus findings —
@@ -21,7 +23,9 @@ export type StopAgent = () => void;
  * (re)subscribe it fetches the current findings + status once over HTTP, then
  * stays current from WebSocket events. Re-subscribes when `surface` changes.
  */
-export function useSurfaceSocket(surface: string): [SurfaceState, SendMessage, StopAgent] {
+export function useSurfaceSocket(
+  surface: string,
+): [SurfaceState, SendMessage, StopAgent, SendAnswer] {
   const [state, setState] = useState<SurfaceState>(() => emptySurface(surface));
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -76,5 +80,12 @@ export function useSurfaceSocket(surface: string): [SurfaceState, SendMessage, S
     }
   }, []);
 
-  return [state, sendMessage, stop];
+  const sendAnswer = useCallback<SendAnswer>((askId, answer) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "answer", payload: { id: askId, answer } }));
+    }
+  }, []);
+
+  return [state, sendMessage, stop, sendAnswer];
 }
