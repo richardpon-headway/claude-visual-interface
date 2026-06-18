@@ -40,11 +40,14 @@ class FakeTitleClient:
     """Stands in for ClaudeSDKClient in the title call: records the query and
     replies with a canned assistant message (or raises on connect)."""
 
-    def __init__(self, options=None, *, reply="A Generated Title", raise_on_enter=False):
+    def __init__(
+        self, options=None, *, reply="A Generated Title", raise_on_enter=False, usage=None
+    ):
         self.options = options
         self.queried: list[str] = []
         self._reply = reply
         self._raise_on_enter = raise_on_enter
+        self._usage = usage
 
     async def __aenter__(self):
         if self._raise_on_enter:
@@ -66,6 +69,7 @@ class FakeTitleClient:
             is_error=False,
             num_turns=1,
             session_id="t",
+            usage=self._usage,
         )
 
 
@@ -73,8 +77,20 @@ async def test_generate_returns_cleaned_assistant_text(monkeypatch):
     client = FakeTitleClient(reply='  "My Title"  ')
     monkeypatch.setattr(titles, "ClaudeSDKClient", lambda options=None: client)
 
-    assert await titles.AgentTitleGenerator().generate("help me debug") == "My Title"
+    result = await titles.AgentTitleGenerator().generate("help me debug")
+    assert result.title == "My Title"
     assert client.queried == ["help me debug"]
+
+
+async def test_generate_reports_token_usage(monkeypatch):
+    client = FakeTitleClient(
+        usage={"output_tokens": 6, "input_tokens": 40, "cache_read_input_tokens": 100}
+    )
+    monkeypatch.setattr(titles, "ClaudeSDKClient", lambda options=None: client)
+
+    result = await titles.AgentTitleGenerator().generate("title this")
+    assert result.output_tokens == 6
+    assert result.input_tokens == 140  # input + cache_read
 
 
 async def test_generate_truncates_long_input(monkeypatch):
@@ -86,9 +102,11 @@ async def test_generate_truncates_long_input(monkeypatch):
     assert len(client.queried[0]) == titles.MAX_TITLE_INPUT_CHARS
 
 
-async def test_generate_returns_none_when_the_client_raises(monkeypatch):
+async def test_generate_returns_empty_result_when_the_client_raises(monkeypatch):
     monkeypatch.setattr(
         titles, "ClaudeSDKClient", lambda options=None: FakeTitleClient(raise_on_enter=True)
     )
 
-    assert await titles.AgentTitleGenerator().generate("hi") is None
+    result = await titles.AgentTitleGenerator().generate("hi")
+    assert result.title is None
+    assert result.output_tokens == 0

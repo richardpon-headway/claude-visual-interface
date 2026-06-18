@@ -7,7 +7,7 @@ import asyncio
 import pytest
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
 
-from daemon import agent_session, messages, sessions, titles
+from daemon import agent_session, messages, sessions, titles, token_usage
 from daemon.agent_session import AgentSessionRegistry
 from daemon.db import apply_migrations_sync, open_db
 from daemon.hub import hub
@@ -29,7 +29,7 @@ class _NoTitleGen:
     tests incur no title side-effects and open no second SDK client."""
 
     async def generate(self, message):
-        return None
+        return titles.TitleResult(None)
 
 SESSION = "chat-session"
 
@@ -617,7 +617,7 @@ class _FixedTitleGen:
 
     async def generate(self, message):
         self.calls += 1
-        return self._title
+        return titles.TitleResult(self._title)
 
 
 class _FlakyTitleGen:
@@ -629,7 +629,7 @@ class _FlakyTitleGen:
 
     async def generate(self, message):
         self.calls += 1
-        return None if self.calls == 1 else self._title
+        return titles.TitleResult(None if self.calls == 1 else self._title)
 
 
 class _GatedTitleGen:
@@ -651,7 +651,7 @@ class _GatedTitleGen:
         call = self.calls  # assigned before any await, so each call gets a distinct id
         await self.gate(call).wait()
         self.done.add(call)
-        return f"title-{call}"
+        return titles.TitleResult(f"title-{call}")
 
 
 async def test_first_text_message_titles_an_untitled_chat(monkeypatch):
@@ -799,7 +799,7 @@ class _RecordingTitleGen:
     async def generate(self, message):
         self.calls += 1
         self.inputs.append(message)
-        return f"Title {self.calls}"
+        return titles.TitleResult(f"Title {self.calls}")
 
 
 async def test_title_refreshes_every_five_prompts_from_the_recent_window(monkeypatch):
@@ -860,4 +860,61 @@ async def test_image_only_turn_does_not_advance_the_refresh_cadence(monkeypatch)
     # The fifth text prompt reaches the cadence and refreshes.
     await reg.send(chat, "five")
     await _wait_until(lambda: sessions.get_session(chat)["title"] == "Title 2")
+    await reg.shutdown_all()
+
+
+class _UsageClient(FakeClient):
+    """A turn client whose result carries token usage, to exercise token accounting."""
+
+    async def receive_response(self):
+        yield AssistantMessage(content=[TextBlock(text="on it")], model="test")
+        yield ResultMessage(
+            subtype="success",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=1,
+            session_id=SESSION,
+            usage={
+                "output_tokens": 30,
+                "input_tokens": 500,
+                "cache_read_input_tokens": 1000,
+            },
+        )
+
+
+class _UsageTitleGen:
+    """A title/summary generator that reports token usage on every call."""
+
+    async def generate(self, message):
+        return titles.TitleResult("A Title", output_tokens=7, input_tokens=70)
+
+
+async def test_turn_records_token_usage_attributed_to_its_prompt(monkeypatch):
+    _seed_session(SESSION)
+    store.get_or_create(SESSION).activity.clear()
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: _UsageClient(options)
+    )
+    reg = AgentSessionRegistry()
+
+    await reg.send(SESSION, "do the thing")
+    # output 30; input 500 + 1000 cache-read = 1500.
+    await _wait_until(lambda: token_usage.session_totals(SESSION) == (30, 1500))
+
+    prompt = next(m for m in messages.list_messages(SESSION) if m["kind"] == "user")
+    assert token_usage.tokens_for_message(prompt["id"]) == (30, 1500)
+    await reg.shutdown_all()
+
+
+async def test_title_and_summary_calls_record_token_usage(monkeypatch):
+    chat = sessions.create_chat_session()
+    monkeypatch.setattr(titles, "generator", _UsageTitleGen())
+    monkeypatch.setattr(titles, "summarizer", _UsageTitleGen())
+    reg = AgentSessionRegistry()
+
+    await reg.send(chat, "hello there")
+    # The default FakeClient turn reports no usage; the title and summary sub-calls
+    # each report 7 output / 70 input → 14 / 140 total.
+    await _wait_until(lambda: token_usage.session_totals(chat) == (14, 140))
     await reg.shutdown_all()
