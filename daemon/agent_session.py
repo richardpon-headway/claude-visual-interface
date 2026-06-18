@@ -19,7 +19,7 @@ import logging
 import random
 from collections import deque
 from collections.abc import AsyncIterator, Coroutine
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from claude_agent_sdk import AssistantMessage, ClaudeSDKClient, ResultMessage
@@ -64,11 +64,11 @@ class ImageInput:
 
 @dataclass
 class ChatTurn:
-    # One user turn: text plus an optional pasted image. `record_user` is False for a
-    # picker answer, whose choice is already shown on the picker entry — so the turn
-    # feeds the agent without recording a duplicate user bubble.
+    # One user turn: text plus zero or more pasted/dropped images. `record_user` is
+    # False for a picker answer, whose choice is already shown on the picker entry — so
+    # the turn feeds the agent without recording a duplicate user bubble.
     text: str
-    image: ImageInput | None = None
+    images: list[ImageInput] = field(default_factory=list)
     record_user: bool = True
 
 
@@ -76,18 +76,18 @@ async def _user_message_stream(turn: ChatTurn) -> AsyncIterator[dict[str, Any]]:
     """Yield the single multimodal user message for ClaudeSDKClient.query's streaming
     form (text-only turns take the plain-string fast path instead). The dict mirrors
     what the SDK builds for a string prompt — carries parent_tool_use_id; the SDK
-    fills in session_id."""
+    fills in session_id. One image block per attached image, in order, after the text."""
     blocks: list[dict[str, Any]] = []
     if turn.text:
         blocks.append({"type": "text", "text": turn.text})
-    if turn.image is not None:
+    for image in turn.images:
         blocks.append(
             {
                 "type": "image",
                 "source": {
                     "type": "base64",
-                    "media_type": turn.image.media_type,
-                    "data": turn.image.data,
+                    "media_type": image.media_type,
+                    "data": image.data,
                 },
             }
         )
@@ -96,6 +96,17 @@ async def _user_message_stream(turn: ChatTurn) -> AsyncIterator[dict[str, Any]]:
         "message": {"role": "user", "content": blocks},
         "parent_tool_use_id": None,
     }
+
+
+def _turn_marker(turn: ChatTurn) -> str:
+    """The activity-feed label for a user turn: marks attached images by count (never
+    dumps base64). No images → just the text; one → `[image] <text>`; many →
+    `[N images] <text>`."""
+    n = len(turn.images)
+    if n == 0:
+        return turn.text
+    prefix = "[image]" if n == 1 else f"[{n} images]"
+    return f"{prefix} {turn.text}".rstrip()
 
 
 def with_surface_id(prompt: str, surface: str) -> str:
@@ -229,7 +240,7 @@ class AgentSession:
         # runs so the agent gets the answer.
         prompt_message_id: int | None = None
         if turn.record_user:
-            marker = f"[image] {turn.text}".rstrip() if turn.image is not None else turn.text
+            marker = _turn_marker(turn)
             entry = await record_activity(self._surface, "user", marker)
             # Generate this prompt's one-line outline-rail summary in the background.
             index = self._prompt_count
@@ -285,7 +296,7 @@ class AgentSession:
         success, or an error already surfaced via the relay. ``relayed_content`` is
         True once any assistant message has streamed, marking the point past which a
         retry would duplicate output."""
-        if turn.image is None:
+        if not turn.images:
             await client.query(turn.text)  # text-only: the plain-string fast path
         else:
             await client.query(_user_message_stream(turn))
@@ -485,11 +496,11 @@ class AgentSessionRegistry:
         self,
         surface: str,
         text: str,
-        image: ImageInput | None = None,
+        images: list[ImageInput] | None = None,
         record_user: bool = True,
     ) -> None:
-        """Route a user message (text plus an optional pasted image) to the surface's
-        session, starting one if needed. A surface with no session row can't chat —
+        """Route a user message (text plus zero or more pasted/dropped images) to the
+        surface's session, starting one if needed. A surface with no session row can't chat —
         recorded observably, not silently. A session resumes its recorded SDK session
         id when one exists, so it continues across reconnect / restart instead of
         starting blank. `record_user=False` feeds the turn without a user bubble (a
@@ -523,7 +534,9 @@ class AgentSessionRegistry:
         # The turn's user line is recorded when the turn runs (see _run_turn), not
         # here, so a message queued behind an in-flight turn can't appear above that
         # turn's answer.
-        self._sessions[surface].enqueue(ChatTurn(text=text, image=image, record_user=record_user))
+        self._sessions[surface].enqueue(
+            ChatTurn(text=text, images=images or [], record_user=record_user)
+        )
 
     async def answer(self, surface: str, ask_id: str, answer: str) -> None:
         """Apply a picker selection: record the choice on the picker entry (pushed live

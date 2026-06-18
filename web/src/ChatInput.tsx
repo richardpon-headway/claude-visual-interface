@@ -2,11 +2,16 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { ImageAttachment, SendMessage, StopAgent } from "./useSurfaceSocket";
 
+// Cap on images per turn. base64 inflates ~33%, so this keeps a realistic batch of
+// screenshots inline on the WebSocket frame under the daemon's 16 MB limit; mirrors
+// the daemon's own cap.
+const MAX_IMAGES = 8;
+
 // The chat box at the bottom of the right pane. Submitting sends a turn to the
 // surface's agent; the message echoes back into the transcript as a `user` entry.
-// Pasting or dropping an image attaches it to the next message (thumbnail chip).
-// While a turn is in flight (`busy`), the Send button becomes a Stop button in
-// the same slot, and submitting is inert until the turn ends or is stopped.
+// Pasting or dropping image(s) attaches them to the next message (one thumbnail chip
+// each, capped at MAX_IMAGES). While a turn is in flight (`busy`), the Send button
+// becomes a Stop button in the same slot, and submitting is inert until the turn ends.
 export function ChatInput({
   onSend,
   busy = false,
@@ -17,10 +22,11 @@ export function ChatInput({
   onStop?: StopAgent;
 }) {
   const [text, setText] = useState("");
-  const [image, setImage] = useState<ImageAttachment | null>(null);
+  const [images, setImages] = useState<ImageAttachment[]>([]);
   const [dragging, setDragging] = useState(false);
 
-  // Shared by paste and drop: read an image File into the attachment chip.
+  // Shared by paste and drop: read an image File and append it as an attachment chip,
+  // up to MAX_IMAGES. Existing attachments are kept (accumulate, not replace).
   const attachImageFile = useCallback((file: File) => {
     if (!file.type.startsWith("image/")) return;
     const reader = new FileReader();
@@ -29,7 +35,9 @@ export function ChatInput({
       if (typeof result !== "string") return;
       // Strip the `data:<mime>;base64,` prefix — the daemon/SDK want raw base64.
       const comma = result.indexOf(",");
-      if (comma >= 0) setImage({ media_type: file.type, data: result.slice(comma + 1) });
+      if (comma < 0) return;
+      const att = { media_type: file.type, data: result.slice(comma + 1) };
+      setImages((prev) => (prev.length >= MAX_IMAGES ? prev : [...prev, att]));
     };
     reader.readAsDataURL(file);
   }, []);
@@ -54,10 +62,11 @@ export function ChatInput({
     function onDrop(e: DragEvent) {
       e.preventDefault();
       setDragging(false);
-      const file = Array.from(e.dataTransfer?.files ?? []).find((f) =>
+      // Attach every image file in the drop (a single drop can carry several).
+      const files = Array.from(e.dataTransfer?.files ?? []).filter((f) =>
         f.type.startsWith("image/"),
       );
-      if (file) attachImageFile(file);
+      for (const file of files) attachImageFile(file);
     }
     window.addEventListener("dragover", onDragOver);
     window.addEventListener("dragleave", onDragLeave);
@@ -70,22 +79,23 @@ export function ChatInput({
   }, [attachImageFile]);
 
   function handlePaste(e: React.ClipboardEvent) {
-    const item = Array.from(e.clipboardData.items).find(
-      (it) => it.kind === "file" && it.type.startsWith("image/"),
-    );
-    const file = item?.getAsFile();
-    if (!file) return;
+    // Attach every image in the paste (a folder selection Cmd-C'd carries several).
+    const files = Array.from(e.clipboardData.items)
+      .filter((it) => it.kind === "file" && it.type.startsWith("image/"))
+      .map((it) => it.getAsFile())
+      .filter((f): f is File => f !== null);
+    if (files.length === 0) return;
     e.preventDefault();
-    attachImageFile(file);
+    for (const file of files) attachImageFile(file);
   }
 
   function send() {
     if (busy) return;
     const trimmed = text.trim();
-    if (!trimmed && !image) return;
-    onSend(trimmed, image ?? undefined);
+    if (!trimmed && images.length === 0) return;
+    onSend(trimmed, images.length ? images : undefined);
     setText("");
-    setImage(null);
+    setImages([]);
   }
 
   function submit(e: React.FormEvent) {
@@ -110,21 +120,25 @@ export function ChatInput({
           </span>
         </div>
       ) : null}
-      {image ? (
-        <div className="flex items-center gap-2">
-          <img
-            src={`data:${image.media_type};base64,${image.data}`}
-            alt="attachment"
-            className="h-10 w-10 rounded border border-zinc-700 object-cover"
-          />
-          <button
-            type="button"
-            onClick={() => setImage(null)}
-            aria-label="Remove image"
-            className="rounded border border-zinc-700 px-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
-          >
-            ×
-          </button>
+      {images.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {images.map((img, i) => (
+            <div key={i} className="flex items-center gap-1">
+              <img
+                src={`data:${img.media_type};base64,${img.data}`}
+                alt="attachment"
+                className="h-10 w-10 rounded border border-zinc-700 object-cover"
+              />
+              <button
+                type="button"
+                onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))}
+                aria-label="Remove image"
+                className="rounded border border-zinc-700 px-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+              >
+                ×
+              </button>
+            </div>
+          ))}
         </div>
       ) : null}
       <div className="relative">
@@ -150,7 +164,7 @@ export function ChatInput({
         ) : (
           <button
             type="submit"
-            disabled={!text.trim() && !image}
+            disabled={!text.trim() && images.length === 0}
             className="absolute bottom-2 right-2 rounded border border-zinc-700 px-3 py-1 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-40"
           >
             Send

@@ -11,7 +11,7 @@ function surfaceUrl(surface: string): string {
 // A pasted image: MIME type + raw base64 (no data-URL prefix), matching the SDK
 // image block the daemon builds.
 export type ImageAttachment = { media_type: string; data: string };
-export type SendMessage = (text: string, image?: ImageAttachment) => void;
+export type SendMessage = (text: string, images?: ImageAttachment[]) => void;
 export type StopAgent = () => void;
 // Submit an AskUserQuestion picker selection: the entry's ask id + the chosen value(s).
 export type SendAnswer = (askId: string, answer: string) => void;
@@ -116,9 +116,12 @@ export function useSurfaceSocket(
   }, []);
 
   const sendMessage = useCallback<SendMessage>(
-    (text, image) => {
+    (text, images) => {
       enqueueOrSend(
-        JSON.stringify({ type: "message", payload: { text, ...(image ? { image } : {}) } }),
+        JSON.stringify({
+          type: "message",
+          payload: { text, ...(images?.length ? { images } : {}) },
+        }),
       );
     },
     [enqueueOrSend],

@@ -68,16 +68,32 @@ describe("useSurfaceSocket", () => {
     expect(FakeWebSocket.last?.sent).toEqual([MSG("review the diff")]);
   });
 
-  it("includes the image in the frame when one is attached", () => {
+  it("includes the images array in the frame when attached, and omits it otherwise", () => {
     const { result } = renderHook(() => useSurfaceSocket("s1"));
     act(() => FakeWebSocket.last!.open());
-    act(() => result.current[1]("look", { media_type: "image/png", data: "QUJD" }));
+    act(() =>
+      result.current[1]("look", [
+        { media_type: "image/png", data: "QUJD" },
+        { media_type: "image/png", data: "WFla" },
+      ]),
+    );
+    // No images → the key is omitted entirely.
+    act(() => result.current[1]("text only"));
+    act(() => result.current[1]("empty list", []));
 
     expect(FakeWebSocket.last?.sent).toEqual([
       JSON.stringify({
         type: "message",
-        payload: { text: "look", image: { media_type: "image/png", data: "QUJD" } },
+        payload: {
+          text: "look",
+          images: [
+            { media_type: "image/png", data: "QUJD" },
+            { media_type: "image/png", data: "WFla" },
+          ],
+        },
       }),
+      MSG("text only"),
+      MSG("empty list"),
     ]);
   });
 

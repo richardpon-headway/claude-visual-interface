@@ -42,19 +42,27 @@ describe("ChatInput", () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
-  function pasteImage(input: HTMLElement) {
-    const file = new File([new Uint8Array([1, 2, 3])], "shot.png", { type: "image/png" });
+  function pngFile(name: string) {
+    return new File([new Uint8Array([1, 2, 3])], name, { type: "image/png" });
+  }
+  function pasteImages(input: HTMLElement, count: number) {
     fireEvent.paste(input, {
-      clipboardData: { items: [{ kind: "file", type: "image/png", getAsFile: () => file }] },
+      clipboardData: {
+        items: Array.from({ length: count }, (_, i) => {
+          const file = pngFile(`shot${i}.png`);
+          return { kind: "file", type: "image/png", getAsFile: () => file };
+        }),
+      },
     });
   }
+  const removeButtons = () => screen.queryAllByRole("button", { name: /remove image/i });
 
   it("attaches a pasted image, sends it with the text, then clears", async () => {
     const onSend = vi.fn();
     render(<ChatInput onSend={onSend} />);
     const input = screen.getByRole("textbox", { name: /message the agent/i });
 
-    pasteImage(input);
+    pasteImages(input, 1);
     // FileReader.readAsDataURL is async — wait for the attachment chip.
     expect(await screen.findByRole("button", { name: /remove image/i })).toBeInTheDocument();
 
@@ -62,12 +70,51 @@ describe("ChatInput", () => {
     fireEvent.click(screen.getByRole("button", { name: /send/i }));
 
     expect(onSend).toHaveBeenCalledTimes(1);
-    const [text, image] = onSend.mock.calls[0];
+    const [text, images] = onSend.mock.calls[0];
     expect(text).toBe("what is this");
-    expect(image.media_type).toBe("image/png");
-    expect(image.data.length).toBeGreaterThan(0); // raw base64, prefix stripped
+    expect(images).toHaveLength(1);
+    expect(images[0].media_type).toBe("image/png");
+    expect(images[0].data.length).toBeGreaterThan(0); // raw base64, prefix stripped
     expect((input as HTMLInputElement).value).toBe("");
-    expect(screen.queryByRole("button", { name: /remove image/i })).toBeNull();
+    expect(removeButtons()).toHaveLength(0);
+  });
+
+  it("accumulates multiple pasted images and sends them all in order", async () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+    const input = screen.getByRole("textbox", { name: /message the agent/i });
+
+    pasteImages(input, 2);
+    await screen.findAllByRole("button", { name: /remove image/i });
+    expect(removeButtons()).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+    expect(onSend.mock.calls[0][1]).toHaveLength(2);
+  });
+
+  it("removes a single image chip without clearing the rest", async () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+    const input = screen.getByRole("textbox", { name: /message the agent/i });
+
+    pasteImages(input, 3);
+    await screen.findAllByRole("button", { name: /remove image/i });
+    expect(removeButtons()).toHaveLength(3);
+
+    fireEvent.click(removeButtons()[0]);
+    expect(removeButtons()).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+    expect(onSend.mock.calls[0][1]).toHaveLength(2);
+  });
+
+  it("caps attachments at 8", async () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+    const input = screen.getByRole("textbox", { name: /message the agent/i });
+
+    pasteImages(input, 12);
+    await screen.findAllByRole("button", { name: /remove image/i });
+    expect(removeButtons()).toHaveLength(8);
   });
 
   it("sends an image-only message (no caption)", async () => {
@@ -75,34 +122,35 @@ describe("ChatInput", () => {
     render(<ChatInput onSend={onSend} />);
     const input = screen.getByRole("textbox", { name: /message the agent/i });
 
-    pasteImage(input);
+    pasteImages(input, 1);
     await screen.findByRole("button", { name: /remove image/i });
     fireEvent.click(screen.getByRole("button", { name: /send/i }));
 
     expect(onSend).toHaveBeenCalledTimes(1);
     expect(onSend.mock.calls[0][0]).toBe(""); // empty text
-    expect(onSend.mock.calls[0][1].media_type).toBe("image/png");
+    expect(onSend.mock.calls[0][1][0].media_type).toBe("image/png");
   });
 
-  it("attaches a dropped image, sends it with the text, then clears", async () => {
+  it("attaches every dropped image, sends them with the text, then clears", async () => {
     const onSend = vi.fn();
     render(<ChatInput onSend={onSend} />);
     const input = screen.getByRole("textbox", { name: /message the agent/i });
 
-    const file = new File([new Uint8Array([1, 2, 3])], "shot.png", { type: "image/png" });
-    fireEvent.drop(document.body, { dataTransfer: { files: [file], types: ["Files"] } });
-    // FileReader.readAsDataURL is async — wait for the attachment chip.
-    expect(await screen.findByRole("button", { name: /remove image/i })).toBeInTheDocument();
+    fireEvent.drop(document.body, {
+      dataTransfer: { files: [pngFile("a.png"), pngFile("b.png")], types: ["Files"] },
+    });
+    await screen.findAllByRole("button", { name: /remove image/i });
+    expect(removeButtons()).toHaveLength(2);
 
     fireEvent.change(input, { target: { value: "what is this" } });
     fireEvent.click(screen.getByRole("button", { name: /send/i }));
 
     expect(onSend).toHaveBeenCalledTimes(1);
-    const [text, image] = onSend.mock.calls[0];
+    const [text, images] = onSend.mock.calls[0];
     expect(text).toBe("what is this");
-    expect(image.media_type).toBe("image/png");
-    expect(image.data.length).toBeGreaterThan(0); // raw base64, prefix stripped
-    expect(screen.queryByRole("button", { name: /remove image/i })).toBeNull();
+    expect(images).toHaveLength(2);
+    expect(images[0].data.length).toBeGreaterThan(0); // raw base64, prefix stripped
+    expect(removeButtons()).toHaveLength(0);
   });
 
   it("ignores a dropped non-image file", () => {

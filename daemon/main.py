@@ -154,15 +154,17 @@ async def ws_surface(websocket: WebSocket, surface: str) -> None:
         hub.unregister(surface, websocket)
 
 
+# Cap on images per turn. base64 inflates ~33%, so this keeps a realistic batch of
+# screenshots inline on the `message` frame under uvicorn's 16 MB WebSocket limit;
+# mirrors the front-end's cap.
+_MAX_IMAGES_PER_TURN = 8
+
+
 def _parse_image(raw: Any) -> ImageInput | None:
-    """Validate an optional pasted image from a `message` frame — untrusted external
-    input. Returns None when absent, and fails closed (None + a warning) when
-    malformed: requires a string `media_type` starting `image/` and a non-empty
-    string `data` (raw base64)."""
-    if raw is None:
-        return None
+    """Validate one pasted image dict — untrusted external input. Returns None when it's
+    not a well-formed image: requires a string `media_type` starting `image/` and a
+    non-empty string `data` (raw base64)."""
     if not isinstance(raw, dict):
-        log.warning("ignoring image payload: not an object")
         return None
     media_type = raw.get("media_type")
     data = raw.get("data")
@@ -173,8 +175,28 @@ def _parse_image(raw: Any) -> ImageInput | None:
         and data
     ):
         return ImageInput(media_type=media_type, data=data)
-    log.warning("ignoring image payload: bad media_type or data")
     return None
+
+
+def _parse_images(raw: Any) -> list[ImageInput]:
+    """Validate a list of pasted images from a `message` frame — untrusted external
+    input. Returns [] when absent; otherwise keeps each well-formed image in order,
+    dropping malformed entries (fail closed per element) and capping at
+    _MAX_IMAGES_PER_TURN. A single warning fires when anything is dropped."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        log.warning("ignoring images payload: not a list")
+        return []
+    images = [img for img in (_parse_image(item) for item in raw) if img is not None]
+    if len(images) < len(raw):
+        log.warning("dropped %d malformed image(s) from payload", len(raw) - len(images))
+    if len(images) > _MAX_IMAGES_PER_TURN:
+        log.warning(
+            "capping %d images to %d per turn", len(images), _MAX_IMAGES_PER_TURN
+        )
+        images = images[:_MAX_IMAGES_PER_TURN]
+    return images
 
 
 async def _stop_surface(surface: str) -> None:
@@ -203,9 +225,15 @@ async def _handle_inbound(surface: str, raw: str) -> None:
     if msg_type == "message":
         raw_text = payload.get("text")
         text = raw_text.strip() if isinstance(raw_text, str) else ""
-        image = _parse_image(payload.get("image"))
-        if text or image is not None:
-            await agents.send(surface, text, image=image)
+        # Prefer the new `images` list; fall back to a legacy single `image` key so an
+        # old front-end bundle keeps working until it rebuilds to send `images`.
+        if "images" in payload:
+            images = _parse_images(payload.get("images"))
+        else:
+            legacy = _parse_image(payload.get("image"))
+            images = [legacy] if legacy is not None else []
+        if text or images:
+            await agents.send(surface, text, images=images)
     elif msg_type == "answer":
         ask_id = payload.get("id")
         answer = payload.get("answer")
