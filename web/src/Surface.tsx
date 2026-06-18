@@ -31,7 +31,7 @@ function StatusChip({ status }: { status: string | null }) {
 // of the user's prompts. The transcript scrolls; the composer is pinned at the
 // bottom; the rail jumps to a prompt and tracks the active one as you scroll.
 export function Surface({ surface }: { surface: string }) {
-  const [{ view, status, title }, sendMessage, stop] = useSurfaceSocket(surface);
+  const [{ view, status, title }, sendMessage, stop, sendAnswer] = useSurfaceSocket(surface);
   const busy = view.thinking || status === "running";
   const prompts = promptLandmarks(view.activity);
 
@@ -123,7 +123,7 @@ export function Surface({ surface }: { surface: string }) {
 
         <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
           <div className="mx-auto max-w-3xl px-4 py-4">
-            <ActivityFeed activity={view.activity} onSend={sendMessage} />
+            <ActivityFeed activity={view.activity} onAnswer={sendAnswer} />
           </div>
         </div>
       </div>

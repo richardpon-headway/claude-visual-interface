@@ -91,6 +91,21 @@ describe("applyMessage", () => {
     expect(state.view.session_input_tokens).toBe(56789);
   });
 
+  it("locks the matching picker to its answer", () => {
+    let state = emptySurface("s");
+    state = applyMessage(state, {
+      type: "activity",
+      surface: "s",
+      payload: { kind: "ask", text: "pick", ask_id: "ask-9", questions: [] },
+    });
+    state = applyMessage(state, {
+      type: "answer",
+      surface: "s",
+      payload: { id: "ask-9", answer: "Approach: Custom modal" },
+    });
+    expect(state.view.activity[0].answer).toBe("Approach: Custom modal");
+  });
+
   it("attaches a prompt summary to the matching user prompt", () => {
     let state = emptySurface("s");
     state = applyMessage(state, { type: "activity", surface: "s", payload: { kind: "user", text: "first" } });

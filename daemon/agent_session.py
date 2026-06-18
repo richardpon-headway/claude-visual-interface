@@ -28,6 +28,7 @@ from daemon import messages, sessions, titles, token_usage
 from daemon.activity_relay import relay_message_activity
 from daemon.mcp_server import (
     CVI_CHAT_SYSTEM_PROMPT,
+    broadcast_answer,
     broadcast_prompt_summary,
     broadcast_thinking,
     broadcast_title,
@@ -63,9 +64,12 @@ class ImageInput:
 
 @dataclass
 class ChatTurn:
-    # One user turn: text plus an optional pasted image.
+    # One user turn: text plus an optional pasted image. `record_user` is False for a
+    # picker answer, whose choice is already shown on the picker entry — so the turn
+    # feeds the agent without recording a duplicate user bubble.
     text: str
     image: ImageInput | None = None
+    record_user: bool = True
 
 
 async def _user_message_stream(turn: ChatTurn) -> AsyncIterator[dict[str, Any]]:
@@ -215,19 +219,25 @@ class AgentSession:
         # transcript always pairs this prompt with the reply that follows it. A
         # message sent while a prior turn is still streaming stays queued (invisible)
         # until its turn runs, instead of landing above the prior turn's answer.
-        marker = f"[image] {turn.text}".rstrip() if turn.image is not None else turn.text
-        entry = await record_activity(self._surface, "user", marker)
-        # Generate this prompt's one-line outline-rail summary in the background.
-        index = self._prompt_count
-        self._prompt_count += 1
-        self._summarize_prompt(index, entry, turn.text)
+        # A picker answer (record_user=False) is already shown on its picker entry, so
+        # skip recording a duplicate user bubble (and its rail summary); the turn still
+        # runs so the agent gets the answer.
+        prompt_message_id: int | None = None
+        if turn.record_user:
+            marker = f"[image] {turn.text}".rstrip() if turn.image is not None else turn.text
+            entry = await record_activity(self._surface, "user", marker)
+            # Generate this prompt's one-line outline-rail summary in the background.
+            index = self._prompt_count
+            self._prompt_count += 1
+            self._summarize_prompt(index, entry, turn.text)
+            prompt_message_id = entry.message_id
         await broadcast_thinking(self._surface, True)
         self._turn_active = True
         self._interrupting = False
         try:
             for attempt in range(1, _MAX_TURN_ATTEMPTS + 1):
                 relayed_content, retry_status = await self._attempt_turn(
-                    client, turn, entry.message_id
+                    client, turn, prompt_message_id
                 )
                 if retry_status is None:
                     return  # completed: success, or an error already relayed
@@ -466,12 +476,19 @@ class AgentSessionRegistry:
     def __init__(self) -> None:
         self._sessions: dict[str, AgentSession] = {}
 
-    async def send(self, surface: str, text: str, image: ImageInput | None = None) -> None:
+    async def send(
+        self,
+        surface: str,
+        text: str,
+        image: ImageInput | None = None,
+        record_user: bool = True,
+    ) -> None:
         """Route a user message (text plus an optional pasted image) to the surface's
         session, starting one if needed. A surface with no session row can't chat —
         recorded observably, not silently. A session resumes its recorded SDK session
         id when one exists, so it continues across reconnect / restart instead of
-        starting blank."""
+        starting blank. `record_user=False` feeds the turn without a user bubble (a
+        picker answer, already shown on its picker entry)."""
         if surface not in self._sessions:
             session = await asyncio.to_thread(sessions.get_session, surface)
             if session is None:
@@ -496,7 +513,14 @@ class AgentSessionRegistry:
         # The turn's user line is recorded when the turn runs (see _run_turn), not
         # here, so a message queued behind an in-flight turn can't appear above that
         # turn's answer.
-        self._sessions[surface].enqueue(ChatTurn(text=text, image=image))
+        self._sessions[surface].enqueue(ChatTurn(text=text, image=image, record_user=record_user))
+
+    async def answer(self, surface: str, ask_id: str, answer: str) -> None:
+        """Apply a picker selection: record the choice on the picker entry (pushed live
+        so a reconnecting browser sees the answered state) and feed it to the agent as a
+        non-recording turn — no duplicate user bubble, since the picker shows the choice."""
+        await broadcast_answer(surface, ask_id, answer)
+        await self.send(surface, answer, record_user=False)
 
     async def interrupt(self, surface: str) -> None:
         """Stop an in-flight turn on the surface, leaving the session open for the

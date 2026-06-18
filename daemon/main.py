@@ -203,6 +203,11 @@ async def _handle_inbound(surface: str, raw: str) -> None:
         image = _parse_image(payload.get("image"))
         if text or image is not None:
             await agents.send(surface, text, image=image)
+    elif msg_type == "answer":
+        ask_id = payload.get("id")
+        answer = payload.get("answer")
+        if isinstance(ask_id, str) and isinstance(answer, str) and answer:
+            await agents.answer(surface, ask_id, answer)
 
 
 def main() -> None:

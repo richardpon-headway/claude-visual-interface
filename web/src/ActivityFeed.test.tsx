@@ -112,32 +112,32 @@ describe("ActivityFeed", () => {
   });
 
   it("single-select: clicking an option sends the formatted answer", () => {
-    const onSend = vi.fn();
-    render(<ActivityFeed activity={[singleAsk]} onSend={onSend} />);
+    const onAnswer = vi.fn();
+    render(<ActivityFeed activity={[singleAsk]} onAnswer={onAnswer} />);
     fireEvent.click(screen.getByText("Custom modal"));
-    expect(onSend).toHaveBeenCalledWith("Approach: Custom modal");
+    expect(onAnswer).toHaveBeenCalledWith("ask-1", "Approach: Custom modal");
   });
 
   it("single-select: a number key selects and sends", () => {
-    const onSend = vi.fn();
-    render(<ActivityFeed activity={[singleAsk]} onSend={onSend} />);
+    const onAnswer = vi.fn();
+    render(<ActivityFeed activity={[singleAsk]} onAnswer={onAnswer} />);
     fireEvent.keyDown(window, { key: "2" });
-    expect(onSend).toHaveBeenCalledWith("Approach: Native");
+    expect(onAnswer).toHaveBeenCalledWith("ask-1", "Approach: Native");
   });
 
   it("multi-select: Space toggles and Enter submits the joined labels", () => {
-    const onSend = vi.fn();
-    render(<ActivityFeed activity={[multiAsk]} onSend={onSend} />);
+    const onAnswer = vi.fn();
+    render(<ActivityFeed activity={[multiAsk]} onAnswer={onAnswer} />);
     fireEvent.keyDown(window, { key: " " }); // toggles the cursor's option (A)
     fireEvent.keyDown(window, { key: "ArrowDown" });
     fireEvent.keyDown(window, { key: " " }); // toggles B
-    expect(onSend).not.toHaveBeenCalled();
+    expect(onAnswer).not.toHaveBeenCalled();
     fireEvent.keyDown(window, { key: "Enter" });
-    expect(onSend).toHaveBeenCalledWith("Features: A, B");
+    expect(onAnswer).toHaveBeenCalledWith("ask-2", "Features: A, B");
   });
 
   it("does not send until every question in a multi-question call is answered", () => {
-    const onSend = vi.fn();
+    const onAnswer = vi.fn();
     const twoQuestions: ActivityEntry = {
       kind: "ask",
       text: "AskUserQuestion",
@@ -147,23 +147,39 @@ describe("ActivityFeed", () => {
         { question: "Q2", header: "Two", options: [{ label: "b1" }, { label: "b2" }] },
       ],
     };
-    render(<ActivityFeed activity={[twoQuestions]} onSend={onSend} />);
+    render(<ActivityFeed activity={[twoQuestions]} onAnswer={onAnswer} />);
     fireEvent.click(screen.getByText("a1"));
-    expect(onSend).not.toHaveBeenCalled(); // Q2 still open
+    expect(onAnswer).not.toHaveBeenCalled(); // Q2 still open
     fireEvent.click(screen.getByText("b2"));
-    expect(onSend).toHaveBeenCalledWith("One: a1\nTwo: b2");
+    expect(onAnswer).toHaveBeenCalledWith("ask-3", "One: a1\nTwo: b2");
   });
 
   it("ignores keyboard while the composer is focused", () => {
-    const onSend = vi.fn();
+    const onAnswer = vi.fn();
     render(
       <div>
         <textarea aria-label="composer" />
-        <ActivityFeed activity={[singleAsk]} onSend={onSend} />
+        <ActivityFeed activity={[singleAsk]} onAnswer={onAnswer} />
       </div>,
     );
     screen.getByLabelText("composer").focus();
     fireEvent.keyDown(window, { key: "1" });
-    expect(onSend).not.toHaveBeenCalled();
+    expect(onAnswer).not.toHaveBeenCalled();
+  });
+
+  it("renders a locked answered state from a persisted answer", () => {
+    const onAnswer = vi.fn();
+    render(
+      <ActivityFeed
+        activity={[{ ...singleAsk, answer: "Approach: Custom modal" }]}
+        onAnswer={onAnswer}
+      />,
+    );
+    expect(screen.getByText("Custom modal")).toBeInTheDocument();
+    expect(screen.queryByText("Native")).toBeNull(); // unchosen option not offered
+    expect(screen.getByText(/answered/)).toBeInTheDocument();
+    // A stray key can't re-answer a locked picker.
+    fireEvent.keyDown(window, { key: "2" });
+    expect(onAnswer).not.toHaveBeenCalled();
   });
 });

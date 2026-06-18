@@ -918,3 +918,31 @@ async def test_title_and_summary_calls_record_token_usage(monkeypatch):
     # each report 7 output / 70 input → 14 / 140 total.
     await _wait_until(lambda: token_usage.session_totals(chat) == (14, 140))
     await reg.shutdown_all()
+
+
+async def test_answer_records_the_choice_and_runs_a_non_recording_turn(monkeypatch):
+    _seed_session(SESSION)
+    store.get_or_create(SESSION).activity.clear()
+    # A picker awaiting an answer.
+    store.append_activity(
+        SESSION, "ask", "pick", ask_id="a1", questions=[{"question": "Q", "options": []}]
+    )
+    reg = AgentSessionRegistry()
+    ws = FakeWS()
+    hub.register(SESSION, ws)
+    try:
+        await reg.answer(SESSION, "a1", "Approach: Custom modal")
+        await _wait_until(
+            lambda: any(e.kind == "result" for e in store.get_or_create(SESSION).activity)
+        )
+    finally:
+        hub.unregister(SESSION, ws)
+
+    activity = store.get_or_create(SESSION).activity
+    ask = next(e for e in activity if e.kind == "ask")
+    assert ask.answer == "Approach: Custom modal"  # the picker is locked to the choice
+    # No duplicate user bubble — the picker is the record of the answer.
+    assert not any(e.kind == "user" for e in activity)
+    # The agent still received the answer and ran the turn.
+    assert FakeClient.instances[0].queried == ["Approach: Custom modal"]
+    await reg.shutdown_all()

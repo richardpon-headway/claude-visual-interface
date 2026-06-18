@@ -140,6 +140,17 @@ async def broadcast_title(surface: str, title: str) -> None:
     )
 
 
+async def broadcast_answer(surface: str, ask_id: str, answer: str) -> None:
+    """Record a picker's chosen value on its `ask` entry and push it to subscribers so
+    the picker locks to the answered state live. Stored on the ViewState (like the
+    prompt summary) so it rides the connect snapshot for a browser that reloads."""
+    store.set_answer(surface, ask_id, answer)
+    await hub.broadcast(
+        surface,
+        {"type": "answer", "surface": surface, "payload": {"id": ask_id, "answer": answer}},
+    )
+
+
 async def broadcast_tokens(surface: str, output_tokens: int, input_tokens: int) -> None:
     """Add one LLM call's tokens to the surface's running session total and push the new
     total to subscribers so the footer counter updates live. Like the thinking flag, the

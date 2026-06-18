@@ -53,7 +53,8 @@ export type WsMessage =
   | { type: "thinking"; surface: string; payload: { active: boolean } }
   | { type: "title"; surface: string; payload: { title: string } }
   | { type: "prompt_summary"; surface: string; payload: { index: number; text: string } }
-  | { type: "tokens"; surface: string; payload: { output: number; input: number } };
+  | { type: "tokens"; surface: string; payload: { output: number; input: number } }
+  | { type: "answer"; surface: string; payload: { id: string; answer: string } };
 
 const MESSAGE_TYPES = [
   "snapshot",
@@ -63,6 +64,7 @@ const MESSAGE_TYPES = [
   "title",
   "prompt_summary",
   "tokens",
+  "answer",
 ];
 
 export function emptyViewState(surface: string): ViewState {
@@ -121,6 +123,14 @@ export function applyMessage(state: SurfaceState, msg: WsMessage): SurfaceState 
           session_input_tokens: msg.payload.input,
         },
       };
+    case "answer": {
+      // Lock the matching picker to its chosen value (rides the snapshot on reload).
+      const { id, answer } = msg.payload;
+      const activity = state.view.activity.map((e) =>
+        e.kind === "ask" && e.ask_id === id ? { ...e, answer } : e,
+      );
+      return { ...state, view: { ...state.view, activity } };
+    }
     case "prompt_summary": {
       // Attach the summary to the index-th user prompt (the rail's `prompt-N`).
       const { index, text } = msg.payload;

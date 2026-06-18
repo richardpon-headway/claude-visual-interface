@@ -64,11 +64,11 @@ function formatAnswer(questions: AskQuestion[], picks: Pick[]): string {
 // available (e.g. rehydrated after a restart).
 function AskPicker({
   entry,
-  onSend,
+  onAnswer,
   isLatest,
 }: {
   entry: ActivityEntry;
-  onSend?: (text: string) => void;
+  onAnswer?: (askId: string, answer: string) => void;
   isLatest: boolean;
 }) {
   const questions = entry.questions ?? [];
@@ -87,16 +87,23 @@ function AskPicker({
   const allAnswered = (p: Pick[]) => questions.every((_, qi) => answered(p, qi));
   const hasMulti = questions.some((q) => q.multiSelect);
 
+  // The locked/answered value: the persisted answer (rides the snapshot on reload) or,
+  // optimistically, what we just submitted this session.
+  const persistedAnswer =
+    typeof entry.answer === "string" && entry.answer.length > 0 ? entry.answer : null;
+  const shownAnswer = persistedAnswer ?? (submitted ? formatAnswer(questions, picks) : null);
+  const locked = shownAnswer !== null;
+
   function submit(p: Pick[]) {
-    if (submitted || !allAnswered(p) || !onSend) return;
-    onSend(formatAnswer(questions, p));
+    if (locked || !allAnswered(p) || !onAnswer || !entry.ask_id) return;
+    onAnswer(entry.ask_id, formatAnswer(questions, p));
     setSubmitted(true);
   }
 
   // Single-select sends as soon as every question is answered; multi-select waits for
   // an explicit Enter / Submit (so you can toggle several before committing).
   function selectAt(qi: number, oi: number) {
-    if (submitted) return;
+    if (locked) return;
     const np = [...picks];
     if (questions[qi].multiSelect) {
       const set = new Set(np[qi] as number[]);
@@ -110,7 +117,7 @@ function AskPicker({
     }
   }
 
-  const active = isLatest && !submitted && questions.length > 0;
+  const active = isLatest && !locked && questions.length > 0;
   useEffect(() => {
     if (!active) return;
     function onKey(e: KeyboardEvent) {
@@ -154,9 +161,15 @@ function AskPicker({
     0,
   );
 
+  const answerLines = shownAnswer ? shownAnswer.split("\n") : [];
+
   return (
     <li className="space-y-2">
-      {questions.map((q, qi) => (
+      {questions.map((q, qi) => {
+        const prefix = `${q.header || q.question}: `;
+        const line = answerLines[qi] ?? "";
+        const chosenText = line.startsWith(prefix) ? line.slice(prefix.length) : line;
+        return (
         <div key={qi} className="rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3">
           {q.header ? (
             <span className="mb-2 inline-block rounded bg-sky-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-300">
@@ -164,6 +177,11 @@ function AskPicker({
             </span>
           ) : null}
           <div className="mb-2 text-sm font-medium text-zinc-100">{q.question}</div>
+          {locked ? (
+            <div className="rounded-lg border border-sky-800 bg-sky-950 px-3 py-2 text-sm text-sky-100">
+              {chosenText}
+            </div>
+          ) : (
           <div className="space-y-1">
             {q.options.map((o, oi) => {
               const isCursor =
@@ -211,9 +229,11 @@ function AskPicker({
               );
             })}
           </div>
+          )}
         </div>
-      ))}
-      {submitted ? (
+        );
+      })}
+      {locked ? (
         <div className="text-xs text-emerald-400">✓ answered</div>
       ) : hasMulti ? (
         <button
@@ -232,12 +252,12 @@ function AskPicker({
 function ActivityRow({
   entry,
   promptId,
-  onSend,
+  onAnswer,
   isLatestAsk,
 }: {
   entry: ActivityEntry;
   promptId?: string;
-  onSend?: (text: string) => void;
+  onAnswer?: (askId: string, answer: string) => void;
   isLatestAsk?: boolean;
 }) {
   // Your prompts read as right-aligned bubbles; each carries a stable anchor id so
@@ -261,7 +281,7 @@ function ActivityRow({
   }
   // An AskUserQuestion picker.
   if (entry.kind === "ask") {
-    return <AskPicker entry={entry} onSend={onSend} isLatest={isLatestAsk ?? false} />;
+    return <AskPicker entry={entry} onAnswer={onAnswer} isLatest={isLatestAsk ?? false} />;
   }
   // A model-rendered HTML page, inline in the flow.
   if (entry.kind === "artifact") {
@@ -289,10 +309,10 @@ function ActivityRow({
 // compact tool/result lines, in arrival order. The parent owns scrolling and width.
 export function ActivityFeed({
   activity,
-  onSend,
+  onAnswer,
 }: {
   activity: ActivityEntry[];
-  onSend?: (text: string) => void;
+  onAnswer?: (askId: string, answer: string) => void;
 }) {
   if (activity.length === 0) {
     return (
@@ -318,7 +338,7 @@ export function ActivityFeed({
             key={i}
             entry={entry}
             promptId={promptId}
-            onSend={onSend}
+            onAnswer={onAnswer}
             isLatestAsk={i === lastAsk}
           />
         );
