@@ -1,0 +1,67 @@
+web/src/ActivityFeed.test.tsx
+  s_615aafd18b9701::t_280f6ed3152843 118,125,136,154
+  s_615aafd18b9701::t_2ea937393c1d91 169-183
+  s_615aafd18b9701::t_ea0f41d0b1bf9c 115-116,122-123,129-130,134,140,150,152,158,162,167
+web/src/ActivityFeed.tsx
+  s_615aafd18b9701::t_7b8a5fb8b0fc92 67,71
+  s_615aafd18b9701::t_b64a9e310afed8 164-165,168-172,180-184
+  s_615aafd18b9701::t_5ab30992f88ff1 255,260
+  s_615aafd18b9701::t_3c75319d969092 284
+  s_615aafd18b9701::t_f0db3991acd321 90-96,98-99,106
+  s_615aafd18b9701::t_8e981bc426a449 312,315
+  s_615aafd18b9701::t_d1391315cd9af6 341
+  s_615aafd18b9701::t_f9f7cc971236ab 120
+  s_615aafd18b9701::t_b06c2457b11510 232,234-236
+daemon/mcp_server.py
+  s_615aafd18b9701::t_3e3b1556ec01c6 143-153
+daemon/view_state.py
+  s_615aafd18b9701::t_32f88ef366b5e8 85-93
+daemon/agent_session.py
+  s_615aafd18b9701::t_6b70b96ebf36f7 67-69,72
+  s_615aafd18b9701::t_ea2cce07f0a012 31
+  s_615aafd18b9701::t_18cd92cbd60e0e 516-523
+  s_615aafd18b9701::t_dc6d37be112ba1 222-233
+  s_615aafd18b9701::t_97e7dd3471c59d 479-485,490-491
+  s_615aafd18b9701::t_9e125f3e675638 240
+daemon/main.py
+  s_615aafd18b9701::t_6348c9a479f7b5 206-210
+web/src/viewState.ts
+  s_615aafd18b9701::t_05df5d61f76634 56-57,67
+  s_615aafd18b9701::t_d470c764786908 126-133
+web/src/useSurfaceSocket.ts
+  s_615aafd18b9701::t_3116f1ed67709a 16-17
+  s_615aafd18b9701::t_4ef2175d4b8300 83-90
+  s_615aafd18b9701::t_08814518324694 26-28
+web/src/Surface.tsx
+  s_615aafd18b9701::t_420c51c1f00cc9 34
+  s_615aafd18b9701::t_acf069c23aab19 126
+web/src/viewState.test.ts
+  s_615aafd18b9701::t_d709bf9e33bea0 94-108
+tests/test_view_state.py
+  s_615aafd18b9701::t_1d1c3c0eaa7bbc 117-118,122-129
+  s_615aafd18b9701::t_733a25115f208b 119-121
+tests/test_view_control.py
+  s_615aafd18b9701::t_11db71852d57cf 12
+  s_615aafd18b9701::t_3902de071da9f9 160-177
+tests/test_agent_session.py
+  s_615aafd18b9701::t_770a6ab56963fc 921-948
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "9e1925ec9b2a1c03247b98920966cd233b7fd710",
+  "prompts": {},
+  "sessions": {
+    "s_615aafd18b9701": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1242156c-18f4-46de-ba24-03f8af298faa",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
