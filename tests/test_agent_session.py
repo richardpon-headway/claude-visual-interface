@@ -539,6 +539,164 @@ async def test_interrupt_is_a_noop_when_no_turn_is_running():
     assert reg.active_surfaces() == []
 
 
+class SharedStreamClient(FakeClient):
+    """Models the SDK's single shared transport stream across turns. receive_response()
+    drains a per-client queue and (like the real wrapper) ends after the first
+    ResultMessage. A mid-turn interrupt() pushes a trailing chunk *and then* the terminal
+    abort onto that shared stream — so a turn that abandons its receive loop on the
+    trailing chunk leaves the abort buffered, where the NEXT turn's receive_response()
+    picks it up. This is the real shape BlockingClient doesn't capture."""
+
+    def __init__(self, options=None):
+        super().__init__(options)
+        self._stream: asyncio.Queue = asyncio.Queue()
+        self.interrupt_called = False
+
+    async def query(self, prompt):
+        await super().query(prompt)
+        text = self.queried[-1]
+        if text == "first":
+            # Stream one chunk, then leave the turn in flight (no terminal) so it
+            # blocks until interrupted.
+            self._stream.put_nowait(
+                AssistantMessage(content=[TextBlock(text="working")], model="test")
+            )
+        else:
+            self._stream.put_nowait(
+                AssistantMessage(content=[TextBlock(text=f"answer to {text}")], model="test")
+            )
+            self._stream.put_nowait(
+                ResultMessage(
+                    subtype="success",
+                    duration_ms=1,
+                    duration_api_ms=1,
+                    is_error=False,
+                    num_turns=1,
+                    session_id=SESSION,
+                )
+            )
+
+    async def receive_response(self):
+        while True:
+            msg = await self._stream.get()
+            yield msg
+            if isinstance(msg, ResultMessage):
+                return
+
+    async def interrupt(self):
+        self.interrupt_called = True
+        # The SDK keeps streaming after the interrupt signal: a trailing chunk, then the
+        # terminal abort — both land on the shared stream the loop is reading.
+        self._stream.put_nowait(
+            AssistantMessage(content=[TextBlock(text="trailing")], model="test")
+        )
+        self._stream.put_nowait(
+            ResultMessage(
+                subtype="error_during_execution",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=True,
+                num_turns=1,
+                session_id=SESSION,
+            )
+        )
+
+
+async def test_interrupt_then_next_prompt_does_not_leak_or_desync(monkeypatch):
+    # Stop a turn mid-flight, then immediately send another. The interrupted turn's
+    # terminal abort must be drained within that turn — not leak into the next turn's
+    # shared stream, where it would attach to the wrong prompt and shift every later
+    # reply down one. Fails on the pre-fix early-return (abort relayed under "second",
+    # its real reply pushed to a turn that never comes).
+    _seed_session(SESSION, session_type="chat")
+    store.get_or_create(SESSION).activity.clear()
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: SharedStreamClient(options)
+    )
+    reg = AgentSessionRegistry()
+
+    def kinds():
+        return [(e.kind, e.text) for e in store.get_or_create(SESSION).activity]
+
+    await reg.send(SESSION, "first")
+    await _wait_until(lambda: ("text", "working") in kinds())  # turn 1 in flight
+
+    await reg.interrupt(SESSION)
+    await reg.send(SESSION, "second")
+    # Wait for the second turn to terminate — two result lines arrive either way.
+    await _wait_until(lambda: sum(1 for k, _ in kinds() if k == "result") >= 2)
+
+    # No stray abort, exactly one "stopped", and the second prompt paired with its own
+    # reply in order — no off-by-one shift.
+    assert kinds() == [
+        ("user", "first"),
+        ("text", "working"),
+        ("result", "stopped"),
+        ("user", "second"),
+        ("text", "answer to second"),
+        ("result", "success"),
+    ]
+    assert reg.active_surfaces() == [SESSION]
+    await reg.shutdown_all()
+
+
+class NeverTerminatesClient(FakeClient):
+    """Like SharedStreamClient, but interrupt() streams a trailing chunk and NEVER a
+    terminal — modeling an SDK that drops the abort result. The bounded drain must give
+    up rather than wedge the session."""
+
+    def __init__(self, options=None):
+        super().__init__(options)
+        self._stream: asyncio.Queue = asyncio.Queue()
+        self.interrupt_called = False
+
+    async def query(self, prompt):
+        await super().query(prompt)
+        self._stream.put_nowait(
+            AssistantMessage(content=[TextBlock(text="working")], model="test")
+        )
+
+    async def receive_response(self):
+        while True:
+            msg = await self._stream.get()
+            yield msg
+            if isinstance(msg, ResultMessage):
+                return
+
+    async def interrupt(self):
+        self.interrupt_called = True
+        self._stream.put_nowait(
+            AssistantMessage(content=[TextBlock(text="trailing")], model="test")
+        )
+        # No terminal result is ever emitted.
+
+
+async def test_interrupt_drain_is_time_bounded_when_no_terminal_arrives(monkeypatch):
+    # If the SDK never emits a terminal after an interrupt, the drain must time out
+    # rather than hang: the turn returns, thinking clears, and the session stays open.
+    _seed_session(SESSION, session_type="chat")
+    store.get_or_create(SESSION).activity.clear()
+    monkeypatch.setattr(agent_session, "_INTERRUPT_DRAIN_SECONDS", 0.05)
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: NeverTerminatesClient(options)
+    )
+    reg = AgentSessionRegistry()
+
+    def kinds():
+        return [(e.kind, e.text) for e in store.get_or_create(SESSION).activity]
+
+    await reg.send(SESSION, "long task")
+    await _wait_until(lambda: ("text", "working") in kinds())
+
+    await reg.interrupt(SESSION)
+    await _wait_until(lambda: store.get_or_create(SESSION).thinking is False)
+
+    assert ("result", "stopped") in kinds()
+    assert not any(text == "error_during_execution" for _, text in kinds())
+    assert reg.active_surfaces() == [SESSION]
+    await reg.shutdown_all()
+
+
 async def test_chat_session_uses_the_general_prompt_with_its_surface_id():
     _seed_session("chat-p", session_type="chat")
     reg = AgentSessionRegistry()
