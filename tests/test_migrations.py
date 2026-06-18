@@ -45,6 +45,21 @@ def test_migrations_create_message_table(tmp_path):
     }
 
 
+def test_migrations_create_token_usage_table(tmp_path):
+    db_path = tmp_path / "cvi.db"
+    apply_migrations_sync(db_path)
+
+    assert _table_columns(db_path, "token_usage") == {
+        "id",
+        "surface",
+        "kind",
+        "message_id",
+        "output_tokens",
+        "input_tokens",
+        "created_at",
+    }
+
+
 def test_migrations_are_recorded(tmp_path):
     db_path = tmp_path / "cvi.db"
     apply_migrations_sync(db_path)
