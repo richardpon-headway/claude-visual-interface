@@ -1,0 +1,25 @@
+tests/test_ws_route.py
+  s_615aafd18b9701::t_6ebba5e38f29be 79-92,96-99
+  s_615aafd18b9701::t_b25933932264f6 93-95
+daemon/main.py
+  s_615aafd18b9701::t_c884f50520b3d8 140-148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "1114eba325b50286fe9e4602b7850168de610825",
+  "prompts": {},
+  "sessions": {
+    "s_615aafd18b9701": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1242156c-18f4-46de-ba24-03f8af298faa",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
