@@ -1,0 +1,45 @@
+web/src/viewState.test.ts
+  s_615aafd18b9701::t_668866550598ad 30-36,44-45
+  s_615aafd18b9701::t_313c79a9df4afe 84-93
+daemon/agent_session.py
+  s_615aafd18b9701::t_35680d0ac3575d 323
+  s_615aafd18b9701::t_6475fad7368fbd 34
+web/src/Surface.tsx
+  s_615aafd18b9701::t_cdb293dcfb612d 133-142
+web/src/viewState.ts
+  s_615aafd18b9701::t_09e167f0ca70c1 21-22
+  s_615aafd18b9701::t_e62d06cdb20bf6 60-61
+  s_615aafd18b9701::t_51a67a6f66c925 42-43,52
+  s_615aafd18b9701::t_163ac0b1dbcd74 102-110
+daemon/view_state.py
+  s_615aafd18b9701::t_977fa00335c7cf 38-42
+  s_615aafd18b9701::t_2f46f41e20ec4c 64-77
+tests/test_view_control.py
+  s_615aafd18b9701::t_d26679e8680354 8,16
+  s_615aafd18b9701::t_1eb95b6be7c856 146-175
+daemon/mcp_server.py
+  s_615aafd18b9701::t_e8213e9d9438bb 69-72
+  s_615aafd18b9701::t_825efe4341d2bb 133-148
+  s_615aafd18b9701::t_d7d53bbe352136 25
+tests/test_view_state.py
+  s_615aafd18b9701::t_f42a67bad9fe45 10-11,15-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "e3f4e135d6154d2a141e24d999e740d2e5c2b0f5",
+  "prompts": {},
+  "sessions": {
+    "s_615aafd18b9701": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1242156c-18f4-46de-ba24-03f8af298faa",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
