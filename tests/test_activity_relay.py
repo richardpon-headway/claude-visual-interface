@@ -75,3 +75,25 @@ async def test_relay_records_the_tool_summary_not_the_bare_name():
     await relay_message_activity("relay-tool", message)
     entries = [(e.kind, e.text) for e in store.get_or_create("relay-tool").activity]
     assert ("tool", "Grep WITS") in entries
+
+
+async def test_relay_records_ask_user_question_as_a_structured_ask_entry():
+    questions = [
+        {
+            "question": "Which approach?",
+            "header": "Approach",
+            "multiSelect": False,
+            "options": [{"label": "A", "description": "first"}, {"label": "B"}],
+        }
+    ]
+    block = ToolUseBlock(id="ask-1", name="AskUserQuestion", input={"questions": questions})
+    await relay_message_activity("relay-ask", AssistantMessage(content=[block], model="test"))
+
+    entry = store.get_or_create("relay-ask").activity[-1]
+    assert entry.kind == "ask"
+    assert entry.ask_id == "ask-1"
+    assert entry.questions == questions
+    # And it rides the snapshot with the structured payload (no picker → just text).
+    snap_entry = store.snapshot("relay-ask")["activity"][-1]
+    assert snap_entry["ask_id"] == "ask-1"
+    assert snap_entry["questions"] == questions

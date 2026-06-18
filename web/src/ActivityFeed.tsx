@@ -40,6 +40,49 @@ function kindLabel(kind: string): string {
   }
 }
 
+// An AskUserQuestion call, rendered as one card per question. Static for now (the
+// options aren't yet clickable — that lands in a follow-up); falls back to a plain
+// line when the structured payload isn't available (e.g. rehydrated after a restart).
+function AskQuestions({ entry }: { entry: ActivityEntry }) {
+  const questions = entry.questions ?? [];
+  if (questions.length === 0) {
+    return (
+      <li className="text-xs text-zinc-500">
+        <span className="font-mono text-sky-400/80">{entry.text}</span>
+      </li>
+    );
+  }
+  return (
+    <li className="space-y-2">
+      {questions.map((q, qi) => (
+        <div key={qi} className="rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3">
+          {q.header ? (
+            <span className="mb-2 inline-block rounded bg-sky-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-300">
+              {q.header}
+            </span>
+          ) : null}
+          <div className="mb-2 text-sm font-medium text-zinc-100">{q.question}</div>
+          <div className="space-y-1">
+            {q.options.map((o, oi) => (
+              <div key={oi} className="flex items-start gap-3 rounded-lg px-3 py-2">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded bg-zinc-800 text-xs font-semibold text-zinc-300">
+                  {oi + 1}
+                </span>
+                <div className="min-w-0">
+                  <div className="text-sm text-zinc-100">{o.label}</div>
+                  {o.description ? (
+                    <div className="mt-0.5 text-xs text-zinc-500">{o.description}</div>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </li>
+  );
+}
+
 function ActivityRow({
   entry,
   promptId,
@@ -65,6 +108,10 @@ function ActivityRow({
         <Markdown>{entry.text}</Markdown>
       </li>
     );
+  }
+  // An AskUserQuestion picker.
+  if (entry.kind === "ask") {
+    return <AskQuestions entry={entry} />;
   }
   // A model-rendered HTML page, inline in the flow.
   if (entry.kind === "artifact") {

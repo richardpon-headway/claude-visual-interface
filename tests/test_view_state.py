@@ -45,8 +45,24 @@ def test_append_activity_accumulates_and_rides_the_snapshot():
 
     snap = store.snapshot("s")
     assert snap["activity"] == [
-        {"kind": "text", "text": "reviewing the diff", "html": None, "summary": None},
-        {"kind": "tool", "text": "Bash", "html": None, "summary": None},
+        {
+            "kind": "text",
+            "text": "reviewing the diff",
+            "html": None,
+            "summary": None,
+            "ask_id": None,
+            "questions": None,
+            "answer": None,
+        },
+        {
+            "kind": "tool",
+            "text": "Bash",
+            "html": None,
+            "summary": None,
+            "ask_id": None,
+            "questions": None,
+            "answer": None,
+        },
     ]
 
 
@@ -86,7 +102,15 @@ def test_load_activity_replaces_the_transcript_and_rides_the_snapshot():
     snap = store.snapshot("s")
     # The loaded entry rides the snapshot; message_id stays server-only.
     assert snap["activity"] == [
-        {"kind": "user", "text": "hello", "html": None, "summary": "greeting"}
+        {
+            "kind": "user",
+            "text": "hello",
+            "html": None,
+            "summary": "greeting",
+            "ask_id": None,
+            "questions": None,
+            "answer": None,
+        }
     ]
 
 
