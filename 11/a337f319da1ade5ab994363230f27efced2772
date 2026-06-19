@@ -1,0 +1,22 @@
+web/vite.config.ts
+  s_0d2f657284fcf0::t_dfb633531959ac 17-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "11a337f319da1ade5ab994363230f27efced2772",
+  "prompts": {},
+  "sessions": {
+    "s_0d2f657284fcf0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d0fc3122-c6fd-4416-a710-fa6db3037c5e",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
