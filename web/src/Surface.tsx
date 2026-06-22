@@ -163,7 +163,7 @@ export function Surface({ surface }: { surface: string }) {
             ☰
           </button>
         ) : null}
-        <span className="truncate text-zinc-300">{title ?? surface}</span>
+        <EditableTitle surface={surface} title={title} />
         <span className="ml-auto">
           <StatusChip status={status} />
         </span>

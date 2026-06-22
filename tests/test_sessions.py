@@ -191,6 +191,50 @@ def test_overwrite_title_replaces_an_existing_title():
     assert row["updated_at"] >= before
 
 
+def test_set_user_title_overrides_the_displayed_title():
+    chat = sessions.create_chat_session()
+    assert sessions.set_generated_title(chat, "Auto title") is True
+    assert sessions.set_user_title(chat, "My name") is True
+    # The override wins on reads, while the raw auto title is preserved underneath.
+    row = sessions.get_session(chat)
+    assert row["title"] == "My name"
+    assert row["user_title"] == "My name"
+
+
+def test_set_user_title_reports_missing_session():
+    assert sessions.set_user_title("ghost", "x") is False
+
+
+def test_user_title_survives_a_later_auto_refresh():
+    chat = sessions.create_chat_session()
+    assert sessions.set_user_title(chat, "Pinned name") is True
+    # The periodic refresh keeps rewriting the auto title, but the override still wins.
+    sessions.overwrite_title(chat, "Refreshed auto title")
+    assert sessions.get_session(chat)["title"] == "Pinned name"
+
+
+def test_effective_title_falls_back_to_auto_title_when_no_override():
+    chat = sessions.create_chat_session()
+    sessions.overwrite_title(chat, "Auto title")
+    row = sessions.get_session(chat)
+    assert row["user_title"] is None
+    assert row["title"] == "Auto title"  # falls back to the auto title
+
+
+def test_rename_endpoint_sets_override_and_404s_on_missing():
+    _insert_session("s", updated_at="2026-01-01T00:00:00Z")
+    with TestClient(app) as client:
+        assert client.post("/sessions/s/rename", json={"title": "Renamed"}).status_code == 200
+        assert client.get("/sessions/s").json()["title"] == "Renamed"
+        assert client.post("/sessions/ghost/rename", json={"title": "x"}).status_code == 404
+
+
+def test_rename_endpoint_rejects_an_empty_title():
+    _insert_session("s", updated_at="2026-01-01T00:00:00Z")
+    with TestClient(app) as client:
+        assert client.post("/sessions/s/rename", json={"title": "   "}).status_code == 422
+
+
 def test_archive_endpoint_removes_session_from_the_listing():
     _insert_session("s", updated_at="2026-01-01T00:00:00Z")
     with TestClient(app) as client:
