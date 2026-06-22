@@ -45,7 +45,9 @@ export function Surface({ surface }: { surface: string }) {
     };
   }, [title, surface]);
 
-  const [railOpen, setRailOpen] = useState(true);
+  // Hidden by default so the conversation gets full width (useful when running
+  // several narrow CVI windows side by side). The ☰ button in the header shows it.
+  const [railOpen, setRailOpen] = useState(false);
   const [active, setActive] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
