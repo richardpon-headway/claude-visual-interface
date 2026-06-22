@@ -453,7 +453,7 @@ class AgentSession:
                 sessions.set_generated_title, self._surface, result.title
             )
             if changed:
-                await broadcast_title(self._surface, result.title)
+                await self._broadcast_effective_title()
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -470,13 +470,22 @@ class AgentSession:
             if not result.title:
                 return
             await asyncio.to_thread(sessions.overwrite_title, self._surface, result.title)
-            await broadcast_title(self._surface, result.title)
+            await self._broadcast_effective_title()
         except asyncio.CancelledError:
             raise
         except Exception:
             log.warning("title refresh failed (surface=%s)", self._surface, exc_info=True)
         finally:
             self._title_refreshing = False
+
+    async def _broadcast_effective_title(self) -> None:
+        """Push the surface's effective title (user override, else the auto title) to
+        connected browsers. Generated-title writes broadcast through here so a refresh
+        re-broadcasts a user's manual rename rather than visually clobbering it."""
+        session = await asyncio.to_thread(sessions.get_session, self._surface)
+        title = sessions.effective_title(session) if session else None
+        if title:
+            await broadcast_title(self._surface, title)
 
     def _summarize_prompt(self, index: int, entry: ActivityEntry, text: str) -> None:
         """Kick off a background one-line summary for the index-th user prompt, used

@@ -24,11 +24,29 @@ _COLUMNS = (
     "archived_at",
     "deleted_at",
     "agent_session_id",
+    "user_title",
 )
 
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def effective_title(session: dict[str, Any]) -> str | None:
+    """The title to display for a session: the user's manual override when set,
+    otherwise the auto-generated title. Single source of truth so every surface
+    (home list, header, browser tab, live broadcasts) agrees."""
+    return session.get("user_title") or session.get("title")
+
+
+def _row_to_dict(row: Any) -> dict[str, Any]:
+    """Map a `session` row to a dict and resolve `title` to the effective title, so
+    callers read one already-resolved field and never have to coalesce themselves.
+    The raw `user_title` stays on the dict for callers that need the override itself
+    (e.g. seeding a rename input)."""
+    session = dict(zip(_COLUMNS, row, strict=True))
+    session["title"] = effective_title(session)
+    return session
 
 
 def create_chat_session(title: str | None = None) -> str:
@@ -83,7 +101,7 @@ def list_sessions(*, include_archived: bool = False) -> list[dict[str, Any]]:
         rows = conn.execute(sql).fetchall()
     finally:
         conn.close()
-    return [dict(zip(_COLUMNS, row, strict=True)) for row in rows]
+    return [_row_to_dict(row) for row in rows]
 
 
 def _set_lifecycle_timestamp(session_id: str, column: str, on: bool) -> bool:
@@ -155,6 +173,23 @@ def overwrite_title(session_id: str, title: str) -> None:
         conn.close()
 
 
+def set_user_title(session_id: str, title: str) -> bool:
+    """Store a user-provided title override. Auto-titling keeps writing and refreshing
+    `title` untouched; reads (via effective_title) prefer this override when present.
+    Returns False if no such session. Bumps updated_at."""
+    now = _now_iso()
+    conn = open_db()
+    try:
+        cursor = conn.execute(
+            "UPDATE session SET user_title = ?, updated_at = ? WHERE id = ?",
+            (title, now, session_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
 def set_agent_session_id(session_id: str, agent_session_id: str) -> bool:
     """Store the Claude Agent SDK session id this chat is running under, so it can
     resume after an idle-close or daemon restart. Returns False if no such session.
@@ -189,4 +224,4 @@ def get_session(session_id: str) -> dict[str, Any] | None:
         ).fetchone()
     finally:
         conn.close()
-    return dict(zip(_COLUMNS, row, strict=True)) if row else None
+    return _row_to_dict(row) if row else None

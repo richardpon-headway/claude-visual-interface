@@ -21,7 +21,7 @@ from daemon import sessions
 from daemon.agent_session import ImageInput, agents
 from daemon.db import apply_migrations
 from daemon.hub import hub
-from daemon.mcp_server import SERVER_NAME, TOOLS, hydrate_surface
+from daemon.mcp_server import SERVER_NAME, TOOLS, broadcast_title, hydrate_surface
 from daemon.view_state import store
 
 _TOOLS_BY_NAME = {t.name: t for t in TOOLS}
@@ -82,6 +82,25 @@ async def delete_session(session_id: str) -> dict[str, bool]:
 @app.post("/sessions/{session_id}/restore")
 async def restore_session(session_id: str) -> dict[str, bool]:
     return await _toggle_lifecycle(sessions.set_deleted, session_id, False)
+
+
+class RenameRequest(BaseModel):
+    title: str
+
+
+@app.post("/sessions/{session_id}/rename")
+async def rename_session(session_id: str, req: RenameRequest) -> dict[str, bool]:
+    """Set a user-provided title override on a session. The override wins over the
+    auto-generated title on every surface and survives the periodic title refresh.
+    422 on an empty/whitespace title; 404 when the session doesn't exist."""
+    title = req.title.strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="title must not be empty")
+    changed = await asyncio.to_thread(sessions.set_user_title, session_id, title)
+    if not changed:
+        raise HTTPException(status_code=404, detail=f"no session with id {session_id}")
+    await broadcast_title(session_id, title)
+    return {"ok": True}
 
 
 @app.get("/sessions/{session_id}")
