@@ -1,0 +1,22 @@
+LICENSE
+  s_21334d8e34eeb5::t_01af207a1fb72b 1-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.10",
+  "base_commit_sha": "000855feace18274fb976acc7e03c9eaf771b3c8",
+  "prompts": {},
+  "sessions": {
+    "s_21334d8e34eeb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "03686ec4-3604-493a-a5b3-d5ada50b840f",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
