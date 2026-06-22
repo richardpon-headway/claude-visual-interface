@@ -123,7 +123,7 @@ export function Surface({ surface }: { surface: string }) {
         ) : null}
 
         <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
-          <div className="mx-auto max-w-3xl px-4 py-4">
+          <div className="px-4 py-4">
             <ActivityFeed activity={view.activity} onAnswer={sendAnswer} />
           </div>
         </div>

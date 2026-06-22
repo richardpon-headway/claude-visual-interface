@@ -3,6 +3,10 @@ import { useEffect, useState } from "react";
 import { Markdown } from "./Markdown";
 import type { ActivityEntry, AskQuestion } from "./viewState";
 
+// Prose, tool lines, and pickers stay in a readable centered column; artifacts
+// (model-rendered HTML) break out to the full transcript width instead.
+const PROSE = "mx-auto w-full max-w-3xl";
+
 // A model-authored HTML page, rendered inline as a sandboxed iframe block with a
 // collapse/expand toggle (sandboxed iframes can't self-size).
 function ArtifactBlock({ title, html }: { title: string; html: string }) {
@@ -150,7 +154,7 @@ function AskPicker({
 
   if (questions.length === 0) {
     return (
-      <li className="text-xs text-zinc-500">
+      <li className={`${PROSE} text-xs text-zinc-500`}>
         <span className="font-mono text-sky-400/80">{entry.text}</span>
       </li>
     );
@@ -164,7 +168,7 @@ function AskPicker({
   const answerLines = shownAnswer ? shownAnswer.split("\n") : [];
 
   return (
-    <li className="space-y-2">
+    <li className={`${PROSE} space-y-2`}>
       {questions.map((q, qi) => {
         const prefix = `${q.header || q.question}: `;
         const line = answerLines[qi] ?? "";
@@ -264,7 +268,7 @@ function ActivityRow({
   // the outline rail can scroll to it.
   if (entry.kind === "user") {
     return (
-      <li id={promptId} className="flex justify-end scroll-mt-4">
+      <li id={promptId} className={`${PROSE} flex justify-end scroll-mt-4`}>
         <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-zinc-800 px-4 py-3 text-sm text-zinc-100">
           {entry.text}
         </div>
@@ -274,7 +278,7 @@ function ActivityRow({
   // The assistant's answer renders as markdown, full width.
   if (entry.kind === "text") {
     return (
-      <li className="text-sm text-zinc-200">
+      <li className={`${PROSE} text-sm text-zinc-200`}>
         <Markdown>{entry.text}</Markdown>
       </li>
     );
@@ -286,7 +290,7 @@ function ActivityRow({
   // A model-rendered HTML page, inline in the flow.
   if (entry.kind === "artifact") {
     return (
-      <li>
+      <li className="w-full">
         <ArtifactBlock title={entry.text} html={entry.html ?? ""} />
       </li>
     );
@@ -294,7 +298,7 @@ function ActivityRow({
   // Tool calls and run results are compact, dim one-liners.
   const label = kindLabel(entry.kind);
   return (
-    <li className="text-xs text-zinc-500">
+    <li className={`${PROSE} text-xs text-zinc-500`}>
       {label ? (
         <span className="mr-2 rounded bg-zinc-800/70 px-1.5 py-0.5 font-mono text-[10px] uppercase text-zinc-400">
           {label}
