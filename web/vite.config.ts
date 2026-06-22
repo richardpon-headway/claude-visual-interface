@@ -14,7 +14,16 @@ export default defineConfig({
     proxy: {
       "/ws": { target: DAEMON, changeOrigin: false, ws: true },
       "/health": { target: DAEMON, changeOrigin: false },
-      "/sessions": { target: DAEMON, changeOrigin: false },
+      "/sessions": {
+        target: DAEMON,
+        changeOrigin: false,
+        // The SPA also has a "/sessions" page route. A browser navigation
+        // (Accept: text/html) should fall through to index.html so the React
+        // app boots; only data fetches (Accept: */*) get proxied to the daemon.
+        bypass(req) {
+          if (req.headers.accept?.includes("text/html")) return "/index.html";
+        },
+      },
       "/chats": { target: DAEMON, changeOrigin: false },
     },
   },
