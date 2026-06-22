@@ -27,6 +27,72 @@ function StatusChip({ status }: { status: string | null }) {
   );
 }
 
+// Click-to-edit session title in the header. The committed name is sent to the
+// daemon's rename endpoint; the new title flows back over the "title" websocket
+// broadcast (which also updates the browser tab), so we don't set it locally.
+function EditableTitle({ surface, title }: { surface: string; title: string | null }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  // Escape cancels: it blurs the input, and the resulting blur must skip the commit.
+  const cancelRef = useRef(false);
+
+  function begin() {
+    setDraft(title ?? "");
+    setEditing(true);
+  }
+
+  async function commit() {
+    setEditing(false);
+    if (cancelRef.current) {
+      cancelRef.current = false;
+      return;
+    }
+    const next = draft.trim();
+    if (!next || next === title) return;
+    try {
+      await fetch(`/sessions/${encodeURIComponent(surface)}/rename`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: next }),
+      });
+    } catch {
+      // Leave the displayed title untouched; the websocket will reconcile on success.
+    }
+  }
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.currentTarget.blur();
+          } else if (e.key === "Escape") {
+            cancelRef.current = true;
+            e.currentTarget.blur();
+          }
+        }}
+        className="min-w-0 flex-1 rounded border border-zinc-700 bg-zinc-900 px-1.5 py-0.5 text-sm text-zinc-100"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={begin}
+      title="Rename session"
+      className="min-w-0 flex-1 truncate text-left text-zinc-300 hover:text-zinc-100"
+    >
+      {title ?? surface}
+    </button>
+  );
+}
+
 // The surface is one vertically-scrolling conversation column with an outline rail
 // of the user's prompts. The transcript scrolls; the composer is pinned at the
 // bottom; the rail jumps to a prompt and tracks the active one as you scroll.
@@ -99,7 +165,7 @@ export function Surface({ surface }: { surface: string }) {
             ☰
           </button>
         ) : null}
-        <span className="truncate text-zinc-300">{title ?? surface}</span>
+        <EditableTitle surface={surface} title={title} />
         <span className="ml-auto">
           <StatusChip status={status} />
         </span>
