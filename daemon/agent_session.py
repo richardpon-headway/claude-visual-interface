@@ -24,7 +24,7 @@ from typing import Any
 
 from claude_agent_sdk import AssistantMessage, ClaudeSDKClient, ResultMessage
 
-from daemon import messages, sessions, titles, token_usage
+from daemon import messages, session_sidecar, sessions, titles, token_usage
 from daemon.activity_relay import relay_message_activity
 from daemon.config import get_working_dir
 from daemon.mcp_server import (
@@ -393,6 +393,9 @@ class AgentSession:
             return
         self._sdk_session_id = session_id
         await asyncio.to_thread(sessions.set_agent_session_id, self._surface, session_id)
+        # The SDK id is the file the token monitor keys on; (re)write the sidecar now
+        # that it exists — and again whenever it rotates (resume-fail starts fresh).
+        await asyncio.to_thread(session_sidecar.update_sidecar_for_session, self._surface)
 
     async def interrupt(self) -> None:
         """Stop the in-flight turn without closing the session, so the next message
@@ -488,6 +491,8 @@ class AgentSession:
         title = sessions.effective_title(session) if session else None
         if title:
             await broadcast_title(self._surface, title)
+            # Title just changed — refresh the token-monitor sidecar's label.
+            await asyncio.to_thread(session_sidecar.update_sidecar_for_session, self._surface)
 
     def _summarize_prompt(self, index: int, entry: ActivityEntry, text: str) -> None:
         """Kick off a background one-line summary for the index-th user prompt, used
