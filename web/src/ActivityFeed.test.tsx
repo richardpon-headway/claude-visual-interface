@@ -50,18 +50,42 @@ describe("ActivityFeed", () => {
     expect(screen.getByText("stopped")).toBeInTheDocument();
   });
 
-  it("renders each entry and labels tool calls", () => {
+  it("collapses a turn's tool calls into a single count bar when settled", () => {
     render(
       <ActivityFeed
         activity={[
+          { kind: "user", text: "go" },
           { kind: "text", text: "reviewing the diff" },
-          { kind: "tool", text: "Bash" },
+          { kind: "tool", text: "Bash grep" },
+          { kind: "tool", text: "Read foo.py" },
         ]}
       />,
     );
     expect(screen.getByText("reviewing the diff")).toBeInTheDocument();
-    expect(screen.getByText("Bash")).toBeInTheDocument();
-    expect(screen.getByText("tool")).toBeInTheDocument();
+    // The two tool calls fold into one bar; individual call text is hidden when settled.
+    expect(screen.getByText("2 tool calls")).toBeInTheDocument();
+    expect(screen.queryByText("Bash grep")).toBeNull();
+    expect(screen.queryByText("Read foo.py")).toBeNull();
+  });
+
+  it("uses a singular label for a single tool call", () => {
+    render(<ActivityFeed activity={[{ kind: "user", text: "go" }, { kind: "tool", text: "Bash" }]} />);
+    expect(screen.getByText("1 tool call")).toBeInTheDocument();
+  });
+
+  it("shows the live count and the latest call while the turn is in flight", () => {
+    render(
+      <ActivityFeed
+        thinking
+        activity={[
+          { kind: "user", text: "go" },
+          { kind: "tool", text: "Bash grep" },
+          { kind: "tool", text: "Read foo.py" },
+        ]}
+      />,
+    );
+    expect(screen.getByText("2 tool calls")).toBeInTheDocument();
+    expect(screen.getByText("Read foo.py")).toBeInTheDocument();
   });
 
   it("renders an artifact entry as an inline iframe", () => {

@@ -309,13 +309,67 @@ function ActivityRow({
   );
 }
 
+// One agent turn's tool calls, collapsed into a single bar instead of a tall stack of
+// one-liners. While the turn is in flight it shows a live count, the latest call, and a
+// solid progress fill (each row is 20 calls; it wraps to a new row past 20). Once the
+// turn settles it rests as a quiet, non-expandable count.
+const ROW = 20;
+function ToolBar({ tools, inProgress }: { tools: ActivityEntry[]; inProgress: boolean }) {
+  const count = tools.length;
+  const latest = tools[count - 1]?.text ?? "";
+  const rows = Math.max(1, Math.ceil(count / ROW));
+  return (
+    <li className={PROSE}>
+      <div
+        className={`rounded-lg border px-3 py-2 ${
+          inProgress ? "border-sky-800/70 bg-sky-950/40" : "border-sky-900/30 bg-sky-950/20"
+        }`}
+      >
+        <div className="flex items-center gap-2.5 text-xs">
+          {inProgress ? (
+            <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-sky-400 shadow-[0_0_6px_#38bdf8]" />
+          ) : null}
+          <span className="shrink-0 font-semibold tabular-nums text-sky-300">
+            {count} tool call{count === 1 ? "" : "s"}
+          </span>
+          {inProgress && latest ? (
+            <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-sky-400/80">
+              {latest}
+            </span>
+          ) : null}
+        </div>
+        {inProgress ? (
+          <div className="mt-2 space-y-1">
+            {Array.from({ length: rows }).map((_, r) => {
+              const isLastRow = r === rows - 1;
+              const filled = Math.min(ROW, count - r * ROW);
+              return (
+                <div key={r} className="h-1 overflow-hidden rounded-full bg-slate-800">
+                  <div
+                    className={`h-full rounded-full ${isLastRow ? "bg-sky-400" : "bg-sky-700"}`}
+                    style={{ width: `${(filled / ROW) * 100}%` }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
 // The conversation transcript: your prompts, the assistant's markdown answers, and
 // compact tool/result lines, in arrival order. The parent owns scrolling and width.
+// Tool calls collapse per turn into a single ToolBar so a long search run doesn't bury
+// the conversation; the bar lands where the turn's first tool call would have.
 export function ActivityFeed({
   activity,
+  thinking = false,
   onAnswer,
 }: {
   activity: ActivityEntry[];
+  thinking?: boolean;
   onAnswer?: (askId: string, answer: string) => void;
 }) {
   if (activity.length === 0) {
@@ -332,10 +386,41 @@ export function ActivityFeed({
   shown.forEach((e, i) => {
     if (e.kind === "ask" && !e.answer) lastAsk = i;
   });
+
+  // Group tool calls by turn (a user prompt starts a turn). All of a turn's tool calls
+  // collapse into one bar, rendered at the position of the turn's first tool call; the
+  // rest are suppressed. The bar is "in progress" only for the active (last) turn while
+  // the agent is still thinking.
+  const turnOf: number[] = [];
+  let turn = -1;
+  shown.forEach((e) => {
+    if (e.kind === "user") turn += 1;
+    turnOf.push(turn);
+  });
+  const toolsByTurn = new Map<number, ActivityEntry[]>();
+  const firstToolIndexByTurn = new Map<number, number>();
+  shown.forEach((e, i) => {
+    if (e.kind !== "tool") return;
+    const t = turnOf[i];
+    const arr = toolsByTurn.get(t);
+    if (arr) arr.push(e);
+    else toolsByTurn.set(t, [e]);
+    if (!firstToolIndexByTurn.has(t)) firstToolIndexByTurn.set(t, i);
+  });
+  const lastToolTurn = toolsByTurn.size ? Math.max(...toolsByTurn.keys()) : -1;
+
   let userCount = 0;
   return (
     <ul className="space-y-3">
       {shown.map((entry, i) => {
+        if (entry.kind === "tool") {
+          // Only the turn's first tool call renders the bar; the rest fold into it.
+          if (firstToolIndexByTurn.get(turnOf[i]) !== i) return null;
+          const tools = toolsByTurn.get(turnOf[i]) ?? [entry];
+          return (
+            <ToolBar key={i} tools={tools} inProgress={thinking && turnOf[i] === lastToolTurn} />
+          );
+        }
         const promptId = entry.kind === "user" ? `prompt-${userCount++}` : undefined;
         return (
           <ActivityRow
