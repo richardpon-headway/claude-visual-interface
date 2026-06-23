@@ -310,14 +310,11 @@ function ActivityRow({
 }
 
 // One agent turn's tool calls, collapsed into a single bar instead of a tall stack of
-// one-liners. While the turn is in flight it shows a live count, the latest call, and a
-// solid progress fill (each row is 20 calls; it wraps to a new row past 20). Once the
-// turn settles it rests as a quiet, non-expandable count.
-const ROW = 20;
+// one-liners. While the turn is in flight it shows a live count and the latest call. Once
+// the turn settles it rests as a quiet, non-expandable count.
 function ToolBar({ tools, inProgress }: { tools: ActivityEntry[]; inProgress: boolean }) {
   const count = tools.length;
   const latest = tools[count - 1]?.text ?? "";
-  const rows = Math.max(1, Math.ceil(count / ROW));
   return (
     <li className={PROSE}>
       <div
@@ -338,22 +335,6 @@ function ToolBar({ tools, inProgress }: { tools: ActivityEntry[]; inProgress: bo
             </span>
           ) : null}
         </div>
-        {inProgress ? (
-          <div className="mt-2 space-y-1">
-            {Array.from({ length: rows }).map((_, r) => {
-              const isLastRow = r === rows - 1;
-              const filled = Math.min(ROW, count - r * ROW);
-              return (
-                <div key={r} className="h-1 overflow-hidden rounded-full bg-slate-800">
-                  <div
-                    className={`h-full rounded-full ${isLastRow ? "bg-sky-400" : "bg-sky-700"}`}
-                    style={{ width: `${(filled / ROW) * 100}%` }}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        ) : null}
       </div>
     </li>
   );
