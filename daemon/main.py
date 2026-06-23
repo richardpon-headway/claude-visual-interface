@@ -17,7 +17,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from daemon import config, sessions
+from daemon import config, session_sidecar, sessions
 from daemon.agent_session import ImageInput, agents
 from daemon.db import apply_migrations
 from daemon.hub import hub
@@ -102,6 +102,8 @@ async def rename_session(session_id: str, req: RenameRequest) -> dict[str, bool]
     if not changed:
         raise HTTPException(status_code=404, detail=f"no session with id {session_id}")
     await broadcast_title(session_id, title)
+    # A manual rename is the user's chosen label — push it to the token monitor too.
+    await asyncio.to_thread(session_sidecar.update_sidecar_for_session, session_id)
     return {"ok": True}
 
 

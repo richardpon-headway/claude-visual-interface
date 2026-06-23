@@ -1,4 +1,4 @@
-.PHONY: install run test clean
+.PHONY: install run test clean backfill-sidecars
 
 PYTHON ?= 3.13
 
@@ -19,3 +19,6 @@ test:
 
 clean:
 	rm -rf .venv web/node_modules web/dist daemon/static
+
+backfill-sidecars:
+	uv run python -m daemon.backfill_sidecars

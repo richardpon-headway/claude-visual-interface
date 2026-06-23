@@ -1,3 +1,7 @@
+import json
+import os
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -9,6 +13,8 @@ from daemon.main import app
 @pytest.fixture(autouse=True)
 def db(tmp_path, monkeypatch):
     monkeypatch.setenv("CVI_DB_PATH", str(tmp_path / "cvi.db"))
+    # The rename endpoint now writes a token-monitor sidecar; keep it in the tmp dir.
+    monkeypatch.setenv("CVI_TOKEN_MONITOR_SIDECAR_DIR", str(tmp_path / "session-meta"))
     apply_migrations_sync()
 
 
@@ -227,6 +233,16 @@ def test_rename_endpoint_sets_override_and_404s_on_missing():
         assert client.post("/sessions/s/rename", json={"title": "Renamed"}).status_code == 200
         assert client.get("/sessions/s").json()["title"] == "Renamed"
         assert client.post("/sessions/ghost/rename", json={"title": "x"}).status_code == 404
+
+
+def test_rename_writes_token_monitor_sidecar():
+    chat = sessions.create_chat_session("Auto title")
+    sessions.set_agent_session_id(chat, "sdk-renamed")
+    with TestClient(app) as client:
+        resp = client.post(f"/sessions/{chat}/rename", json={"title": "Pinned name"})
+        assert resp.status_code == 200
+    sidecar = Path(os.environ["CVI_TOKEN_MONITOR_SIDECAR_DIR"]) / "sdk-renamed.json"
+    assert json.loads(sidecar.read_text())["topic"] == "Pinned name"
 
 
 def test_rename_endpoint_rejects_an_empty_title():

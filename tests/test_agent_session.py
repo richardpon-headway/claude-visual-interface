@@ -3,6 +3,9 @@ and resume — exercised with a fake Agent SDK client. The real agent turn (Clau
 actually answering) needs the CLI + auth and is verified locally."""
 
 import asyncio
+import json
+import os
+from pathlib import Path
 
 import pytest
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
@@ -37,6 +40,9 @@ SESSION = "chat-session"
 @pytest.fixture(autouse=True)
 def db(tmp_path, monkeypatch):
     monkeypatch.setenv("CVI_DB_PATH", str(tmp_path / "cvi.db"))
+    # Keep token-monitor sidecar writes (now fired from titling / id-capture) inside
+    # the tmp dir instead of the real ~/.cache.
+    monkeypatch.setenv("CVI_TOKEN_MONITOR_SIDECAR_DIR", str(tmp_path / "session-meta"))
     apply_migrations_sync()
 
 
@@ -881,6 +887,53 @@ async def test_first_text_message_titles_an_untitled_chat(monkeypatch):
     # The new title is pushed live to the surface.
     assert {"type": "title", "surface": chat, "payload": {"title": "Fix the parser"}} in ws.received
     await reg.shutdown_all()
+
+
+def _sidecar_path(sdk_session_id: str) -> Path:
+    return Path(os.environ["CVI_TOKEN_MONITOR_SIDECAR_DIR"]) / f"{sdk_session_id}.json"
+
+
+async def test_titling_writes_token_monitor_sidecar(monkeypatch):
+    # Once a chat is titled and its SDK id known, a sidecar is written so the token
+    # monitor attributes the session's tokens to the title.
+    chat = sessions.create_chat_session()
+    monkeypatch.setattr(titles, "generator", _FixedTitleGen("Fix the parser"))
+    reg = AgentSessionRegistry()
+    await reg.send(chat, "help me fix the parser")
+    await _wait_until(_sidecar_path(SESSION).exists)
+    await reg.shutdown_all()
+
+    assert json.loads(_sidecar_path(SESSION).read_text()) == {
+        "session_id": SESSION,
+        "topic": "Fix the parser",
+        "started_via": "cvi",
+    }
+
+
+async def test_sidecar_follows_sdk_id_rotation(monkeypatch):
+    # When a titled session's SDK id rotates (e.g. a fresh id after a failed resume),
+    # the new id gets its own sidecar so its JSONL tokens aren't orphaned.
+    chat = sessions.create_chat_session("Stable Title")
+
+    class IdClient(FakeClient):
+        async def receive_response(self):
+            yield AssistantMessage(content=[TextBlock(text="hi")], model="test")
+            yield ResultMessage(
+                subtype="success",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id="sdk-rotated",
+            )
+
+    monkeypatch.setattr(agent_session, "ClaudeSDKClient", lambda options=None: IdClient(options))
+    reg = AgentSessionRegistry()
+    await reg.send(chat, "hello")
+    await _wait_until(_sidecar_path("sdk-rotated").exists)
+    await reg.shutdown_all()
+
+    assert json.loads(_sidecar_path("sdk-rotated").read_text())["topic"] == "Stable Title"
 
 
 async def test_image_only_first_turn_defers_titling_to_the_next_text_message(monkeypatch):
