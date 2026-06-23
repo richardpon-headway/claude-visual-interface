@@ -1,0 +1,55 @@
+pyproject.toml
+  s_d48f661dc5b1ec::t_c94031a686efd7 10
+daemon/main.py
+  s_d48f661dc5b1ec::t_81fe21928389c6 38-39
+  s_d48f661dc5b1ec::t_3016484e4b1199 20
+daemon/mcp_server.py
+  s_d48f661dc5b1ec::t_7d7941c374f3d6 250-253
+README.md
+  s_d45a11fc0ab122::t_ff409924bd7a87 27-37
+tests/test_agent_session.py
+  s_d48f661dc5b1ec::t_302bb8b0a3265e 10
+  s_d48f661dc5b1ec::t_9151b2764b9635 231-252
+daemon/config.py
+  s_d48f661dc5b1ec::t_926e78fcea218b 21-24,26
+  s_d48f661dc5b1ec::t_44b64679c11d0f 1-2,9-20,25,27-91
+  s_d48f661dc5b1ec::t_ae9e35486bef2e 3-8
+daemon/agent_session.py
+  s_d48f661dc5b1ec::t_ba5c5a3ca32224 189
+  s_d48f661dc5b1ec::t_e7ce077c61adae 29
+.gitignore
+  s_d48f661dc5b1ec::t_23c3c973093e87 18-20
+tests/test_config.py
+  s_d48f661dc5b1ec::t_7536384f7bbbd7 1-21,25-26,28,30-73
+  s_d48f661dc5b1ec::t_2f8a8aedcfc8dc 22-24,27,29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.10",
+  "base_commit_sha": "67d5cb47250ce70fdfef940722fc840b061b4adf",
+  "prompts": {},
+  "sessions": {
+    "s_d45a11fc0ab122": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "78739340-c54e-40ac-8681-2493d274f2e3",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    },
+    "s_d48f661dc5b1ec": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a198b014-be80-4286-9dae-21010ea21462",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
