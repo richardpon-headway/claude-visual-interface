@@ -24,6 +24,17 @@ Health check:
 
     curl http://127.0.0.1:47825/health    # {"status": "ok"}
 
+## Configure
+
+On first run the daemon writes a `config.yaml` (repo root, gitignored — it holds a
+machine-specific path) with documented defaults you can edit:
+
+- **`working_dir`** — the directory every chat session is rooted at, so Claude can
+  read and edit files under it. Defaults to the parent of the CVI repo, making
+  sibling repositories visible. Use an absolute path; a leading `~` is expanded.
+
+Edits take effect on the next session — no daemon restart needed.
+
 ## Layout
 
 - `daemon/` — Python FastAPI daemon (SQLite + the MCP render-primitive vocabulary; Agent SDK chat sessions)
