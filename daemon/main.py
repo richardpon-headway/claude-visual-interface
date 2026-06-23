@@ -17,7 +17,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from daemon import sessions
+from daemon import config, sessions
 from daemon.agent_session import ImageInput, agents
 from daemon.db import apply_migrations
 from daemon.hub import hub
@@ -35,6 +35,8 @@ log = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await apply_migrations()
+    config.ensure_config_file()
+    log.info("chat working_dir = %s", config.get_working_dir())
     log.info("MCP server '%s' ready with %d primitive(s)", SERVER_NAME, len(TOOLS))
     yield
     await agents.shutdown_all()

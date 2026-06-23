@@ -7,7 +7,7 @@ import asyncio
 import pytest
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
 
-from daemon import agent_session, messages, sessions, titles, token_usage
+from daemon import agent_session, config, messages, sessions, titles, token_usage
 from daemon.agent_session import AgentSessionRegistry
 from daemon.db import apply_migrations_sync, open_db
 from daemon.hub import hub
@@ -228,7 +228,28 @@ async def test_chat_session_starts_and_chats():
     kinds = [(e.kind, e.text) for e in store.get_or_create("chat-no-wt").activity]
     assert ("user", "make me a dashboard") in kinds
     assert ("text", "on it") in kinds
-    assert FakeClient.instances[0].options.cwd is None
+    assert FakeClient.instances[0].options.cwd == str(config.get_working_dir())
+    await reg.shutdown_all()
+
+
+async def test_chat_session_uses_configured_working_dir(tmp_path, monkeypatch):
+    # The configured working_dir is threaded through to the SDK client's cwd.
+    workdir = tmp_path / "code"
+    workdir.mkdir()
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(f"working_dir: {workdir}\n")
+    monkeypatch.setenv("CVI_CONFIG_PATH", str(cfg))
+
+    _seed_session("chat-wd", session_type="chat")
+    store.get_or_create("chat-wd").activity.clear()
+    reg = AgentSessionRegistry()
+
+    await reg.send("chat-wd", "hi")
+    await _wait_until(
+        lambda: any(e.kind == "result" for e in store.get_or_create("chat-wd").activity)
+    )
+
+    assert FakeClient.instances[0].options.cwd == str(workdir)
     await reg.shutdown_all()
 
 

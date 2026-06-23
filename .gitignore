@@ -15,6 +15,9 @@ dist/
 *.db
 *.sqlite
 
+# Local daemon settings (holds a machine-specific working_dir path)
+/config.yaml
+
 # OS / editor
 .DS_Store
 .idea/

@@ -247,9 +247,10 @@ def build_agent_options(
     """Build the session-connection point: options that attach the CVI MCP server and
     grant full read/write tool access. A daemon session is headless (no interactive
     permission prompts), so `bypassPermissions` is the equivalent of the CLI's
-    accept-all. `cwd` is a dormant hook for a future per-session working directory
-    (callers pass nothing today); `system_prompt` steers the session; `resume` carries
-    a prior SDK session id to continue that conversation."""
+    accept-all. `cwd` is the directory the session runs in (chat sessions pass the
+    configured `working_dir`; defaults to None so the SDK inherits the process cwd);
+    `system_prompt` steers the session; `resume` carries a prior SDK session id to
+    continue that conversation."""
     return ClaudeAgentOptions(
         mcp_servers={SERVER_NAME: cvi_server},
         allowed_tools=ALLOWED_TOOLS,

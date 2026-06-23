@@ -26,6 +26,7 @@ from claude_agent_sdk import AssistantMessage, ClaudeSDKClient, ResultMessage
 
 from daemon import messages, sessions, titles, token_usage
 from daemon.activity_relay import relay_message_activity
+from daemon.config import get_working_dir
 from daemon.mcp_server import (
     CVI_CHAT_SYSTEM_PROMPT,
     broadcast_answer,
@@ -185,6 +186,7 @@ class AgentSession:
         return build_agent_options(
             system_prompt=with_surface_id(self._system_prompt, self._surface),
             resume=resume,
+            cwd=str(get_working_dir()),
         )
 
     async def _run(self) -> None:
