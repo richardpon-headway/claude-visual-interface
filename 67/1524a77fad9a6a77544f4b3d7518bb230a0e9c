@@ -1,0 +1,45 @@
+daemon/session_sidecar.py
+  s_ecb0806d5727aa::t_1ee017ec28d541 1-87
+tests/test_sessions.py
+  s_ecb0806d5727aa::t_2220f32570ec96 1-4
+  s_ecb0806d5727aa::t_123262d182dc60 238-241,244-247
+  s_ecb0806d5727aa::t_3015c488c8b8ad 242-243
+  s_ecb0806d5727aa::t_1f84dfcc6146be 16-17
+tests/test_agent_session.py
+  s_ecb0806d5727aa::t_934403e4ce735f 6-8
+  s_ecb0806d5727aa::t_f67ed067b5a02e 892-938
+  s_ecb0806d5727aa::t_c4c4a57a59def9 43-45
+daemon/agent_session.py
+  s_ecb0806d5727aa::t_0b908546b28b76 396-398
+  s_ecb0806d5727aa::t_f6fd34affa08ce 27
+  s_ecb0806d5727aa::t_d3767080853d74 494-495
+tests/test_session_sidecar.py
+  s_ecb0806d5727aa::t_850ed8d017585c 1-81
+daemon/backfill_sidecars.py
+  s_ecb0806d5727aa::t_9c19197dfd8a01 1-30
+Makefile
+  s_ecb0806d5727aa::t_3c66d0d5cbc45a 1
+  s_ecb0806d5727aa::t_4a996b9e2f385c 22-24
+daemon/main.py
+  s_ecb0806d5727aa::t_b4699660ad1bd5 20
+  s_ecb0806d5727aa::t_0b69be98417fcd 105-106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.11",
+  "base_commit_sha": "671524a77fad9a6a77544f4b3d7518bb230a0e9c",
+  "prompts": {},
+  "sessions": {
+    "s_ecb0806d5727aa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cba9f908-4a37-4fef-b60c-e0ffbdb8bfb4",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
