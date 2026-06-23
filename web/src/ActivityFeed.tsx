@@ -389,6 +389,11 @@ export function ActivityFeed({
     if (!firstToolIndexByTurn.has(t)) firstToolIndexByTurn.set(t, i);
   });
   const lastToolTurn = toolsByTurn.size ? Math.max(...toolsByTurn.keys()) : -1;
+  // The active turn is the latest one overall. A bar is "in progress" only when its
+  // turn is both the last one to run a tool AND the current turn — otherwise a finished
+  // turn's bar would re-light (showing its last command) while the next prompt is
+  // thinking but hasn't called a tool yet.
+  const currentTurn = turn;
 
   let userCount = 0;
   return (
@@ -399,7 +404,11 @@ export function ActivityFeed({
           if (firstToolIndexByTurn.get(turnOf[i]) !== i) return null;
           const tools = toolsByTurn.get(turnOf[i]) ?? [entry];
           return (
-            <ToolBar key={i} tools={tools} inProgress={thinking && turnOf[i] === lastToolTurn} />
+            <ToolBar
+              key={i}
+              tools={tools}
+              inProgress={thinking && turnOf[i] === lastToolTurn && lastToolTurn === currentTurn}
+            />
           );
         }
         const promptId = entry.kind === "user" ? `prompt-${userCount++}` : undefined;
