@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Markdown } from "./Markdown";
 import type { ActivityEntry, AskQuestion } from "./viewState";
@@ -7,25 +7,49 @@ import type { ActivityEntry, AskQuestion } from "./viewState";
 // (model-rendered HTML) break out to the full transcript width instead.
 const PROSE = "mx-auto w-full max-w-3xl";
 
-// A model-authored HTML page, rendered inline as a sandboxed iframe block with a
-// collapse/expand toggle (sandboxed iframes can't self-size).
+// A model-authored HTML page, rendered inline as a sandboxed iframe sized to its
+// full content height — always shown in full, no expand/collapse. The frame stays
+// script-free: we add allow-same-origin (NOT allow-scripts) only so the parent can
+// read the content's scrollHeight and grow the frame to fit, including after late
+// image/font reflow.
 function ArtifactBlock({ title, html }: { title: string; html: string }) {
-  const [expanded, setExpanded] = useState(false);
+  const ref = useRef<HTMLIFrameElement>(null);
+  const [height, setHeight] = useState<number>();
+
+  useEffect(() => {
+    const iframe = ref.current;
+    if (!iframe) return;
+    let observer: ResizeObserver | undefined;
+    const sync = () => {
+      const doc = iframe.contentDocument;
+      if (!doc) return;
+      setHeight(doc.documentElement.scrollHeight);
+      if (!observer) {
+        observer = new ResizeObserver(() => {
+          const d = iframe.contentDocument;
+          if (d) setHeight(d.documentElement.scrollHeight);
+        });
+        observer.observe(doc.documentElement);
+      }
+    };
+    iframe.addEventListener("load", sync);
+    sync(); // srcDoc may have already settled before the listener attached
+    return () => {
+      iframe.removeEventListener("load", sync);
+      observer?.disconnect();
+    };
+  }, [html]);
+
   return (
     <div className="overflow-hidden rounded border border-zinc-800">
       <div className="flex items-center gap-2 border-b border-zinc-800 bg-zinc-900 px-3 py-1 font-mono text-xs text-zinc-400">
         <span className="truncate">{title || "artifact"}</span>
-        <button
-          type="button"
-          onClick={() => setExpanded((e) => !e)}
-          className="ml-auto rounded border border-zinc-700 px-1.5 text-zinc-300 hover:bg-zinc-800"
-        >
-          {expanded ? "collapse" : "expand"}
-        </button>
       </div>
       <iframe
-        className={`w-full border-0 bg-white ${expanded ? "h-[80vh]" : "h-96"}`}
-        sandbox=""
+        ref={ref}
+        className="block w-full border-0 bg-white"
+        style={{ height: height != null ? `${height}px` : "24rem" }}
+        sandbox="allow-same-origin"
         srcDoc={html}
         title={title || "artifact"}
       />
