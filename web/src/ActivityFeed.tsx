@@ -41,19 +41,14 @@ function ArtifactBlock({ title, html }: { title: string; html: string }) {
   }, [html]);
 
   return (
-    <div className="overflow-hidden rounded border border-zinc-800">
-      <div className="flex items-center gap-2 border-b border-zinc-800 bg-zinc-900 px-3 py-1 font-mono text-xs text-zinc-400">
-        <span className="truncate">{title || "artifact"}</span>
-      </div>
-      <iframe
-        ref={ref}
-        className="block w-full border-0 bg-white"
-        style={{ height: height != null ? `${height}px` : "24rem" }}
-        sandbox="allow-same-origin"
-        srcDoc={html}
-        title={title || "artifact"}
-      />
-    </div>
+    <iframe
+      ref={ref}
+      className="block w-full border-0 bg-transparent"
+      style={{ height: height != null ? `${height}px` : "24rem" }}
+      sandbox="allow-same-origin"
+      srcDoc={html}
+      title={title || "artifact"}
+    />
   );
 }
 
