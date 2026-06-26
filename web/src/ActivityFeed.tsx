@@ -200,13 +200,13 @@ function AskPicker({
         return (
         <div key={qi} className="rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3">
           {q.header ? (
-            <span className="mb-2 inline-block rounded bg-sky-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-300">
+            <span className="mb-2 inline-block rounded bg-amber-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
               {q.header}
             </span>
           ) : null}
           <div className="mb-2 text-sm font-medium text-zinc-100">{q.question}</div>
           {locked ? (
-            <div className="rounded-lg border border-sky-800 bg-sky-950 px-3 py-2 text-sm text-sky-100">
+            <div className="rounded-lg border border-amber-800 bg-amber-950 px-3 py-2 text-sm text-amber-100">
               {chosenText}
             </div>
           ) : (
@@ -228,7 +228,7 @@ function AskPicker({
                   }}
                   className={`flex w-full items-start gap-3 rounded-lg border px-3 py-2 text-left ${
                     chosen
-                      ? "border-sky-800 bg-sky-950"
+                      ? "border-amber-800 bg-amber-950"
                       : isCursor
                         ? "border-zinc-700 bg-zinc-900"
                         : "border-transparent hover:bg-zinc-900"
@@ -236,13 +236,13 @@ function AskPicker({
                 >
                   {q.multiSelect ? (
                     <span
-                      className={`mt-0.5 shrink-0 font-mono text-sm ${chosen ? "text-sky-400" : "text-zinc-600"}`}
+                      className={`mt-0.5 shrink-0 font-mono text-sm ${chosen ? "text-amber-400" : "text-zinc-600"}`}
                     >
                       {chosen ? "[x]" : "[ ]"}
                     </span>
                   ) : (
                     <span
-                      className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-xs font-semibold ${chosen ? "bg-sky-800 text-sky-100" : "bg-zinc-800 text-zinc-300"}`}
+                      className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-xs font-semibold ${chosen ? "bg-amber-800 text-amber-100" : "bg-zinc-800 text-zinc-300"}`}
                     >
                       {oi + 1}
                     </span>
@@ -268,7 +268,7 @@ function AskPicker({
           type="button"
           disabled={!allAnswered(picks)}
           onClick={() => submit(picks)}
-          className="rounded border border-sky-900 bg-sky-950 px-3 py-1 text-xs text-sky-300 hover:bg-sky-900 disabled:opacity-40"
+          className="rounded border border-amber-900 bg-amber-950 px-3 py-1 text-xs text-amber-300 hover:bg-amber-900 disabled:opacity-40"
         >
           Submit{selectedCount ? ` ${selectedCount}` : ""} ↵
         </button>
