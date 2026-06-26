@@ -20,14 +20,25 @@ function ArtifactBlock({ title, html }: { title: string; html: string }) {
     const iframe = ref.current;
     if (!iframe) return;
     let observer: ResizeObserver | undefined;
+    // Measure the RENDERED height. getBoundingClientRect() reflects CSS `zoom`
+    // (artifacts scale themselves to 1.25 to match the app's UI scale); scrollHeight
+    // does not, so using it alone under-sizes the frame and the content scrolls
+    // internally. Take the max so we never under-size regardless of zoom.
+    const measure = (doc: Document) =>
+      Math.ceil(
+        Math.max(
+          doc.documentElement.getBoundingClientRect().height,
+          doc.documentElement.scrollHeight,
+        ),
+      );
     const sync = () => {
       const doc = iframe.contentDocument;
       if (!doc) return;
-      setHeight(doc.documentElement.scrollHeight);
+      setHeight(measure(doc));
       if (!observer) {
         observer = new ResizeObserver(() => {
           const d = iframe.contentDocument;
-          if (d) setHeight(d.documentElement.scrollHeight);
+          if (d) setHeight(measure(d));
         });
         observer.observe(doc.documentElement);
       }
