@@ -317,10 +317,11 @@ function ActivityRow({
   if (entry.kind === "ask") {
     return <AskPicker entry={entry} onAnswer={onAnswer} isLatest={isLatestAsk ?? false} />;
   }
-  // A model-rendered HTML page, inline in the flow.
+  // A model-rendered HTML page, inline in the flow — in the same centered column
+  // as the surrounding chat so it lines up with the rest of the feed.
   if (entry.kind === "artifact") {
     return (
-      <li className="w-full">
+      <li className={PROSE}>
         <ArtifactBlock title={entry.text} html={entry.html ?? ""} />
       </li>
     );
