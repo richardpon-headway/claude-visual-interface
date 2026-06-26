@@ -1,0 +1,23 @@
+web/src/ActivityFeed.tsx
+  s_4ec21ae4657f36::t_18ff779f1392dd 1
+  s_4ec21ae4657f36::t_9cb72c78df1aca 10-14,16-42,49-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "2a545dd933cfd82ca0f48ae9f58cbe35fe2d228c",
+  "prompts": {},
+  "sessions": {
+    "s_4ec21ae4657f36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d247e7a3-7098-4bc1-8dcb-796fdb111f15",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
