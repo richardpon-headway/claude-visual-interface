@@ -10,37 +10,55 @@ const PROSE = "mx-auto w-full max-w-3xl";
 // A model-authored HTML page, rendered inline as a sandboxed iframe sized to its
 // full content height — always shown in full, no expand/collapse. The frame stays
 // script-free: we add allow-same-origin (NOT allow-scripts) only so the parent can
-// read the content's scrollHeight and grow the frame to fit, including after late
+// read the content's size and grow the frame to fit, including after late
 // image/font reflow.
+//
+// Width: the frame starts at the chat-text column width (TEXT_COL) and is left-aligned
+// to that column's left edge. If the content can't fit at that width (it overflows
+// horizontally), the frame widens rightward up to WIDE_CAP — so narrow artifacts line
+// up with the surrounding text, and wide ones (big tables) get the extra room.
+const TEXT_COL = "48rem"; // matches the chat column (Tailwind max-w-3xl)
+const WIDE_CAP = "64rem"; // most a wide artifact may grow to
 function ArtifactBlock({ title, html }: { title: string; html: string }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState<number>();
+  const [wide, setWide] = useState(false);
 
   useEffect(() => {
     const iframe = ref.current;
     if (!iframe) return;
+    setWide(false); // re-decide width for new content (measured at the narrow width)
     let observer: ResizeObserver | undefined;
     // Measure the RENDERED height. getBoundingClientRect() reflects CSS `zoom`
     // (artifacts scale themselves to 1.25 to match the app's UI scale); scrollHeight
     // does not, so using it alone under-sizes the frame and the content scrolls
     // internally. Take the max so we never under-size regardless of zoom.
-    const measure = (doc: Document) =>
-      Math.ceil(
-        Math.max(
-          doc.documentElement.getBoundingClientRect().height,
-          doc.documentElement.scrollHeight,
+    const measureHeight = (doc: Document) =>
+      setHeight(
+        Math.ceil(
+          Math.max(
+            doc.documentElement.getBoundingClientRect().height,
+            doc.documentElement.scrollHeight,
+          ),
         ),
       );
     const sync = () => {
       const doc = iframe.contentDocument;
       if (!doc) return;
-      setHeight(measure(doc));
+      measureHeight(doc);
+      // Decide width once, while the frame is still at the narrow (text-column) width:
+      // if the content overflows horizontally it wants more room, so switch to wide.
+      // scrollWidth/clientWidth are both in the frame's own CSS px, so `zoom` cancels.
+      const el = doc.documentElement;
+      if (el.scrollWidth > el.clientWidth + 1) setWide(true);
       if (!observer) {
+        // The observer only keeps height in sync (reflow, late image/font load); it
+        // never re-decides width, which would oscillate once the frame has widened.
         observer = new ResizeObserver(() => {
           const d = iframe.contentDocument;
-          if (d) setHeight(measure(d));
+          if (d) measureHeight(d);
         });
-        observer.observe(doc.documentElement);
+        observer.observe(el);
       }
     };
     iframe.addEventListener("load", sync);
@@ -54,8 +72,16 @@ function ArtifactBlock({ title, html }: { title: string; html: string }) {
   return (
     <iframe
       ref={ref}
-      className="block w-full border-0 bg-transparent"
-      style={{ height: height != null ? `${height}px` : "24rem" }}
+      className="block border-0 bg-transparent"
+      style={{
+        height: height != null ? `${height}px` : "24rem",
+        // Left edge pinned to the chat column's left edge; narrow = centered on that
+        // column (matches the text), wide = grows rightward without overflowing.
+        marginLeft: `max(0px, calc((100% - ${TEXT_COL}) / 2))`,
+        width: wide
+          ? `min(${WIDE_CAP}, calc((100% + ${TEXT_COL}) / 2))`
+          : `min(${TEXT_COL}, 100%)`,
+      }}
       sandbox="allow-same-origin"
       srcDoc={html}
       title={title || "artifact"}
@@ -317,7 +343,8 @@ function ActivityRow({
   if (entry.kind === "ask") {
     return <AskPicker entry={entry} onAnswer={onAnswer} isLatest={isLatestAsk ?? false} />;
   }
-  // A model-rendered HTML page, inline in the flow.
+  // A model-rendered HTML page, inline in the flow. Full-width row so the frame can
+  // align to the chat column and widen rightward; ArtifactBlock owns its own width.
   if (entry.kind === "artifact") {
     return (
       <li className="w-full">
