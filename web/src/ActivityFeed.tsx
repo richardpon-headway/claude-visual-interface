@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import { ErrorBoundary } from "./ErrorBoundary";
 import { Markdown } from "./Markdown";
 import type { ActivityEntry, AskQuestion } from "./viewState";
 
@@ -33,18 +34,17 @@ function ArtifactBlock({ title, html }: { title: string; html: string }) {
     // (artifacts scale themselves to 1.25 to match the app's UI scale); scrollHeight
     // does not, so using it alone under-sizes the frame and the content scrolls
     // internally. Take the max so we never under-size regardless of zoom.
-    const measureHeight = (doc: Document) =>
-      setHeight(
-        Math.ceil(
-          Math.max(
-            doc.documentElement.getBoundingClientRect().height,
-            doc.documentElement.scrollHeight,
-          ),
-        ),
-      );
+    const measureHeight = (doc: Document) => {
+      // A freshly-created iframe exposes a contentDocument before the browser has
+      // parsed srcDoc, so documentElement can still be null here — guard it or the
+      // getBoundingClientRect read throws and (with no boundary) blanks the app.
+      const el = doc.documentElement;
+      if (!el) return;
+      setHeight(Math.ceil(Math.max(el.getBoundingClientRect().height, el.scrollHeight)));
+    };
     const sync = () => {
       const doc = iframe.contentDocument;
-      if (!doc) return;
+      if (!doc || !doc.documentElement) return; // not parsed yet; the load event re-runs sync
       measureHeight(doc);
       // Decide width once, while the frame is still at the narrow (text-column) width:
       // if the content overflows horizontally it wants more room, so switch to wide.
@@ -348,7 +348,17 @@ function ActivityRow({
   if (entry.kind === "artifact") {
     return (
       <li className="w-full">
-        <ArtifactBlock title={entry.text} html={entry.html ?? ""} />
+        <ErrorBoundary
+          fallback={
+            <div
+              className={`${PROSE} rounded-lg border border-zinc-800 bg-zinc-950 px-4 py-3 text-xs text-zinc-500`}
+            >
+              Couldn't render this artifact{entry.text ? `: ${entry.text}` : ""}.
+            </div>
+          }
+        >
+          <ArtifactBlock title={entry.text} html={entry.html ?? ""} />
+        </ErrorBoundary>
       </li>
     );
   }

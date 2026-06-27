@@ -97,6 +97,24 @@ describe("ActivityFeed", () => {
     expect(iframe).toHaveAttribute("srcdoc", "<p>hi</p>");
   });
 
+  it("does not crash when the iframe document isn't parsed yet (null documentElement)", () => {
+    const { container } = render(
+      <ActivityFeed activity={[{ kind: "artifact", text: "x", html: "<p>hi</p>" }]} />,
+    );
+    const iframe = container.querySelector("iframe")!;
+    // Reproduce a real browser's pre-parse state: contentDocument exists but its
+    // documentElement is still null. Before the guard, the load handler's
+    // getBoundingClientRect read threw here and blanked the whole app.
+    Object.defineProperty(iframe, "contentDocument", {
+      configurable: true,
+      get: () => ({ documentElement: null }) as unknown as Document,
+    });
+    expect(() => fireEvent.load(iframe)).not.toThrow();
+    // The artifact survived — no boundary fallback.
+    expect(container.querySelector("iframe")).toBeInTheDocument();
+    expect(screen.queryByText(/couldn't render this artifact/i)).toBeNull();
+  });
+
   it("renders a user turn as a right-aligned bubble", () => {
     const { container } = render(
       <ActivityFeed activity={[{ kind: "user", text: "open utils.py" }]} />,

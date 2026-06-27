@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { ActivityFeed } from "./ActivityFeed";
 import { ChatInput } from "./ChatInput";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { activePromptId, promptLandmarks } from "./rail";
 import { useSurfaceSocket } from "./useSurfaceSocket";
@@ -192,11 +193,20 @@ export function Surface({ surface }: { surface: string }) {
 
         <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
           <div className="px-4 py-4">
-            <ActivityFeed
-              activity={view.activity}
-              thinking={view.thinking}
-              onAnswer={sendAnswer}
-            />
+            <ErrorBoundary
+              fallback={
+                <div className="mx-auto w-full max-w-3xl rounded-lg border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-zinc-400">
+                  Something went wrong rendering this conversation. Try reloading; the
+                  header and composer above still work.
+                </div>
+              }
+            >
+              <ActivityFeed
+                activity={view.activity}
+                thinking={view.thinking}
+                onAnswer={sendAnswer}
+              />
+            </ErrorBoundary>
           </div>
         </div>
       </div>
