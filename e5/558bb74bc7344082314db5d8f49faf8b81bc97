@@ -1,0 +1,55 @@
+web/src/HomePage.test.tsx
+  s_41ee5f11ce9ec9::t_dcdaf8e5f71b10 24
+  s_41ee5f11ce9ec9::t_214a6e34d2a81e 112-167
+daemon/sessions.py
+  s_41ee5f11ce9ec9::t_f59a50abe97ecf 219-235
+  s_41ee5f11ce9ec9::t_27a91d17af54a2 28
+tests/test_sessions.py
+  s_41ee5f11ce9ec9::t_b223ac571418aa 290-301,306
+  s_41ee5f11ce9ec9::t_ebe5da01c4e32a 153-171
+  s_41ee5f11ce9ec9::t_f5dbaa22d30f87 21,26-28
+tests/test_migrations.py
+  s_41ee5f11ce9ec9::t_79dd4cd68b5cee 29
+daemon/main.py
+  s_41ee5f11ce9ec9::t_deffadd9ae5428 89-98
+  s_41ee5f11ce9ec9::t_fb7dac0d6cf945 87-88
+web/src/Surface.tsx
+  s_41ee5f11ce9ec9::t_59095f13d3678e 184-193
+  s_41ee5f11ce9ec9::t_95de859bf0e93e 101,106-118
+  s_41ee5f11ce9ec9::t_504176b082aeb2 119
+daemon/migrations/008_session_starred_at.sql
+  s_41ee5f11ce9ec9::t_6c9732181dc3e8 1-14
+web/src/session.ts
+  s_41ee5f11ce9ec9::t_2a252f958b53e9 13
+web/src/viewState.ts
+  s_41ee5f11ce9ec9::t_1e5ffb8747f7f8 82
+  s_41ee5f11ce9ec9::t_29b0321890ac27 45
+web/src/HomePage.tsx
+  s_41ee5f11ce9ec9::t_4f67cce7f1d3f0 188-203
+  s_41ee5f11ce9ec9::t_09c63c0e67cf7b 138-141
+  s_41ee5f11ce9ec9::t_ddab9390305466 33,51-59
+web/src/useSurfaceSocket.ts
+  s_41ee5f11ce9ec9::t_d141c7ff3726af 40,46-47,53
+  s_41ee5f11ce9ec9::t_f26b380dd86fb1 58-61,68,74
+  s_41ee5f11ce9ec9::t_0061a735b563f8 18-20
+  s_41ee5f11ce9ec9::t_e3bbe9628b001e 154-159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "e5558bb74bc7344082314db5d8f49faf8b81bc97",
+  "prompts": {},
+  "sessions": {
+    "s_41ee5f11ce9ec9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7ce32317-2857-43f5-963c-247b00df2076",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
