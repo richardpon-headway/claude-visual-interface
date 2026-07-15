@@ -86,6 +86,18 @@ async def restore_session(session_id: str) -> dict[str, bool]:
     return await _toggle_lifecycle(sessions.set_deleted, session_id, False)
 
 
+@app.post("/sessions/{session_id}/star")
+async def star_session(session_id: str) -> dict[str, bool]:
+    """Pin a session to the Starred section. Independent of archive/delete; does not
+    bump updated_at, so starring never reorders the list."""
+    return await _toggle_lifecycle(sessions.set_starred, session_id, True)
+
+
+@app.post("/sessions/{session_id}/unstar")
+async def unstar_session(session_id: str) -> dict[str, bool]:
+    return await _toggle_lifecycle(sessions.set_starred, session_id, False)
+
+
 class RenameRequest(BaseModel):
     title: str
 

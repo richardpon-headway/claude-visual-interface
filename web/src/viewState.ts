@@ -42,6 +42,7 @@ export type SurfaceState = {
   view: ViewState;
   status: string | null;
   title: string | null;
+  starred: boolean; // seeded over HTTP; no live WebSocket event in v1
 };
 
 // Messages the daemon pushes over the WebSocket. `snapshot` carries a full
@@ -78,7 +79,7 @@ export function emptyViewState(surface: string): ViewState {
 }
 
 export function emptySurface(surface: string): SurfaceState {
-  return { view: emptyViewState(surface), status: null, title: null };
+  return { view: emptyViewState(surface), status: null, title: null, starred: false };
 }
 
 // Parse a raw WebSocket payload into a known message, or null if it doesn't look

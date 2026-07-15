@@ -26,6 +26,7 @@ def test_migrations_create_session_schema(tmp_path):
         "deleted_at",
         "agent_session_id",
         "user_title",
+        "starred_at",
     }
     # The review feature's finding table is dropped by migration 004.
     assert _table_columns(db_path, "finding") == set()

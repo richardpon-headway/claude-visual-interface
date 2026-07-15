@@ -10,6 +10,7 @@ export type Session = {
   updated_at: string;
   archived_at: string | null;
   deleted_at: string | null;
+  starred_at: string | null;
 };
 
 export function filterSessions(sessions: Session[], query: string): Session[] {
