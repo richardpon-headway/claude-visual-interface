@@ -25,6 +25,7 @@ _COLUMNS = (
     "deleted_at",
     "agent_session_id",
     "user_title",
+    "starred_at",
 )
 
 
@@ -213,6 +214,23 @@ def set_archived(session_id: str, archived: bool) -> bool:
 
 def set_deleted(session_id: str, deleted: bool) -> bool:
     return _set_lifecycle_timestamp(session_id, "deleted_at", deleted)
+
+
+def set_starred(session_id: str, starred: bool) -> bool:
+    """Star or unstar a session by toggling starred_at. Unlike the lifecycle toggles
+    above, this deliberately does NOT bump updated_at: a star is organizational
+    metadata, not activity, so it must not reorder the list. Returns False if no such
+    session."""
+    conn = open_db()
+    try:
+        cursor = conn.execute(
+            "UPDATE session SET starred_at = ? WHERE id = ?",
+            (_now_iso() if starred else None, session_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
 
 
 def get_session(session_id: str) -> dict[str, Any] | None:

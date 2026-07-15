@@ -15,6 +15,9 @@ export type SendMessage = (text: string, images?: ImageAttachment[]) => void;
 export type StopAgent = () => void;
 // Submit an AskUserQuestion picker selection: the entry's ask id + the chosen value(s).
 export type SendAnswer = (askId: string, answer: string) => void;
+// Optimistically set the local starred flag (after POSTing star/unstar). No live
+// event exists in v1, so the caller owns the local flip.
+export type SetStarred = (next: boolean) => void;
 // Socket connectivity, surfaced so the UI can show a reconnecting state.
 export type Connection = "connecting" | "open" | "closed";
 
@@ -34,35 +37,41 @@ const RECONNECT_MAX_MS = 5000;
  */
 export function useSurfaceSocket(
   surface: string,
-): [SurfaceState, SendMessage, StopAgent, SendAnswer, Connection] {
+): [SurfaceState, SendMessage, StopAgent, SendAnswer, Connection, SetStarred] {
   const [state, setState] = useState<SurfaceState>(() => emptySurface(surface));
   const [connection, setConnection] = useState<Connection>("connecting");
   const wsRef = useRef<WebSocket | null>(null);
   // Outbound frames buffered while the socket is down; flushed in order on open.
   const pendingRef = useRef<string[]>([]);
+  // Once the user toggles the star locally, don't let the async HTTP seed clobber it.
+  const starredTouchedRef = useRef(false);
 
   useEffect(() => {
     setState(emptySurface(surface));
     setConnection("connecting");
     pendingRef.current = [];
+    starredTouchedRef.current = false;
     let closedByCleanup = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let backoff = RECONNECT_MIN_MS;
 
-    // Seed status/title once over HTTP; live events (and the connect snapshot sent on
-    // every reconnect) keep state current afterward. A live event wins if they race.
+    // Seed status/title/starred once over HTTP; live events (and the connect snapshot
+    // sent on every reconnect) keep status/title current afterward. A live event wins
+    // if they race. starred has no live event in v1 — the seed is the source of truth
+    // unless the user has already toggled it locally.
     fetch(`/sessions/${encodeURIComponent(surface)}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data: unknown) => {
         if (closedByCleanup) return;
         const row =
           typeof data === "object" && data !== null
-            ? (data as { status?: unknown; title?: unknown })
+            ? (data as { status?: unknown; title?: unknown; starred_at?: unknown })
             : {};
         setState((prev) => {
           let next = prev;
           if (typeof row.status === "string" && prev.status === null) next = { ...next, status: row.status };
           if (typeof row.title === "string" && prev.title === null) next = { ...next, title: row.title };
+          if (!starredTouchedRef.current) next = { ...next, starred: row.starred_at != null };
           return next;
         });
       })
@@ -142,5 +151,10 @@ export function useSurfaceSocket(
     }
   }, []);
 
-  return [state, sendMessage, stop, sendAnswer, connection];
+  const setStarred = useCallback<SetStarred>((next) => {
+    starredTouchedRef.current = true;
+    setState((prev) => ({ ...prev, starred: next }));
+  }, []);
+
+  return [state, sendMessage, stop, sendAnswer, connection, setStarred];
 }

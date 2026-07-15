@@ -98,10 +98,24 @@ function EditableTitle({ surface, title }: { surface: string; title: string | nu
 // of the user's prompts. The transcript scrolls; the composer is pinned at the
 // bottom; the rail jumps to a prompt and tracks the active one as you scroll.
 export function Surface({ surface }: { surface: string }) {
-  const [{ view, status, title }, sendMessage, stop, sendAnswer, connection] =
+  const [{ view, status, title, starred }, sendMessage, stop, sendAnswer, connection, setStarred] =
     useSurfaceSocket(surface);
   const busy = view.thinking || status === "running";
   const prompts = promptLandmarks(view.activity);
+
+  // Toggle the star optimistically, then persist; revert the local flip on failure.
+  // No live broadcast in v1 — the home list reconciles on its next load.
+  async function toggleStar() {
+    const next = !starred;
+    setStarred(next);
+    try {
+      await fetch(`/sessions/${encodeURIComponent(surface)}/${next ? "star" : "unstar"}`, {
+        method: "POST",
+      });
+    } catch {
+      setStarred(!next);
+    }
+  }
 
   // Mirror the inferred session title into the browser tab. Falls back to the
   // surface id until a title is inferred, and restores the default on unmount.
@@ -167,7 +181,16 @@ export function Surface({ surface }: { surface: string }) {
           </button>
         ) : null}
         <EditableTitle surface={surface} title={title} />
-        <span className="ml-auto">
+        <span className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleStar}
+            aria-label={starred ? "Unstar" : "Star"}
+            title={starred ? "Unstar" : "Star"}
+            className={`text-base leading-none ${starred ? "text-amber-400 hover:text-amber-300" : "text-zinc-600 hover:text-zinc-300"}`}
+          >
+            {starred ? "★" : "☆"}
+          </button>
           <StatusChip status={status} />
         </span>
       </header>

@@ -21,6 +21,7 @@ function makeSession(overrides: Partial<Session>): Session {
     updated_at: "2026-01-01T00:00:00Z",
     archived_at: null,
     deleted_at: null,
+    starred_at: null,
     ...overrides,
   };
 }
@@ -105,6 +106,62 @@ describe("HomePage — archive section", () => {
     render(<HomePage />);
     await screen.findByText("Active one");
     expect(screen.queryByRole("button", { name: /archive \(/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("HomePage — starred section", () => {
+  it("clicking the star on an active row POSTs /star", async () => {
+    const fetchMock = stubSessions([makeSession({ id: "a", title: "Active one" })]);
+    render(<HomePage />);
+
+    const row = (await screen.findByText("Active one")).closest("div") as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: "Star" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/sessions/a/star", { method: "POST" }));
+  });
+
+  it("pins starred (non-archived) sessions into a Starred section, visible without expanding", async () => {
+    stubSessions([
+      makeSession({ id: "a", title: "Plain one" }),
+      makeSession({ id: "b", title: "Pinned one", starred_at: "2026-01-02T00:00:00Z" }),
+    ]);
+    render(<HomePage />);
+
+    // The starred row is visible immediately (the section is pinned open).
+    await screen.findByText("Pinned one");
+    expect(screen.getByText("Starred")).toBeInTheDocument();
+    // Its toggle reads as already-starred (Unstar).
+    const row = (screen.getByText("Pinned one").closest("div")) as HTMLElement;
+    expect(within(row).getByRole("button", { name: "Unstar" })).toBeInTheDocument();
+  });
+
+  it("keeps an archived+starred session in Archive, not the Starred section", async () => {
+    stubSessions([
+      makeSession({ id: "a", title: "Active one" }),
+      makeSession({
+        id: "b",
+        title: "Filed favorite",
+        archived_at: "2026-01-02T00:00:00Z",
+        starred_at: "2026-01-02T00:00:00Z",
+      }),
+    ]);
+    render(<HomePage />);
+
+    await screen.findByText("Active one");
+    // Not surfaced in a Starred section, and hidden inside the collapsed Archive.
+    expect(screen.queryByText("Starred")).not.toBeInTheDocument();
+    expect(screen.queryByText("Filed favorite")).not.toBeInTheDocument();
+
+    // It's in Archive; expanding reveals it, still bearing its star (Unstar toggle).
+    fireEvent.click(screen.getByRole("button", { name: /archive \(1\)/i }));
+    const row = (await screen.findByText("Filed favorite")).closest("div") as HTMLElement;
+    expect(within(row).getByRole("button", { name: "Unstar" })).toBeInTheDocument();
+  });
+
+  it("hides the Starred section when nothing is starred", async () => {
+    stubSessions([makeSession({ id: "a", title: "Active one" })]);
+    render(<HomePage />);
+    await screen.findByText("Active one");
+    expect(screen.queryByText("Starred")).not.toBeInTheDocument();
   });
 });
 

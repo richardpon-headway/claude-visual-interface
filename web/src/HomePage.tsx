@@ -30,6 +30,7 @@ function SessionRow({
   onRequestDelete?: (session: Session) => void;
 }) {
   const archived = session.archived_at !== null;
+  const starred = session.starred_at !== null;
 
   async function call(path: string, method: string) {
     await fetch(path, { method });
@@ -47,6 +48,15 @@ function SessionRow({
       <a href={`/s/${encodeURIComponent(session.id)}`} className={titleClass}>
         {session.title ?? session.id}
       </a>
+      <button
+        type="button"
+        aria-label={starred ? "Unstar" : "Star"}
+        title={starred ? "Unstar" : "Star"}
+        className={`rounded px-1 text-base leading-none ${starred ? "text-amber-400 hover:text-amber-300" : "text-zinc-600 hover:text-zinc-300"}`}
+        onClick={() => call(`/sessions/${encodeURIComponent(session.id)}/${starred ? "unstar" : "star"}`, "POST")}
+      >
+        {starred ? "★" : "☆"}
+      </button>
       <button
         type="button"
         className={actionButton}
@@ -125,7 +135,10 @@ export function HomePage() {
   }, [reload]);
 
   const visible = filterSessions(sessions, query);
-  const active = visible.filter((s) => s.archived_at === null);
+  // Three bands: starred (non-archived) pins to the top, then active, then archive.
+  // An archived+starred session stays in Archive but keeps its star icon.
+  const starred = visible.filter((s) => s.starred_at !== null && s.archived_at === null);
+  const active = visible.filter((s) => s.starred_at === null && s.archived_at === null);
   const archived = visible.filter((s) => s.archived_at !== null);
 
   async function newChat() {
@@ -172,6 +185,22 @@ export function HomePage() {
           </div>
         ) : (
           <>
+            {starred.length > 0 ? (
+              <section>
+                <div className="flex w-full items-center gap-2 border-b border-zinc-800 bg-zinc-950 px-4 py-3">
+                  <span className="w-3 text-sm text-amber-400">★</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                    Starred
+                  </span>
+                  <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-500">
+                    {starred.length}
+                  </span>
+                </div>
+                {starred.map((s) => (
+                  <SessionRow key={s.id} session={s} onChanged={reload} />
+                ))}
+              </section>
+            ) : null}
             {active.length === 0 ? (
               <div className="p-4 text-sm text-zinc-500">no active sessions</div>
             ) : (

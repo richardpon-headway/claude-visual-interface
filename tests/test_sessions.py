@@ -18,14 +18,14 @@ def db(tmp_path, monkeypatch):
     apply_migrations_sync()
 
 
-def _insert_session(session_id, *, updated_at, archived_at=None, deleted_at=None):
+def _insert_session(session_id, *, updated_at, archived_at=None, deleted_at=None, starred_at=None):
     conn = open_db()
     try:
         conn.execute(
             "INSERT INTO session "
-            "(id, type, status, created_at, updated_at, archived_at, deleted_at) "
-            "VALUES (?, 'chat', 'ready', 't', ?, ?, ?)",
-            (session_id, updated_at, archived_at, deleted_at),
+            "(id, type, status, created_at, updated_at, archived_at, deleted_at, starred_at) "
+            "VALUES (?, 'chat', 'ready', 't', ?, ?, ?, ?)",
+            (session_id, updated_at, archived_at, deleted_at, starred_at),
         )
         conn.commit()
     finally:
@@ -150,6 +150,25 @@ def test_lifecycle_toggle_reports_missing_session():
     assert sessions.set_deleted("ghost", True) is False
 
 
+def test_set_starred_toggles_without_bumping_updated_at():
+    _insert_session("s", updated_at="2026-01-01T00:00:00Z")
+
+    assert sessions.set_starred("s", True) is True
+    row = sessions.get_session("s")
+    assert row["starred_at"] is not None
+    # Starring is metadata, not activity — updated_at (and list ordering) must not move.
+    assert row["updated_at"] == "2026-01-01T00:00:00Z"
+
+    assert sessions.set_starred("s", False) is True
+    row = sessions.get_session("s")
+    assert row["starred_at"] is None
+    assert row["updated_at"] == "2026-01-01T00:00:00Z"
+
+
+def test_set_starred_reports_missing_session():
+    assert sessions.set_starred("ghost", True) is False
+
+
 def test_set_status_updates_and_reports_missing():
     _insert_session("s", updated_at="2026-01-01T00:00:00Z")
     assert sessions.set_status("s", "ready") is True
@@ -268,10 +287,23 @@ def test_delete_endpoint_then_restore():
         assert [r["id"] for r in client.get("/sessions").json()["sessions"]] == ["s"]
 
 
+def test_star_endpoint_round_trip_and_keeps_session_listed():
+    _insert_session("s", updated_at="2026-01-01T00:00:00Z")
+    with TestClient(app) as client:
+        assert client.post("/sessions/s/star").status_code == 200
+        assert client.get("/sessions/s").json()["starred_at"] is not None
+        # Starring is independent of archive/delete — the session stays in the listing.
+        assert [r["id"] for r in client.get("/sessions").json()["sessions"]] == ["s"]
+
+        assert client.post("/sessions/s/unstar").status_code == 200
+        assert client.get("/sessions/s").json()["starred_at"] is None
+
+
 def test_lifecycle_endpoint_404s_on_missing_session():
     with TestClient(app) as client:
         assert client.post("/sessions/ghost/archive").status_code == 404
         assert client.delete("/sessions/ghost").status_code == 404
+        assert client.post("/sessions/ghost/star").status_code == 404
 
 
 def test_get_session_returns_row_and_404s_on_missing():
