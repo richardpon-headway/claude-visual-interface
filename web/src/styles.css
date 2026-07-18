@@ -2,6 +2,10 @@
 
 :root {
   color-scheme: dark;
+  /* Single source of truth for the app surface color. Used by the app chrome (body,
+     below) AND injected into rendered artifacts so they sit on the same background
+     instead of the iframe's default white. Change this one value to re-theme both. */
+  --cvi-surface: #09090b; /* = Tailwind zinc-950 */
 }
 
 /* Scale the whole UI up by default (all text is rem-based, so this cascades to
@@ -16,6 +20,12 @@ html,
 body,
 #root {
   height: 100%;
+}
+
+/* Surface color sourced from the shared token so app chrome and injected artifacts
+   stay in sync (see --cvi-surface). */
+body {
+  background: var(--cvi-surface);
 }
 
 /* Markdown-rendered assistant answers (Markdown component). */

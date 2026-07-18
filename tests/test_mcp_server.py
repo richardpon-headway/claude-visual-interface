@@ -48,6 +48,10 @@ def test_chat_prompt_drives_the_html_canvas():
     assert "code-review surface" not in CVI_CHAT_SYSTEM_PROMPT
     assert "render_html" in CVI_CHAT_SYSTEM_PROMPT
     assert "no JavaScript" in CVI_CHAT_SYSTEM_PROMPT
+    # The dark-surface contract must stay in the prompt: agents author for dark, the app
+    # owns zoom, and a mockup opts out with the marker.
+    assert "dark surface" in CVI_CHAT_SYSTEM_PROMPT
+    assert 'data-theme="light"' in CVI_CHAT_SYSTEM_PROMPT
 
 
 def test_allowed_tools_are_fully_qualified():

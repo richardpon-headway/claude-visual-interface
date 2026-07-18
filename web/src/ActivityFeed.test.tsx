@@ -88,13 +88,30 @@ describe("ActivityFeed", () => {
     expect(screen.getByText("Read foo.py")).toBeInTheDocument();
   });
 
-  it("renders an artifact entry as an inline iframe", () => {
+  it("renders an artifact entry as an inline iframe with the dark surface + scale defaults", () => {
     const { container } = render(
       <ActivityFeed activity={[{ kind: "artifact", text: "design", html: "<p>hi</p>" }]} />,
     );
     const iframe = container.querySelector("iframe");
     expect(iframe).toBeInTheDocument();
-    expect(iframe).toHaveAttribute("srcdoc", "<p>hi</p>");
+    const srcdoc = iframe!.getAttribute("srcdoc")!;
+    // The author's content is preserved verbatim...
+    expect(srcdoc).toContain("<p>hi</p>");
+    // ...and the app injects the scale-match zoom and a dark surface that reliably wins.
+    expect(srcdoc).toContain("zoom:1.25");
+    expect(srcdoc).toMatch(/background:\s*#09090b\s*!important/i);
+  });
+
+  it("leaves a data-theme=\"light\" mockup in its own colors (no forced dark background)", () => {
+    const html =
+      '<html data-theme="light"><head></head><body style="background:#fff">mock</body></html>';
+    const { container } = render(
+      <ActivityFeed activity={[{ kind: "artifact", text: "mock", html }]} />,
+    );
+    const srcdoc = container.querySelector("iframe")!.getAttribute("srcdoc")!;
+    // Scale still matches the app, but no dark background is forced on the mockup.
+    expect(srcdoc).toContain("zoom:1.25");
+    expect(srcdoc).not.toContain("!important");
   });
 
   it("does not crash when the iframe document isn't parsed yet (null documentElement)", () => {

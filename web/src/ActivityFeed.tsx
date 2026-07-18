@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ErrorBoundary } from "./ErrorBoundary";
 import { Markdown } from "./Markdown";
@@ -20,10 +20,37 @@ const PROSE = "mx-auto w-full max-w-3xl";
 // up with the surrounding text, and wide ones (big tables) get the extra room.
 const TEXT_COL = "48rem"; // matches the chat column (Tailwind max-w-3xl)
 const WIDE_CAP = "64rem"; // most a wide artifact may grow to
+
+// A model-authored page is dropped into a sealed iframe that inherits nothing from the
+// app: not the app's 125% UI scale (so it renders ~20% small) and not the dark surface
+// (so an unstyled page falls back to browser-default white — a jarring flash inside the
+// dark app). We fix both here, in one place, so no author has to remember to:
+//   - zoom every artifact to 1.25 to match the app scale (authors must NOT set their own
+//     zoom now, or the two would multiply); and
+//   - render on the dark surface by default. A UI mockup that needs its own colors opts
+//     out with data-theme="light" on the root <html>, and we leave its background alone.
+// The dark background uses !important so it reliably wins for any page WITHOUT the marker
+// (the "dark unless marker" contract); text color is a soft default the page can override.
+function withCviDefaults(html: string): string {
+  const isLight = /data-theme\s*=\s*["']light["']/i.test(html);
+  const surface =
+    getComputedStyle(document.documentElement).getPropertyValue("--cvi-surface").trim() ||
+    "#09090b";
+  const darkRules = isLight
+    ? ""
+    : `html{color:#e4e4e7;}html,body{background:${surface} !important;}`;
+  const style = `<style id="cvi-artifact-defaults">html{zoom:1.25;}${darkRules}</style>`;
+  // Land it late in <head> when there is one (wins source-order ties); otherwise prepend.
+  return /<\/head>/i.test(html)
+    ? html.replace(/<\/head>/i, `${style}</head>`)
+    : style + html;
+}
+
 function ArtifactBlock({ title, html }: { title: string; html: string }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState<number>();
   const [wide, setWide] = useState(false);
+  const doc = useMemo(() => withCviDefaults(html), [html]);
 
   useEffect(() => {
     const iframe = ref.current;
@@ -83,7 +110,7 @@ function ArtifactBlock({ title, html }: { title: string; html: string }) {
           : `min(${TEXT_COL}, 100%)`,
       }}
       sandbox="allow-same-origin"
-      srcDoc={html}
+      srcDoc={doc}
       title={title || "artifact"}
     />
   );

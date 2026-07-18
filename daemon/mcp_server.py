@@ -227,7 +227,15 @@ _RENDER_HTML_GUIDANCE = (
     "mcp__cvi__render_html to render a full HTML page inline in the conversation. That "
     "page must be self-contained HTML/CSS/SVG only: no JavaScript and no external/CDN "
     "resources, as it renders in a no-script sandbox. Render rather than only describe "
-    "when the user asks to see something."
+    "when the user asks to see something. "
+    "The app renders your page on a dark surface at the app's scale automatically, so: "
+    "do NOT set a light/white page background and do NOT add CSS zoom (either would "
+    "fight the app). Author reading and explanatory content for dark — light text on "
+    "the dark surface, with darker panels/borders for structure. The one exception is a "
+    "UI mockup that must show its own real colors: set data-theme=\"light\" on the root "
+    "<html> to opt out of the dark surface and render the mockup in its intended "
+    "palette. Convention for framing content: a blue left-rule marks something you're "
+    "telling the user, an amber left-rule marks a question you're asking."
 )
 
 # The framing for a conversational session — the system prompt every chat agent runs.
