@@ -48,7 +48,7 @@ class FakeWebSocket {
 beforeEach(() => {
   FakeWebSocket.instances = [];
   vi.stubGlobal("WebSocket", FakeWebSocket as unknown as typeof WebSocket);
-  // The hook fetches status/title on connect; keep that quiet.
+  // The hook fetches title/starred on connect; keep that quiet.
   vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("no network in test"))));
 });
 

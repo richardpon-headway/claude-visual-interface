@@ -24,6 +24,7 @@ def test_dev_emit_renders_html():
         "text": "",
         "html": "<p>hi</p>",
         "summary": None,
+        "background": False,
         "ask_id": None,
         "questions": None,
         "answer": None,

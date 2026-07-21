@@ -8,7 +8,13 @@ import os
 from pathlib import Path
 
 import pytest
-from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
+from claude_agent_sdk import (
+    AssistantMessage,
+    ResultMessage,
+    TaskNotificationMessage,
+    TaskStartedMessage,
+    TextBlock,
+)
 
 from daemon import agent_session, config, messages, sessions, titles, token_usage
 from daemon.agent_session import AgentSessionRegistry
@@ -62,13 +68,22 @@ def _seed_session(session_id, *, session_type="chat", agent_session_id=None):
 
 class FakeClient:
     """An async-ctx-manager stand-in for ClaudeSDKClient that records queries and
-    replies with a canned assistant message + result per turn."""
+    replies with a canned assistant message + result per turn.
+
+    ``receive_messages`` models the SDK's between-turns stream: by default it never
+    yields, so the owner task's idle read blocks (the session closes only on idle
+    timeout). A subclass that exercises agent-initiated (background) turns pushes onto
+    ``bg_stream`` instead."""
 
     instances: list["FakeClient"] = []
 
     def __init__(self, options=None):
         self.options = options
         self.queried: list[str] = []
+        self.stopped_tasks: list[str] = []
+        # Messages the CLI pushes between turns (agent-initiated turns, task
+        # notifications). Empty + never-fed → receive_messages blocks forever.
+        self.bg_stream: asyncio.Queue = asyncio.Queue()
         FakeClient.instances.append(self)
 
     async def __aenter__(self):
@@ -96,6 +111,16 @@ class FakeClient:
             num_turns=1,
             session_id=SESSION,
         )
+
+    async def receive_messages(self):
+        # The between-turns stream: yields whatever a test pushes onto bg_stream; when
+        # empty it awaits, so the idle read blocks until a background message arrives (or
+        # the read is cancelled because a user turn won the race).
+        while True:
+            yield await self.bg_stream.get()
+
+    async def stop_task(self, task_id):
+        self.stopped_tasks.append(task_id)
 
 
 async def _wait_until(predicate, limit=1.0):
@@ -721,6 +746,245 @@ async def test_interrupt_drain_is_time_bounded_when_no_terminal_arrives(monkeypa
     assert ("result", "stopped") in kinds()
     assert not any(text == "error_during_execution" for _, text in kinds())
     assert reg.active_surfaces() == [SESSION]
+    await reg.shutdown_all()
+
+
+class SharedIdleClient(FakeClient):
+    """Models the SDK's single shared stream across turns AND between them. query()
+    pushes a turn's reply onto the shared stream; receive_response() drains it to the
+    ResultMessage; receive_messages() (the idle read) drains the SAME stream. A test
+    can push an agent-initiated turn or a task notification onto it while the session is
+    idle — exactly how the CLI wakes the agent after a background task finishes."""
+
+    def __init__(self, options=None):
+        super().__init__(options)
+        self._shared: asyncio.Queue = asyncio.Queue()
+
+    async def query(self, prompt):
+        await super().query(prompt)
+        text = self.queried[-1]
+        self._shared.put_nowait(
+            AssistantMessage(content=[TextBlock(text=f"answer to {text}")], model="test")
+        )
+        self._shared.put_nowait(
+            ResultMessage(
+                subtype="success",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id=SESSION,
+            )
+        )
+
+    async def receive_messages(self):
+        while True:
+            yield await self._shared.get()
+
+    async def receive_response(self):
+        while True:
+            msg = await self._shared.get()
+            yield msg
+            if isinstance(msg, ResultMessage):
+                return
+
+    def push(self, *messages):
+        for message in messages:
+            self._shared.put_nowait(message)
+
+    def push_background_turn(self, text="pnpm install finished"):
+        self.push(
+            AssistantMessage(content=[TextBlock(text=text)], model="test"),
+            ResultMessage(
+                subtype="success",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id=SESSION,
+            ),
+        )
+
+
+def _started(task_id, description="pnpm install"):
+    return TaskStartedMessage(
+        subtype="task_started",
+        data={},
+        task_id=task_id,
+        description=description,
+        uuid=f"u-{task_id}-start",
+        session_id=SESSION,
+    )
+
+
+def _finished(task_id, status="completed"):
+    return TaskNotificationMessage(
+        subtype="task_notification",
+        data={},
+        task_id=task_id,
+        status=status,
+        output_file="",
+        summary="done",
+        uuid=f"u-{task_id}-done",
+        session_id=SESSION,
+    )
+
+
+async def test_background_turn_surfaces_while_idle_and_is_marked(monkeypatch):
+    # A completed background task wakes the agent into a turn the daemon never queried.
+    # It must surface on its own (not wait for the next prompt) and be marked background,
+    # with no user bubble — the fix for the reported out-of-sync bug.
+    _seed_session(SESSION, session_type="chat")
+    store.get_or_create(SESSION).activity.clear()
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: SharedIdleClient(options)
+    )
+    reg = AgentSessionRegistry()
+
+    def entries():
+        return [(e.kind, e.text, e.background) for e in store.get_or_create(SESSION).activity]
+
+    await reg.send(SESSION, "first")
+    await _wait_until(lambda: ("text", "answer to first", False) in entries())
+
+    # No prompt from us — the CLI pushes an agent-initiated turn onto the stream.
+    FakeClient.instances[0].push_background_turn()
+    await _wait_until(lambda: ("text", "pnpm install finished", True) in entries())
+
+    # It arrived on its own, marked background, and added no user bubble.
+    kinds = entries()
+    assert ("text", "pnpm install finished", True) in kinds
+    assert sum(1 for k, *_ in kinds if k == "user") == 1  # only "first"
+    await reg.shutdown_all()
+
+
+async def test_background_completion_precedes_the_next_prompts_reply(monkeypatch):
+    # The regression the bug was about: a background turn buffered while idle must not
+    # get consumed as the reply to the next prompt. It surfaces first (marked), then the
+    # new prompt gets its own, correctly-attributed reply.
+    _seed_session(SESSION, session_type="chat")
+    store.get_or_create(SESSION).activity.clear()
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: SharedIdleClient(options)
+    )
+    reg = AgentSessionRegistry()
+
+    def entries():
+        return [(e.kind, e.text, e.background) for e in store.get_or_create(SESSION).activity]
+
+    await reg.send(SESSION, "first")
+    await _wait_until(lambda: ("text", "answer to first", False) in entries())
+
+    FakeClient.instances[0].push_background_turn()
+    await _wait_until(lambda: ("text", "pnpm install finished", True) in entries())
+
+    await reg.send(SESSION, "second")
+    await _wait_until(lambda: ("text", "answer to second", False) in entries())
+
+    assert entries() == [
+        ("user", "first", False),
+        ("text", "answer to first", False),
+        ("result", "success", False),
+        ("text", "pnpm install finished", True),
+        ("result", "success", True),
+        ("user", "second", False),
+        ("text", "answer to second", False),
+        ("result", "success", False),
+    ]
+    await reg.shutdown_all()
+
+
+async def test_background_tasks_are_tracked_and_broadcast(monkeypatch):
+    # task_started adds to the indicator (broadcast + snapshot); task_notification clears
+    # it. The notifications themselves are never relayed as transcript entries.
+    _seed_session(SESSION, session_type="chat")
+    store.get_or_create(SESSION).activity.clear()
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: SharedIdleClient(options)
+    )
+    reg = AgentSessionRegistry()
+    ws = FakeWS()
+    hub.register(SESSION, ws)
+    try:
+        await reg.send(SESSION, "kick off a build")
+        await _wait_until(
+            lambda: bool(FakeClient.instances)
+            and FakeClient.instances[0].queried == ["kick off a build"]
+        )
+
+        FakeClient.instances[0].push(_started("t1", "pnpm install"))
+        await _wait_until(
+            lambda: store.get_or_create(SESSION).background_tasks
+            == [{"task_id": "t1", "description": "pnpm install"}]
+        )
+        assert {
+            "type": "background_tasks",
+            "surface": SESSION,
+            "payload": {"tasks": [{"task_id": "t1", "description": "pnpm install"}]},
+        } in ws.received
+
+        FakeClient.instances[0].push(_finished("t1"))
+        await _wait_until(lambda: store.get_or_create(SESSION).background_tasks == [])
+    finally:
+        hub.unregister(SESSION, ws)
+
+    # The task lifecycle produced no transcript rows.
+    kinds = [e.kind for e in store.get_or_create(SESSION).activity]
+    assert kinds.count("user") == 1
+    assert "task_started" not in [e.text for e in store.get_or_create(SESSION).activity]
+    await reg.shutdown_all()
+
+
+async def test_outstanding_task_keeps_the_session_alive_past_idle(monkeypatch):
+    # While a background task is running the idle timeout is suppressed — the session
+    # stays open to observe the task's completion, then reaps once it's gone.
+    _seed_session(SESSION, session_type="chat")
+    store.get_or_create(SESSION).activity.clear()
+    monkeypatch.setattr(agent_session, "AGENT_IDLE_SECONDS", 0.05)
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: SharedIdleClient(options)
+    )
+    reg = AgentSessionRegistry()
+
+    await reg.send(SESSION, "kick off a build")
+    await _wait_until(
+        lambda: bool(FakeClient.instances)
+        and FakeClient.instances[0].queried == ["kick off a build"]
+    )
+    FakeClient.instances[0].push(_started("t1"))
+    await _wait_until(lambda: store.get_or_create(SESSION).background_tasks != [])
+
+    # Well past the idle window, but the outstanding task keeps it alive.
+    await asyncio.sleep(0.15)
+    assert reg.active_surfaces() == [SESSION]
+
+    # Once the task finishes, the idle timeout applies again and the session reaps.
+    FakeClient.instances[0].push(_finished("t1"))
+    await _wait_until(lambda: reg.active_surfaces() == [])
+
+
+async def test_stop_task_cancels_a_tracked_task(monkeypatch):
+    # A tracked task can be stopped via the SDK; an unknown id is a harmless no-op.
+    _seed_session(SESSION, session_type="chat")
+    store.get_or_create(SESSION).activity.clear()
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: SharedIdleClient(options)
+    )
+    reg = AgentSessionRegistry()
+
+    await reg.send(SESSION, "kick off a build")
+    await _wait_until(
+        lambda: bool(FakeClient.instances)
+        and FakeClient.instances[0].queried == ["kick off a build"]
+    )
+    FakeClient.instances[0].push(_started("t1"))
+    await _wait_until(lambda: store.get_or_create(SESSION).background_tasks != [])
+
+    await reg.stop_task(SESSION, "ghost-task")  # unknown → no SDK call
+    assert FakeClient.instances[0].stopped_tasks == []
+
+    await reg.stop_task(SESSION, "t1")
+    assert FakeClient.instances[0].stopped_tasks == ["t1"]
     await reg.shutdown_all()
 
 

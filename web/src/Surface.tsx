@@ -1,32 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 
 import { ActivityFeed } from "./ActivityFeed";
+import { BackgroundTasks } from "./BackgroundTasks";
 import { ChatInput } from "./ChatInput";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { activePromptId, promptLandmarks } from "./rail";
 import { useSurfaceSocket } from "./useSurfaceSocket";
-
-function StatusChip({ status }: { status: string | null }) {
-  const cls =
-    status === "ready"
-      ? "bg-emerald-900 text-emerald-200"
-      : status === "error"
-        ? "bg-red-900 text-red-200"
-        : status === "running"
-          ? "bg-sky-900 text-sky-200"
-          : status === "stopped"
-            ? "bg-amber-900 text-amber-200"
-            : "bg-zinc-800 text-zinc-400";
-  return (
-    <span className={`flex items-center gap-1.5 rounded px-2 py-0.5 text-xs ${cls}`}>
-      {status === "running" ? (
-        <span className="inline-block h-2 w-2 animate-spin rounded-full border border-current border-t-transparent" />
-      ) : null}
-      {status ?? "unknown"}
-    </span>
-  );
-}
 
 // Click-to-edit session title in the header. The committed name is sent to the
 // daemon's rename endpoint; the new title flows back over the "title" websocket
@@ -98,9 +78,16 @@ function EditableTitle({ surface, title }: { surface: string; title: string | nu
 // of the user's prompts. The transcript scrolls; the composer is pinned at the
 // bottom; the rail jumps to a prompt and tracks the active one as you scroll.
 export function Surface({ surface }: { surface: string }) {
-  const [{ view, status, title, starred }, sendMessage, stop, sendAnswer, connection, setStarred] =
-    useSurfaceSocket(surface);
-  const busy = view.thinking || status === "running";
+  const [
+    { view, title, starred },
+    sendMessage,
+    stop,
+    sendAnswer,
+    connection,
+    setStarred,
+    stopTask,
+  ] = useSurfaceSocket(surface);
+  const busy = view.thinking;
   const prompts = promptLandmarks(view.activity);
 
   // Toggle the star optimistically, then persist; revert the local flip on failure.
@@ -191,7 +178,6 @@ export function Surface({ surface }: { surface: string }) {
           >
             {starred ? "★" : "☆"}
           </button>
-          <StatusChip status={status} />
         </span>
       </header>
 
@@ -236,8 +222,9 @@ export function Surface({ surface }: { surface: string }) {
 
       <div className="shrink-0 border-t border-zinc-800">
         <div className="mx-auto max-w-3xl">
-          <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-400">
+          <div className="flex items-center gap-3 px-2 py-1.5 text-xs text-zinc-400">
             {busy ? <ThinkingIndicator active={view.thinking} /> : null}
+            <BackgroundTasks tasks={view.background_tasks} onStop={stopTask} />
             {connection !== "open" ? (
               <span className="flex items-center gap-1.5 text-amber-400/90">
                 <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-500" />

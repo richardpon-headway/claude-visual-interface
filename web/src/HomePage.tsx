@@ -3,21 +3,6 @@ import { useCallback, useEffect, useState } from "react";
 import { filterSessions } from "./session";
 import type { Session } from "./session";
 
-function statusClass(status: string): string {
-  switch (status) {
-    case "running":
-      return "bg-blue-900 text-blue-200";
-    case "ready":
-      return "bg-emerald-900 text-emerald-200";
-    case "worked":
-      return "bg-zinc-700 text-zinc-200";
-    case "error":
-      return "bg-red-900 text-red-200";
-    default:
-      return "bg-zinc-800 text-zinc-300";
-  }
-}
-
 const actionButton = "rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300 hover:bg-zinc-800";
 
 function SessionRow({
@@ -37,14 +22,12 @@ function SessionRow({
     onChanged();
   }
 
-  // Archived rows read as "set aside": a neutral status badge and a muted title.
-  const badgeClass = archived ? "bg-zinc-800 text-zinc-400" : statusClass(session.status);
+  // Archived rows read as "set aside": a muted title.
   const titleClass = archived ? "flex-1 truncate text-zinc-400 hover:underline" : "flex-1 truncate hover:underline";
 
   // The title is the only link; actions sit beside it (not nested in the anchor).
   return (
     <div className="flex items-center gap-3 border-b border-zinc-800 px-4 py-3 hover:bg-zinc-900">
-      <span className={`rounded px-1.5 py-0.5 text-xs ${badgeClass}`}>{session.status}</span>
       <a href={`/s/${encodeURIComponent(session.id)}`} className={titleClass}>
         {session.title ?? session.id}
       </a>

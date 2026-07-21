@@ -31,6 +31,7 @@ describe("applyMessage", () => {
       surface: "s",
       activity: [],
       thinking: false,
+      background_tasks: [],
       session_output_tokens: 0,
       session_input_tokens: 0,
     });
@@ -41,6 +42,7 @@ describe("applyMessage", () => {
       surface: "s",
       activity: [{ kind: "text", text: "buffered" }],
       thinking: true,
+      background_tasks: [],
       session_output_tokens: 0,
       session_input_tokens: 0,
     };
@@ -60,9 +62,14 @@ describe("applyMessage", () => {
     ]);
   });
 
-  it("sets the status", () => {
-    const state = applyMessage(emptySurface("s"), { type: "status", surface: "s", payload: { status: "ready" } });
-    expect(state.status).toBe("ready");
+  it("sets the running background tasks", () => {
+    const tasks = [{ task_id: "t1", description: "pnpm install" }];
+    const state = applyMessage(emptySurface("s"), {
+      type: "background_tasks",
+      surface: "s",
+      payload: { tasks },
+    });
+    expect(state.view.background_tasks).toEqual(tasks);
   });
 
   it("flips the thinking flag", () => {

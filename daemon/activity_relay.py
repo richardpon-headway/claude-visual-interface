@@ -61,20 +61,24 @@ async def _relay_ask(session_id: str, block: ToolUseBlock) -> None:
     await record_activity(session_id, "ask", fallback, ask_id=block.id, questions=questions)
 
 
-async def relay_message_activity(session_id: str, message: object) -> None:
-    """Log a streamed agent message and push it to the surface as activity."""
+async def relay_message_activity(
+    session_id: str, message: object, background: bool = False
+) -> None:
+    """Log a streamed agent message and push it to the surface as activity. `background`
+    marks segments from an agent-initiated (background-task) turn so the browser can flag
+    them as not-a-reply-to-your-prompt."""
     if isinstance(message, AssistantMessage):
         for block in message.content:
             if isinstance(block, TextBlock):
                 log.info("[chat %s] %s", session_id, block.text)
-                await record_activity(session_id, "text", block.text)
+                await record_activity(session_id, "text", block.text, background=background)
             elif isinstance(block, ToolUseBlock):
                 if block.name.split("__")[-1] == "AskUserQuestion":
                     await _relay_ask(session_id, block)
                 else:
                     summary = summarize_tool_use(block)
                     log.info("[chat %s] tool: %s", session_id, summary)
-                    await record_activity(session_id, "tool", summary)
+                    await record_activity(session_id, "tool", summary, background=background)
     elif isinstance(message, ResultMessage):
         log.info(
             "[chat %s] result: subtype=%s is_error=%s",
@@ -82,4 +86,6 @@ async def relay_message_activity(session_id: str, message: object) -> None:
             message.subtype,
             message.is_error,
         )
-        await record_activity(session_id, "result", f"{message.subtype}")
+        await record_activity(
+            session_id, "result", f"{message.subtype}", background=background
+        )

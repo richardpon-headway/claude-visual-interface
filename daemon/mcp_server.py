@@ -79,12 +79,14 @@ async def record_activity(
     html: str | None = None,
     ask_id: str | None = None,
     questions: list | None = None,
+    background: bool = False,
 ):
     """Append a conversation segment on a surface and push it to subscribers; return
     the stored entry (callers that need to enrich it later — e.g. a prompt's summary —
     hold the reference). `html` carries an artifact's page; `ask_id`/`questions` carry an
-    AskUserQuestion picker's payload; each is omitted from the broadcast otherwise."""
-    entry = store.append_activity(surface, kind, text, html, ask_id, questions)
+    AskUserQuestion picker's payload; `background` marks a segment that belongs to an
+    agent-initiated (background-task) turn; each is omitted from the broadcast otherwise."""
+    entry = store.append_activity(surface, kind, text, html, ask_id, questions, background)
     # Write the segment through to SQLite so the transcript survives a daemon
     # restart; hold the row id on the entry so a later summary can target it. (The
     # structured `questions` aren't persisted — a restarted picker falls back to text.)
@@ -98,6 +100,8 @@ async def record_activity(
         payload["ask_id"] = ask_id
     if questions is not None:
         payload["questions"] = questions
+    if background:
+        payload["background"] = True
     await hub.broadcast(
         surface,
         {"type": "activity", "surface": surface, "payload": payload},
@@ -119,21 +123,22 @@ async def broadcast_prompt_summary(surface: str, index: int, summary: str) -> No
     )
 
 
-async def broadcast_status(surface: str, status: str) -> None:
-    """Push a session status change (running → ready / error) to subscribers so the
-    surface's status chip flips live. Status itself is persisted on the session row;
-    this is the transient nudge to connected browsers."""
+async def broadcast_background_tasks(surface: str, tasks: list[dict[str, str]]) -> None:
+    """Push the surface's current set of running background tasks to subscribers so the
+    dedicated background-task indicator updates live. Held on the ViewState (like the
+    thinking flag) so it rides the connect snapshot for a browser that joins mid-task."""
+    store.set_background_tasks(surface, tasks)
     await hub.broadcast(
         surface,
-        {"type": "status", "surface": surface, "payload": {"status": status}},
+        {"type": "background_tasks", "surface": surface, "payload": {"tasks": tasks}},
     )
 
 
 async def broadcast_title(surface: str, title: str) -> None:
     """Push a generated session title to subscribers so the surface header updates
-    live. Like broadcast_status, this is pure-broadcast: the title is persisted on the
-    session row and seeded into a connecting browser via GET /sessions/{id}, so it
-    doesn't ride the ViewState connect snapshot."""
+    live. Pure-broadcast: the title is persisted on the session row and seeded into a
+    connecting browser via GET /sessions/{id}, so it doesn't ride the ViewState connect
+    snapshot."""
     await hub.broadcast(
         surface,
         {"type": "title", "surface": surface, "payload": {"title": title}},

@@ -25,8 +25,8 @@ describe("routeFromPath", () => {
 
 describe("filterSessions", () => {
   const sessions = [
-    { id: "1", title: "Fix the parser", status: "ready" },
-    { id: "2", title: null, status: "running" },
+    { id: "1", title: "Fix the parser" },
+    { id: "2", title: null },
   ] as Session[];
 
   it("returns all when the query is blank", () => {

@@ -20,27 +20,34 @@ export type ActivityEntry = {
   text: string;
   html?: string | null;
   summary?: string | null; // for a user prompt: its generated outline-rail label
+  background?: boolean; // segment belongs to an agent-initiated (background-task) turn
   ask_id?: string | null; // for an "ask" entry: the tool-use id, echoed back to answer
   questions?: AskQuestion[] | null; // for an "ask" entry: the picker's questions
   answer?: string | null; // for an "ask" entry: the chosen value, once answered
 };
 
+// One background task the CLI has told us is running (a launched run_in_background
+// shell that hasn't reported completion). Mirrors the daemon's task-list entry.
+export type BackgroundTask = {
+  task_id: string;
+  description: string;
+};
+
 // Transient view state — mirrors daemon ViewState (store.snapshot): the conversation
-// transcript plus an in-flight "thinking" flag.
+// transcript, an in-flight "thinking" flag, and the running background tasks.
 export type ViewState = {
   surface: string;
   activity: ActivityEntry[]; // the conversation, oldest-first
   thinking: boolean; // an agent turn is in flight (drives the thinking indicator)
+  background_tasks: BackgroundTask[]; // running background tasks (drives the indicator)
   session_output_tokens: number; // running session token totals across every LLM call
   session_input_tokens: number;
 };
 
-// The full client state for a surface: the live view, the session's run status
-// (running / ready / error; null until known), and its title (null until known;
-// auto-generated for chats).
+// The full client state for a surface: the live view, its title (null until known;
+// auto-generated for chats), and the starred flag.
 export type SurfaceState = {
   view: ViewState;
-  status: string | null;
   title: string | null;
   starred: boolean; // seeded over HTTP; no live WebSocket event in v1
 };
@@ -50,8 +57,8 @@ export type SurfaceState = {
 export type WsMessage =
   | { type: "snapshot"; surface: string; payload: ViewState }
   | { type: "activity"; surface: string; payload: ActivityEntry }
-  | { type: "status"; surface: string; payload: { status: string } }
   | { type: "thinking"; surface: string; payload: { active: boolean } }
+  | { type: "background_tasks"; surface: string; payload: { tasks: BackgroundTask[] } }
   | { type: "title"; surface: string; payload: { title: string } }
   | { type: "prompt_summary"; surface: string; payload: { index: number; text: string } }
   | { type: "tokens"; surface: string; payload: { output: number; input: number } }
@@ -60,8 +67,8 @@ export type WsMessage =
 const MESSAGE_TYPES = [
   "snapshot",
   "activity",
-  "status",
   "thinking",
+  "background_tasks",
   "title",
   "prompt_summary",
   "tokens",
@@ -73,13 +80,14 @@ export function emptyViewState(surface: string): ViewState {
     surface,
     activity: [],
     thinking: false,
+    background_tasks: [],
     session_output_tokens: 0,
     session_input_tokens: 0,
   };
 }
 
 export function emptySurface(surface: string): SurfaceState {
-  return { view: emptyViewState(surface), status: null, title: null, starred: false };
+  return { view: emptyViewState(surface), title: null, starred: false };
 }
 
 // Parse a raw WebSocket payload into a known message, or null if it doesn't look
@@ -109,10 +117,10 @@ export function applyMessage(state: SurfaceState, msg: WsMessage): SurfaceState 
       return { ...state, view: msg.payload };
     case "activity":
       return { ...state, view: { ...state.view, activity: [...state.view.activity, msg.payload] } };
-    case "status":
-      return { ...state, status: msg.payload.status };
     case "thinking":
       return { ...state, view: { ...state.view, thinking: msg.payload.active } };
+    case "background_tasks":
+      return { ...state, view: { ...state.view, background_tasks: msg.payload.tasks } };
     case "title":
       return { ...state, title: msg.payload.title };
     case "tokens":

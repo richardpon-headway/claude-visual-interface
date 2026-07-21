@@ -336,6 +336,16 @@ function AskPicker({
   );
 }
 
+// A small marker on segments from an agent-initiated (background-task) turn, so they
+// read as "the agent reacting to a finished task" rather than a reply to your prompt.
+function BackgroundTag() {
+  return (
+    <span className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wide text-violet-300/80">
+      <span aria-hidden>↳</span> background
+    </span>
+  );
+}
+
 function ActivityRow({
   entry,
   promptId,
@@ -358,10 +368,13 @@ function ActivityRow({
       </li>
     );
   }
-  // The assistant's answer renders as markdown, full width.
+  // The assistant's answer renders as markdown, full width. A background-turn answer
+  // (the agent reacting to a finished task, not a reply to a prompt) is tagged and
+  // dimmed so it doesn't read as an answer to something you typed.
   if (entry.kind === "text") {
     return (
-      <li className={`${PROSE} text-sm text-zinc-200`}>
+      <li className={`${PROSE} text-sm ${entry.background ? "text-zinc-400" : "text-zinc-200"}`}>
+        {entry.background ? <BackgroundTag /> : null}
         <Markdown>{entry.text}</Markdown>
       </li>
     );

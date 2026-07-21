@@ -41,8 +41,8 @@ def append_usage(
     input_tokens: int,
     message_id: int | None = None,
 ) -> None:
-    """Record one LLM call's token usage. `kind` is 'turn' | 'title' | 'summary';
-    `message_id` is the attributed prompt row (None for session-level calls)."""
+    """Record one LLM call's token usage. `kind` is 'turn' | 'background' | 'title' |
+    'summary'; `message_id` is the attributed prompt row (None for session-level calls)."""
     conn = open_db()
     try:
         conn.execute(
