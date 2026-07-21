@@ -596,13 +596,21 @@ class AgentSession:
             log.warning("interrupt failed (surface=%s)", self._surface, exc_info=True)
 
     async def stop_task(self, task_id: str) -> None:
-        """Stop a running background task by id. The SDK emits a task_notification with
-        status 'stopped' afterward, which clears it from the indicator via the normal
-        stream path. A no-op when the client is gone or the id isn't tracked (a stale
-        Stop from the browser is harmless)."""
+        """Stop a running background task by id. A no-op when the client is gone or the id
+        isn't tracked (a stale Stop from the browser is harmless).
+
+        We drop the id from the running set and rebroadcast *immediately*, rather than
+        waiting for the SDK's terminal task_notification to clear it. The notification is
+        the normal clear path, but it isn't guaranteed: if the underlying work already
+        finished or died without a clean 'stopped'/'completed' message reaching us, the
+        entry would otherwise linger forever as a phantom the stop button can't remove.
+        Removing optimistically makes the control authoritative; the later notification
+        (if any) just pops an already-absent id — harmless."""
         client = self._client
         if client is None or task_id not in self._tasks:
             return
+        if self._tasks.pop(task_id, None) is not None:
+            await broadcast_background_tasks(self._surface, self._task_list())
         try:
             await client.stop_task(task_id)
         except Exception:

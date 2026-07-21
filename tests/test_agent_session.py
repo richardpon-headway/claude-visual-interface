@@ -985,6 +985,10 @@ async def test_stop_task_cancels_a_tracked_task(monkeypatch):
 
     await reg.stop_task(SESSION, "t1")
     assert FakeClient.instances[0].stopped_tasks == ["t1"]
+    # Cleared optimistically: the indicator empties on stop without waiting for the SDK's
+    # terminal notification, so a task whose 'stopped' message never arrives can't linger
+    # as a phantom the button can't remove.
+    await _wait_until(lambda: store.get_or_create(SESSION).background_tasks == [])
     await reg.shutdown_all()
 
 
