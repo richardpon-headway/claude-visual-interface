@@ -22,7 +22,14 @@ from collections.abc import AsyncIterator, Coroutine
 from dataclasses import dataclass, field
 from typing import Any
 
-from claude_agent_sdk import AssistantMessage, ClaudeSDKClient, ResultMessage
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeSDKClient,
+    ResultMessage,
+    TaskNotificationMessage,
+    TaskProgressMessage,
+    TaskStartedMessage,
+)
 
 from daemon import messages, session_sidecar, sessions, titles, token_usage
 from daemon.activity_relay import relay_message_activity
@@ -30,6 +37,7 @@ from daemon.config import get_working_dir
 from daemon.mcp_server import (
     CVI_CHAT_SYSTEM_PROMPT,
     broadcast_answer,
+    broadcast_background_tasks,
     broadcast_prompt_summary,
     broadcast_thinking,
     broadcast_title,
@@ -61,6 +69,16 @@ _RETRY_MAX_DELAY = 30.0
 # that never arrives can't wedge the session — a possibly-dirty next turn beats a
 # permanently stuck one.
 _INTERRUPT_DRAIN_SECONDS = 5.0
+
+# Outcomes of an idle wait (see AgentSession._await_work), distinct from a ChatTurn.
+# _IDLE_TIMEOUT: nothing happened within the idle window (and no task is running) —
+# close the session. _HANDLED: an agent-initiated (background) message was consumed
+# this pass — loop again without running a user turn. Sentinel objects (not None,
+# which _recv_one uses for a closed stream).
+_IDLE_TIMEOUT = object()
+_HANDLED = object()
+# _recv_one returns this when the SDK message stream has ended (client disconnected).
+_STREAM_END = object()
 
 
 @dataclass
@@ -172,6 +190,14 @@ class AgentSession:
         self._client: ClaudeSDKClient | None = None
         self._turn_active = False
         self._interrupting = False
+        # Background tasks the CLI has told us are running (task_id -> description). A
+        # launched `run_in_background` shell lands here on its task_started notification
+        # and is removed on task_notification (completed/failed/stopped). Drives the
+        # background-task indicator and keeps the session alive while any is outstanding.
+        self._tasks: dict[str, str] = {}
+        # A user turn dequeued during the same idle wait that also surfaced a background
+        # message: the background turn runs first, this one runs next (not lost).
+        self._deferred: ChatTurn | None = None
         self._task = asyncio.create_task(self._run())
 
     def enqueue(self, turn: ChatTurn) -> None:
@@ -223,14 +249,168 @@ class AgentSession:
             self._client = client
             try:
                 while True:
-                    try:
-                        turn = await asyncio.wait_for(self._queue.get(), AGENT_IDLE_SECONDS)
-                    except TimeoutError:
+                    # A user turn deferred because a background turn ran ahead of it
+                    # (both surfaced in one idle wait) runs first, before waiting again.
+                    if self._deferred is not None:
+                        turn, self._deferred = self._deferred, None
+                        await self._run_turn(client, turn)
+                        continue
+                    work = await self._await_work(client)
+                    if work is _IDLE_TIMEOUT:
                         log.info("agent session idle, closing (surface=%s)", self._surface)
                         return
-                    await self._run_turn(client, turn)
+                    if work is _HANDLED:
+                        continue  # a background message/turn was consumed this pass
+                    await self._run_turn(client, work)
             finally:
                 self._client = None
+
+    async def _await_work(self, client: ClaudeSDKClient) -> Any:
+        """Between turns, wait for EITHER a queued user turn OR an unsolicited message on
+        the SDK stream — the CLI pushes an agent-initiated turn there when a background
+        task finishes, even with no prompt from us. Reading the stream while idle is what
+        keeps that output from sitting buffered until (and being misattributed to) the
+        next user prompt.
+
+        Returns a ``ChatTurn`` to run, ``_HANDLED`` when a background message/turn was
+        consumed this pass, or ``_IDLE_TIMEOUT`` when nothing arrived within the idle
+        window. The idle timeout is suppressed while a background task is outstanding —
+        we're legitimately waiting on its progress/completion, which arrives on the
+        stream."""
+        get_task = asyncio.create_task(self._queue.get())
+        recv_task = asyncio.create_task(self._recv_one(client))
+        timeout = None if self._tasks else AGENT_IDLE_SECONDS
+        done, _ = await asyncio.wait(
+            {get_task, recv_task}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
+        )
+        if not done:  # idle window elapsed with no task running → close the session
+            await self._cancel(get_task, recv_task)
+            return _IDLE_TIMEOUT
+        if recv_task in done:
+            # A stream message arrived. If a user turn also came off the queue in the
+            # same wait, keep it for the next loop (the background turn goes first, which
+            # matches the order things actually happened). Otherwise cancel the pending
+            # get — it hasn't removed anything from the queue.
+            if get_task in done:
+                self._deferred = get_task.result()
+            else:
+                await self._cancel(get_task)
+            message = recv_task.result()
+            if message is _STREAM_END:
+                return _IDLE_TIMEOUT  # stream closed — let the session wind down
+            await self._handle_idle_message(client, message)
+            return _HANDLED
+        # A user turn is ready and no stream message is pending — cancel the idle read
+        # (safe: pending means nothing was pulled off the shared stream) and run it.
+        turn = get_task.result()
+        await self._cancel(recv_task)
+        return turn
+
+    @staticmethod
+    async def _cancel(*tasks: asyncio.Task) -> None:
+        """Cancel tasks and await their teardown, swallowing the CancelledError. A
+        pending queue.get()/stream read cancelled here has consumed nothing."""
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+    async def _recv_one(self, client: ClaudeSDKClient) -> Any:
+        """Pull exactly one message off the SDK's shared stream, or ``_STREAM_END`` if it
+        has closed. A fresh one-shot iterator per call so that, when this is cancelled
+        (a user turn won the idle race), nothing is left half-read on the shared stream
+        for the next turn's ``receive_response()`` to trip over."""
+        agen = client.receive_messages()
+        try:
+            return await agen.__anext__()
+        except StopAsyncIteration:
+            return _STREAM_END
+        finally:
+            await agen.aclose()
+
+    async def _handle_idle_message(self, client: ClaudeSDKClient, message: Any) -> None:
+        """Dispatch a message that arrived while no user turn was running. A task
+        notification just updates the background-task indicator. An AssistantMessage is
+        the start of an agent-initiated turn (the model reacting to a finished task),
+        relayed as its own background-marked turn. A lone terminal result is bookkept
+        only. Any other stray system frame (e.g. session_state_changed) is ignored — it
+        must NOT be treated as a turn start, or the thinking flag would stick on while we
+        block waiting for a ResultMessage that isn't coming."""
+        if await self._track_task_message(message):
+            return
+        if isinstance(message, AssistantMessage):
+            await self._run_background_turn(client, message)
+        elif isinstance(message, ResultMessage):
+            await self._remember_sdk_session(message.session_id)
+            out, inp = token_usage.usage_tokens(message.usage)
+            await self._record_usage("background", out, inp)
+
+    async def _track_task_message(self, message: Any) -> bool:
+        """If ``message`` is a background-task lifecycle notification, update the running
+        set (and broadcast on any change), and report True so callers skip relaying it to
+        the transcript. task_started adds; task_notification (completed/failed/stopped)
+        removes; task_progress just keeps the entry present. Returns False otherwise."""
+        if isinstance(message, TaskStartedMessage):
+            self._tasks[message.task_id] = message.description
+            await broadcast_background_tasks(self._surface, self._task_list())
+            return True
+        if isinstance(message, TaskProgressMessage):
+            # No set change; ensure it's tracked in case task_started was missed.
+            self._tasks.setdefault(message.task_id, message.description)
+            return True
+        if isinstance(message, TaskNotificationMessage):
+            if self._tasks.pop(message.task_id, None) is not None:
+                await broadcast_background_tasks(self._surface, self._task_list())
+            return True
+        return False
+
+    def _task_list(self) -> list[dict[str, str]]:
+        return [
+            {"task_id": task_id, "description": description}
+            for task_id, description in self._tasks.items()
+        ]
+
+    async def _run_background_turn(self, client: ClaudeSDKClient, first: Any) -> None:
+        """Relay an agent-initiated turn — one the CLI ran on its own after a background
+        task finished — as its own background-marked entry (no user bubble). ``first`` is
+        the message already pulled off the stream; the rest of the turn is drained via
+        receive_response() to its ResultMessage. The thinking flag brackets it like any
+        turn so the spinner reflects the agent working."""
+        await broadcast_thinking(self._surface, True)
+        self._turn_active = True
+        self._interrupting = False
+        try:
+            await self._relay_background(first)
+            if isinstance(first, ResultMessage):
+                return  # a lone terminal — nothing further to drain
+            response = client.receive_response()
+            async for message in response:
+                if self._interrupting:
+                    await self._drain_interrupted(response)
+                    return
+                await self._relay_background(message)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.warning("background turn failed (surface=%s)", self._surface, exc_info=True)
+        finally:
+            self._turn_active = False
+            await broadcast_thinking(self._surface, False)
+
+    async def _relay_background(self, message: Any) -> None:
+        """Handle one message of a background turn: task notifications update the
+        indicator; a ResultMessage carries session-id/usage bookkeeping; everything else
+        is relayed to the feed marked as background."""
+        if await self._track_task_message(message):
+            return
+        if isinstance(message, ResultMessage):
+            await self._remember_sdk_session(message.session_id)
+            out, inp = token_usage.usage_tokens(message.usage)
+            await self._record_usage("background", out, inp)
+        await relay_message_activity(self._surface, message, background=True)
 
     async def _run_turn(self, client: ClaudeSDKClient, turn: ChatTurn) -> None:
         """Run one user turn, retrying transient API failures with exponential
@@ -323,6 +503,10 @@ class AgentSession:
             if self._interrupting:
                 await self._drain_interrupted(response)
                 return relayed_content, None
+            # A background task launched mid-turn (run_in_background) reports its
+            # lifecycle inline; track it for the indicator, don't relay it to the feed.
+            if await self._track_task_message(message):
+                continue
             if (
                 isinstance(message, ResultMessage)
                 and message.is_error
@@ -410,6 +594,24 @@ class AgentSession:
             await record_activity(self._surface, "result", "stopped")
         except Exception:
             log.warning("interrupt failed (surface=%s)", self._surface, exc_info=True)
+
+    async def stop_task(self, task_id: str) -> None:
+        """Stop a running background task by id. The SDK emits a task_notification with
+        status 'stopped' afterward, which clears it from the indicator via the normal
+        stream path. A no-op when the client is gone or the id isn't tracked (a stale
+        Stop from the browser is harmless)."""
+        client = self._client
+        if client is None or task_id not in self._tasks:
+            return
+        try:
+            await client.stop_task(task_id)
+        except Exception:
+            log.warning(
+                "stop_task failed (surface=%s, task=%s)",
+                self._surface,
+                task_id,
+                exc_info=True,
+            )
 
     def maybe_title(self, text: str) -> None:
         """Drive titling off each text-bearing user message. Image-only turns (no text)
@@ -602,6 +804,13 @@ class AgentSessionRegistry:
         session = self._sessions.get(surface)
         if session is not None:
             await session.interrupt()
+
+    async def stop_task(self, surface: str, task_id: str) -> None:
+        """Stop a running background task on the surface. A no-op when the surface has no
+        live session."""
+        session = self._sessions.get(surface)
+        if session is not None:
+            await session.stop_task(task_id)
 
     def _discard(self, surface: str, session: AgentSession | None = None) -> None:
         # Only remove if the registered session is the one asking to be discarded, so a

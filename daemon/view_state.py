@@ -22,6 +22,10 @@ class ActivityEntry:
     text: str
     html: str | None = None
     summary: str | None = None
+    # True when this segment belongs to an agent-initiated (background) turn — one the
+    # model ran on its own after a background task finished, not a reply to a user
+    # prompt. The browser marks these so they don't read as answers to something typed.
+    background: bool = False
     # For an "ask" entry: the tool-use id (a stable handle the browser echoes back when
     # answering) and the structured AskUserQuestion `questions` payload to render as a
     # picker. `answer` is the user's chosen value, set once they pick.
@@ -42,6 +46,11 @@ class ViewState:
     # Whether an agent turn is currently in flight (drives the thinking indicator);
     # snapshot-carried so a browser connecting mid-turn sees it.
     thinking: bool = False
+    # Background tasks currently running for this surface (a launched `run_in_background`
+    # shell that hasn't reported completion yet). Each entry is {"task_id", "description"}.
+    # Drives the dedicated, non-blocking background-task indicator; snapshot-carried so a
+    # browser connecting while a task runs still sees it.
+    background_tasks: list[dict[str, str]] = field(default_factory=list)
     # Running session token totals across every LLM call (turn + title + summary).
     # Seeded from the persisted token_usage rows on hydration (so they survive a daemon
     # restart) and accumulated live; snapshot-carried so a refresh keeps the count.
@@ -67,6 +76,11 @@ class ViewStore:
 
     def set_thinking(self, surface: str, active: bool) -> None:
         self.get_or_create(surface).thinking = active
+
+    def set_background_tasks(self, surface: str, tasks: list[dict[str, str]]) -> None:
+        """Replace the surface's running-background-task list (the source of truth is the
+        AgentSession's live set; this copy rides the connect snapshot)."""
+        self.get_or_create(surface).background_tasks = tasks
 
     def add_tokens(self, surface: str, output_tokens: int, input_tokens: int) -> tuple[int, int]:
         """Add one call's tokens to the running session totals; return the new totals."""
@@ -99,9 +113,17 @@ class ViewStore:
         html: str | None = None,
         ask_id: str | None = None,
         questions: list | None = None,
+        background: bool = False,
     ) -> ActivityEntry:
         activity = self.get_or_create(surface).activity
-        entry = ActivityEntry(kind=kind, text=text, html=html, ask_id=ask_id, questions=questions)
+        entry = ActivityEntry(
+            kind=kind,
+            text=text,
+            html=html,
+            ask_id=ask_id,
+            questions=questions,
+            background=background,
+        )
         activity.append(entry)
         return entry
 

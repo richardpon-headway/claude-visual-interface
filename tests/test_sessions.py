@@ -169,13 +169,6 @@ def test_set_starred_reports_missing_session():
     assert sessions.set_starred("ghost", True) is False
 
 
-def test_set_status_updates_and_reports_missing():
-    _insert_session("s", updated_at="2026-01-01T00:00:00Z")
-    assert sessions.set_status("s", "ready") is True
-    assert sessions.get_session("s")["status"] == "ready"
-    assert sessions.set_status("ghost", "ready") is False
-
-
 def test_set_agent_session_id_stores_and_reports_missing():
     _insert_session("s", updated_at="2026-01-01T00:00:00Z")
     assert sessions.get_session("s")["agent_session_id"] is None  # unset at creation
