@@ -13,6 +13,7 @@ browser over the WebSocket; the buffer rides the connect snapshot for late joine
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +44,33 @@ async def render_html_on_surface(surface: str, html: str, title: str | None = No
     await record_activity(surface, "artifact", title or "", html=html)
 
 
+def _entry_from_row(row: dict[str, Any]) -> ActivityEntry:
+    """Rebuild an ActivityEntry from a persisted `message` row. A picker row carries
+    its structured payload ({ask_id, questions}) as JSON in `data` and its chosen value
+    in `answer`, so a reloaded picker re-renders rich and, if answered, locked."""
+    ask_id: str | None = None
+    questions: list | None = None
+    raw = row.get("data")
+    if raw:
+        try:
+            payload = json.loads(raw)
+        except (ValueError, TypeError):
+            payload = {}
+        if isinstance(payload, dict):
+            ask_id = payload.get("ask_id")
+            questions = payload.get("questions")
+    return ActivityEntry(
+        kind=row["kind"],
+        text=row["text"],
+        html=row["html"],
+        summary=row["summary"],
+        message_id=row["id"],
+        ask_id=ask_id,
+        questions=questions,
+        answer=row.get("answer"),
+    )
+
+
 async def hydrate_surface(surface: str) -> None:
     """Load a surface's persisted transcript into the live store on first connect, so
     the connect snapshot replays a conversation that outlived a daemon restart. A
@@ -52,19 +80,7 @@ async def hydrate_surface(surface: str) -> None:
     if store.is_hydrated(surface):
         return
     rows = await asyncio.to_thread(messages.list_messages, surface)
-    store.load_activity(
-        surface,
-        [
-            ActivityEntry(
-                kind=row["kind"],
-                text=row["text"],
-                html=row["html"],
-                summary=row["summary"],
-                message_id=row["id"],
-            )
-            for row in rows
-        ],
-    )
+    store.load_activity(surface, [_entry_from_row(row) for row in rows])
     store.mark_hydrated(surface)
     # Rebuild the running token total from the persisted per-call rows, so the footer
     # counter is correct after a daemon restart (before any new turns accumulate).
@@ -87,11 +103,18 @@ async def record_activity(
     AskUserQuestion picker's payload; `background` marks a segment that belongs to an
     agent-initiated (background-task) turn; each is omitted from the broadcast otherwise."""
     entry = store.append_activity(surface, kind, text, html, ask_id, questions, background)
-    # Write the segment through to SQLite so the transcript survives a daemon
-    # restart; hold the row id on the entry so a later summary can target it. (The
-    # structured `questions` aren't persisted — a restarted picker falls back to text.)
+    # Write the segment through to SQLite so the transcript survives a daemon restart;
+    # hold the row id on the entry so a later summary (or a picker answer) can target it.
+    # A picker's structured payload (its tool-use id + `questions`, including each
+    # option's rich HTML preview) is persisted as JSON so a restarted picker re-renders
+    # rich instead of falling back to text.
+    data = (
+        json.dumps({"ask_id": ask_id, "questions": questions})
+        if ask_id is not None or questions is not None
+        else None
+    )
     entry.message_id = await asyncio.to_thread(
-        messages.append_message, surface, kind, text, html
+        messages.append_message, surface, kind, text, html, data
     )
     payload: dict[str, Any] = {"kind": kind, "text": text}
     if html is not None:
@@ -147,9 +170,12 @@ async def broadcast_title(surface: str, title: str) -> None:
 
 async def broadcast_answer(surface: str, ask_id: str, answer: str) -> None:
     """Record a picker's chosen value on its `ask` entry and push it to subscribers so
-    the picker locks to the answered state live. Stored on the ViewState (like the
-    prompt summary) so it rides the connect snapshot for a browser that reloads."""
-    store.set_answer(surface, ask_id, answer)
+    the picker locks to the answered state live. Held on the ViewState (so it rides the
+    connect snapshot for a browser that reloads) and written through to the picker's
+    message row (so an answered picker re-renders locked after a daemon restart)."""
+    entry = store.set_answer(surface, ask_id, answer)
+    if entry is not None and entry.message_id is not None:
+        await asyncio.to_thread(messages.set_message_answer, entry.message_id, answer)
     await hub.broadcast(
         surface,
         {"type": "answer", "surface": surface, "payload": {"id": ask_id, "answer": answer}},
@@ -243,12 +269,27 @@ _RENDER_HTML_GUIDANCE = (
     "telling the user, an amber left-rule marks a question you're asking."
 )
 
+# The picker contract: a multiple-choice decision goes through AskUserQuestion, and
+# each option may carry a rich HTML preview rendered inline beside a Select button — so
+# the options appear once, in the picker, never also as a render_html page or a text list.
+_ASK_PICKER_GUIDANCE = (
+    "When you need the user to choose between options, use the AskUserQuestion tool "
+    "rather than listing the choices in prose. Each option may carry a rich HTML "
+    "`preview`: a self-contained HTML/CSS/SVG fragment (same rules as render_html — no "
+    "JavaScript, no external/CDN resources, no CSS zoom, authored for the dark surface) "
+    "that renders inline in the picker beside a Select button the user clicks. Put an "
+    "option's full detail in its preview and lead the preview with the option's label so "
+    "the card's heading matches the choice. Do NOT also render the same options with "
+    "render_html or repeat them as a text list — the picker is the single place the "
+    "options appear."
+)
+
 # The framing for a conversational session — the system prompt every chat agent runs.
 CVI_CHAT_SYSTEM_PROMPT = (
     "You are a Claude session with a visual surface: a single conversation the user "
     "reads top to bottom, where your answers and rendered HTML pages appear inline. "
-    f"{_RENDER_HTML_GUIDANCE} You can read and edit files and run commands, just like "
-    "any Claude session."
+    f"{_RENDER_HTML_GUIDANCE} {_ASK_PICKER_GUIDANCE} You can read and edit files and run "
+    "commands, just like any Claude session."
 )
 
 

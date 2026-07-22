@@ -2,6 +2,7 @@
 plus the transient broadcast helpers (background tasks / title / thinking / prompt
 summary)."""
 
+import json
 from typing import Any
 
 import pytest
@@ -174,6 +175,48 @@ async def test_broadcast_answer_records_the_choice_and_broadcasts():
         "surface": surface,
         "payload": {"id": "a1", "answer": "Chosen"},
     } in ws.received
+
+
+async def test_record_activity_persists_the_ask_payload():
+    # A picker's tool-use id + questions (incl. each option's rich preview) are written
+    # through as JSON so a restarted picker re-renders rich instead of falling to text.
+    surface = "vc-ask-persist"
+    questions = [{"question": "Which?", "options": [{"label": "A", "preview": "<h3>A</h3>"}]}]
+    await record_activity(surface, "ask", "pick", ask_id="a1", questions=questions)
+
+    row = messages.list_messages(surface)[0]
+    assert json.loads(row["data"]) == {"ask_id": "a1", "questions": questions}
+
+
+async def test_broadcast_answer_persists_the_choice_to_the_row():
+    # The chosen value is written to the picker's row so an answered picker re-renders
+    # locked after a daemon restart.
+    surface = "vc-answer-persist"
+    await record_activity(surface, "ask", "pick", ask_id="a1", questions=[])
+    await broadcast_answer(surface, "a1", "Chosen")
+
+    assert messages.list_messages(surface)[0]["answer"] == "Chosen"
+
+
+async def test_hydrate_restores_the_ask_payload_and_answer():
+    # Simulate a prior run: an ask row with its JSON payload and a recorded answer.
+    surface = "vc-ask-hydrate"
+    questions = [{"question": "Which?", "options": [{"label": "A", "preview": "<h3>A</h3>"}]}]
+    mid = messages.append_message(
+        surface, "ask", "pick", data=json.dumps({"ask_id": "a1", "questions": questions})
+    )
+    messages.set_message_answer(mid, "Chosen")
+
+    await hydrate_surface(surface)
+
+    entry = store.get_or_create(surface).activity[-1]
+    assert entry.ask_id == "a1"
+    assert entry.questions == questions
+    assert entry.answer == "Chosen"
+    # Restored payload + answer ride the connect snapshot for a reloading browser.
+    snap_entry = store.snapshot(surface)["activity"][-1]
+    assert snap_entry["questions"] == questions
+    assert snap_entry["answer"] == "Chosen"
 
 
 async def test_broadcast_tokens_accumulates_and_broadcasts_the_running_total():
