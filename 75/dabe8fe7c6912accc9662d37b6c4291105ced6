@@ -1,0 +1,60 @@
+tests/test_view_control.py
+  s_79629d3d0793fb::t_f6fd5f9fc6d922 2
+daemon/main.py
+  s_79629d3d0793fb::t_154fb4570a7a4f 254-255
+  s_79629d3d0793fb::t_8642234596f8ae 269
+daemon/agent_session.py
+  s_79629d3d0793fb::t_3084c185435ea8 389
+  s_79629d3d0793fb::t_97082a6c5f43ad 250-262
+  s_79629d3d0793fb::t_dac74b081688ce 194-196,198-202
+  s_79629d3d0793fb::t_80f24be951f92a 578,580-582,585-586
+  s_79629d3d0793fb::t_3bc6dc4b4395e2 363-367,370
+  s_79629d3d0793fb::t_3b6c94adad447c 298-306
+  s_79629d3d0793fb::t_7c9e68e91624af 405-410,419
+  s_79629d3d0793fb::t_93ca4b29beb24b 331-333
+  s_5ee5cc4c49393f::t_0a2936620c5719 579
+  s_79629d3d0793fb::t_43929abe96452b 352-361,368,373-383
+web/src/viewState.ts
+  s_79629d3d0793fb::t_a5ab542402917c 33
+web/src/useSurfaceSocket.ts
+  s_79629d3d0793fb::t_4c01ef53a4fbff 40
+  s_79629d3d0793fb::t_0da7e7af629d89 158
+tests/test_agent_session.py
+  s_79629d3d0793fb::t_9eb0e93ffe6f05 893-896,903-907,909-910,912-913
+  s_79629d3d0793fb::t_8826df539f3d56 950,960-963,973
+  s_79629d3d0793fb::t_cf2ea331dfe5c1 939
+  s_79629d3d0793fb::t_e38eefc400d6db 951-952,956-957,959,964,967-972,974-985,987-1006,1008-1014
+  s_79629d3d0793fb::t_527842f49202ff 986
+  s_79629d3d0793fb::t_9bdbf395712383 1007
+  s_79629d3d0793fb::t_aa64cd985a17a1 911
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "75dabe8fe7c6912accc9662d37b6c4291105ced6",
+  "prompts": {},
+  "sessions": {
+    "s_5ee5cc4c49393f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "06770774-fe2a-4b6d-9171-6e2415cfceb3",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    },
+    "s_79629d3d0793fb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "42c481ee-01ae-4821-a024-5d3e99dee9b0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
