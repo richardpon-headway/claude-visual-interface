@@ -146,17 +146,6 @@ async def broadcast_prompt_summary(surface: str, index: int, summary: str) -> No
     )
 
 
-async def broadcast_background_tasks(surface: str, tasks: list[dict[str, str]]) -> None:
-    """Push the surface's current set of running background tasks to subscribers so the
-    dedicated background-task indicator updates live. Held on the ViewState (like the
-    thinking flag) so it rides the connect snapshot for a browser that joins mid-task."""
-    store.set_background_tasks(surface, tasks)
-    await hub.broadcast(
-        surface,
-        {"type": "background_tasks", "surface": surface, "payload": {"tasks": tasks}},
-    )
-
-
 async def broadcast_title(surface: str, title: str) -> None:
     """Push a generated session title to subscribers so the surface header updates
     live. Pure-broadcast: the title is persisted on the session row and seeded into a

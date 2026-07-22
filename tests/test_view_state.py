@@ -7,7 +7,6 @@ def test_snapshot_is_json_shaped_and_starts_empty():
         "surface": "fresh",
         "activity": [],
         "thinking": False,
-        "background_tasks": [],
         "session_output_tokens": 0,
         "session_input_tokens": 0,
     }

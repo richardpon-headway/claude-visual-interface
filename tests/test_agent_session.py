@@ -80,7 +80,6 @@ class FakeClient:
     def __init__(self, options=None):
         self.options = options
         self.queried: list[str] = []
-        self.stopped_tasks: list[str] = []
         # Messages the CLI pushes between turns (agent-initiated turns, task
         # notifications). Empty + never-fed → receive_messages blocks forever.
         self.bg_stream: asyncio.Queue = asyncio.Queue()
@@ -118,9 +117,6 @@ class FakeClient:
         # the read is cancelled because a user turn won the race).
         while True:
             yield await self.bg_stream.get()
-
-    async def stop_task(self, task_id):
-        self.stopped_tasks.append(task_id)
 
 
 async def _wait_until(predicate, limit=1.0):
@@ -894,39 +890,27 @@ async def test_background_completion_precedes_the_next_prompts_reply(monkeypatch
     await reg.shutdown_all()
 
 
-async def test_background_tasks_are_tracked_and_broadcast(monkeypatch):
-    # task_started adds to the indicator (broadcast + snapshot); task_notification clears
-    # it. The notifications themselves are never relayed as transcript entries.
+async def test_background_tasks_are_tracked_internally_and_not_relayed(monkeypatch):
+    # task_started adds to the session's internal running set; task_notification clears it.
+    # The set is not surfaced to the browser, and the notifications themselves are never
+    # relayed as transcript entries.
     _seed_session(SESSION, session_type="chat")
     store.get_or_create(SESSION).activity.clear()
     monkeypatch.setattr(
         agent_session, "ClaudeSDKClient", lambda options=None: SharedIdleClient(options)
     )
     reg = AgentSessionRegistry()
-    ws = FakeWS()
-    hub.register(SESSION, ws)
-    try:
-        await reg.send(SESSION, "kick off a build")
-        await _wait_until(
-            lambda: bool(FakeClient.instances)
-            and FakeClient.instances[0].queried == ["kick off a build"]
-        )
+    await reg.send(SESSION, "kick off a build")
+    await _wait_until(
+        lambda: bool(FakeClient.instances)
+        and FakeClient.instances[0].queried == ["kick off a build"]
+    )
 
-        FakeClient.instances[0].push(_started("t1", "pnpm install"))
-        await _wait_until(
-            lambda: store.get_or_create(SESSION).background_tasks
-            == [{"task_id": "t1", "description": "pnpm install"}]
-        )
-        assert {
-            "type": "background_tasks",
-            "surface": SESSION,
-            "payload": {"tasks": [{"task_id": "t1", "description": "pnpm install"}]},
-        } in ws.received
+    FakeClient.instances[0].push(_started("t1", "pnpm install"))
+    await _wait_until(lambda: reg._sessions[SESSION]._tasks == {"t1": "pnpm install"})
 
-        FakeClient.instances[0].push(_finished("t1"))
-        await _wait_until(lambda: store.get_or_create(SESSION).background_tasks == [])
-    finally:
-        hub.unregister(SESSION, ws)
+    FakeClient.instances[0].push(_finished("t1"))
+    await _wait_until(lambda: reg._sessions[SESSION]._tasks == {})
 
     # The task lifecycle produced no transcript rows.
     kinds = [e.kind for e in store.get_or_create(SESSION).activity]
@@ -952,7 +936,7 @@ async def test_outstanding_task_keeps_the_session_alive_past_idle(monkeypatch):
         and FakeClient.instances[0].queried == ["kick off a build"]
     )
     FakeClient.instances[0].push(_started("t1"))
-    await _wait_until(lambda: store.get_or_create(SESSION).background_tasks != [])
+    await _wait_until(lambda: reg._sessions[SESSION]._tasks != {})
 
     # Well past the idle window, but the outstanding task keeps it alive.
     await asyncio.sleep(0.15)
@@ -963,33 +947,71 @@ async def test_outstanding_task_keeps_the_session_alive_past_idle(monkeypatch):
     await _wait_until(lambda: reg.active_surfaces() == [])
 
 
-async def test_stop_task_cancels_a_tracked_task(monkeypatch):
-    # A tracked task can be stopped via the SDK; an unknown id is a harmless no-op.
-    _seed_session(SESSION, session_type="chat")
-    store.get_or_create(SESSION).activity.clear()
+async def _idle_session(monkeypatch):
+    """A session with its serve loop cancelled, so a test can drive _recv_one /
+    _await_work / _drain_interrupted directly against a hand-fed client."""
     monkeypatch.setattr(
         agent_session, "ClaudeSDKClient", lambda options=None: SharedIdleClient(options)
     )
-    reg = AgentSessionRegistry()
-
-    await reg.send(SESSION, "kick off a build")
-    await _wait_until(
-        lambda: bool(FakeClient.instances)
-        and FakeClient.instances[0].queried == ["kick off a build"]
+    session = agent_session.AgentSession(
+        AgentSessionRegistry(), SESSION, system_prompt="sys"
     )
-    FakeClient.instances[0].push(_started("t1"))
-    await _wait_until(lambda: store.get_or_create(SESSION).background_tasks != [])
+    session._task.cancel()  # never let the auto-started serve loop run
+    try:
+        await session._task
+    except asyncio.CancelledError:
+        pass
+    return session
 
-    await reg.stop_task(SESSION, "ghost-task")  # unknown → no SDK call
-    assert FakeClient.instances[0].stopped_tasks == []
 
-    await reg.stop_task(SESSION, "t1")
-    assert FakeClient.instances[0].stopped_tasks == ["t1"]
-    # Cleared optimistically: the indicator empties on stop without waiting for the SDK's
-    # terminal notification, so a task whose 'stopped' message never arrives can't linger
-    # as a phantom the button can't remove.
-    await _wait_until(lambda: store.get_or_create(SESSION).background_tasks == [])
-    await reg.shutdown_all()
+async def test_idle_read_stashes_a_pulled_message_when_cancelled(monkeypatch):
+    # If the between-turns idle read loses the race to a user turn *after* it has already
+    # pulled a message off the shared stream, that message must not be dropped: _recv_one
+    # stashes it in _held_back, and the next _await_work consumes it first. So a background
+    # completion the user "typed over" still clears the task set.
+    _seed_session(SESSION, session_type="chat")
+    session = await _idle_session(monkeypatch)
+    session._tasks["t1"] = "pnpm install"
+
+    class GatedClient:
+        def __init__(self):
+            self.release = asyncio.Event()
+
+        async def receive_messages(self):
+            await self.release.wait()  # block the pull until the test releases it
+            yield _finished("t1")
+
+    client = GatedClient()
+    recv = asyncio.create_task(session._recv_one(client))
+    await asyncio.sleep(0.02)  # let the pull start and park on the gate
+    client.release.set()  # a message is now in flight to this pull...
+    recv.cancel()  # ...and the user turn wins the race, cancelling the read
+    try:
+        await recv
+    except asyncio.CancelledError:
+        pass
+
+    # The in-flight message wasn't lost — it's held back for the next pass.
+    assert session._held_back is not None
+    # And _await_work consumes it first, clearing the task (no dangling entry).
+    result = await session._await_work(client)
+    assert result is agent_session._HANDLED
+    assert session._tasks == {}
+    assert session._held_back is None
+
+
+async def test_interrupt_drain_still_clears_a_completed_task(monkeypatch):
+    # A background-task completion that lands in the interrupt drain must still clear the
+    # running set — otherwise the task would linger and the session would never close.
+    _seed_session(SESSION, session_type="chat")
+    session = await _idle_session(monkeypatch)
+    session._tasks["t1"] = "pnpm install"
+
+    async def response():
+        yield _finished("t1")
+
+    await session._drain_interrupted(response())
+    assert session._tasks == {}
 
 
 async def test_chat_session_uses_the_general_prompt_with_its_surface_id():

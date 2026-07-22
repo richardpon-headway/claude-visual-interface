@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
 import { ActivityFeed } from "./ActivityFeed";
-import { BackgroundTasks } from "./BackgroundTasks";
 import { ChatInput } from "./ChatInput";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { ThinkingIndicator } from "./ThinkingIndicator";
@@ -85,7 +84,6 @@ export function Surface({ surface }: { surface: string }) {
     sendAnswer,
     connection,
     setStarred,
-    stopTask,
   ] = useSurfaceSocket(surface);
   const busy = view.thinking;
   const prompts = promptLandmarks(view.activity);
@@ -224,7 +222,6 @@ export function Surface({ surface }: { surface: string }) {
         <div className="mx-auto max-w-3xl">
           <div className="flex items-center gap-3 px-2 py-1.5 text-xs text-zinc-400">
             {busy ? <ThinkingIndicator active={view.thinking} /> : null}
-            <BackgroundTasks tasks={view.background_tasks} onStop={stopTask} />
             {connection !== "open" ? (
               <span className="flex items-center gap-1.5 text-amber-400/90">
                 <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-500" />

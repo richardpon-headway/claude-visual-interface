@@ -13,8 +13,6 @@ function surfaceUrl(surface: string): string {
 export type ImageAttachment = { media_type: string; data: string };
 export type SendMessage = (text: string, images?: ImageAttachment[]) => void;
 export type StopAgent = () => void;
-// Cancel one running background task by its id.
-export type StopTask = (taskId: string) => void;
 // Submit an AskUserQuestion picker selection: the entry's ask id + the chosen value(s).
 export type SendAnswer = (askId: string, answer: string) => void;
 // Optimistically set the local starred flag (after POSTing star/unstar). No live
@@ -39,7 +37,7 @@ const RECONNECT_MAX_MS = 5000;
  */
 export function useSurfaceSocket(
   surface: string,
-): [SurfaceState, SendMessage, StopAgent, SendAnswer, Connection, SetStarred, StopTask] {
+): [SurfaceState, SendMessage, StopAgent, SendAnswer, Connection, SetStarred] {
   const [state, setState] = useState<SurfaceState>(() => emptySurface(surface));
   const [connection, setConnection] = useState<Connection>("connecting");
   const wsRef = useRef<WebSocket | null>(null);
@@ -152,19 +150,10 @@ export function useSurfaceSocket(
     }
   }, []);
 
-  const stopTask = useCallback<StopTask>((taskId) => {
-    // Best-effort, not queued (like `stop`): cancelling a task only makes sense against
-    // a live socket, and the task set resyncs from the connect snapshot on reconnect.
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "stop_task", payload: { task_id: taskId } }));
-    }
-  }, []);
-
   const setStarred = useCallback<SetStarred>((next) => {
     starredTouchedRef.current = true;
     setState((prev) => ({ ...prev, starred: next }));
   }, []);
 
-  return [state, sendMessage, stop, sendAnswer, connection, setStarred, stopTask];
+  return [state, sendMessage, stop, sendAnswer, connection, setStarred];
 }
