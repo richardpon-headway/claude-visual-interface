@@ -251,9 +251,8 @@ async def _stop_surface(surface: str) -> None:
 
 async def _handle_inbound(surface: str, raw: str) -> None:
     """Apply a browser→daemon frame. `message` routes a chat turn to the surface's
-    live agent session; `stop` aborts the agent's current work on the surface;
-    `stop_task` cancels one running background task by id. Anything malformed or unknown
-    is ignored (the socket stays open)."""
+    live agent session; `stop` aborts the agent's current work on the surface. Anything
+    malformed or unknown is ignored (the socket stays open)."""
     try:
         msg = json.loads(raw)
     except (ValueError, TypeError):
@@ -267,11 +266,7 @@ async def _handle_inbound(surface: str, raw: str) -> None:
     payload = msg.get("payload")
     if not isinstance(payload, dict):
         return
-    if msg_type == "stop_task":
-        task_id = payload.get("task_id")
-        if isinstance(task_id, str) and task_id:
-            await agents.stop_task(surface, task_id)
-    elif msg_type == "message":
+    if msg_type == "message":
         raw_text = payload.get("text")
         text = raw_text.strip() if isinstance(raw_text, str) else ""
         # Prefer the new `images` list; fall back to a legacy single `image` key so an

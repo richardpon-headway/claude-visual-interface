@@ -1,6 +1,5 @@
 """The render primitives append a conversation segment AND push it over the hub,
-plus the transient broadcast helpers (background tasks / title / thinking / prompt
-summary)."""
+plus the transient broadcast helpers (title / thinking / prompt summary)."""
 
 import json
 from typing import Any
@@ -12,7 +11,6 @@ from daemon.db import apply_migrations_sync
 from daemon.hub import hub
 from daemon.mcp_server import (
     broadcast_answer,
-    broadcast_background_tasks,
     broadcast_prompt_summary,
     broadcast_thinking,
     broadcast_title,
@@ -234,23 +232,6 @@ async def test_broadcast_tokens_accumulates_and_broadcasts_the_running_total():
         {"type": "tokens", "surface": surface, "payload": {"output": 30, "input": 500}},
         {"type": "tokens", "surface": surface, "payload": {"output": 35, "input": 540}},
     ]
-
-
-async def test_broadcast_background_tasks_broadcasts_and_stores():
-    surface = "vc-bg"
-    ws = FakeWS()
-    hub.register(surface, ws)
-    tasks = [{"task_id": "t1", "description": "pnpm install"}]
-    try:
-        await broadcast_background_tasks(surface, tasks)
-    finally:
-        hub.unregister(surface, ws)
-
-    assert ws.received == [
-        {"type": "background_tasks", "surface": surface, "payload": {"tasks": tasks}}
-    ]
-    # Held on the ViewState so it rides the connect snapshot for a late joiner.
-    assert store.snapshot(surface)["background_tasks"] == tasks
 
 
 async def test_broadcast_title_broadcasts_without_storing():

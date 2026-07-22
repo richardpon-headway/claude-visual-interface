@@ -37,7 +37,6 @@ from daemon.config import get_working_dir
 from daemon.mcp_server import (
     CVI_CHAT_SYSTEM_PROMPT,
     broadcast_answer,
-    broadcast_background_tasks,
     broadcast_prompt_summary,
     broadcast_thinking,
     broadcast_title,
@@ -192,9 +191,15 @@ class AgentSession:
         self._interrupting = False
         # Background tasks the CLI has told us are running (task_id -> description). A
         # launched `run_in_background` shell lands here on its task_started notification
-        # and is removed on task_notification (completed/failed/stopped). Drives the
-        # background-task indicator and keeps the session alive while any is outstanding.
+        # and is removed on task_notification (completed/failed/stopped). Not surfaced to
+        # the browser; tracked only to keep the session alive (idle-suppression) while any
+        # is outstanding, so a still-running task isn't killed by an idle-close.
         self._tasks: dict[str, str] = {}
+        # A message an idle stream read had already pulled off the shared stream when it
+        # lost the race to a user turn and was cancelled. Stashed here (rather than
+        # dropped) so the next _await_work consumes it first — a completion signal or a
+        # background reply is never lost just because the user typed at the same instant.
+        self._held_back: Any | None = None
         # A user turn dequeued during the same idle wait that also surfaced a background
         # message: the background turn runs first, this one runs next (not lost).
         self._deferred: ChatTurn | None = None
@@ -242,6 +247,19 @@ class AgentSession:
             log.warning("agent session failed (surface=%s)", self._surface, exc_info=True)
             await record_activity(self._surface, "result", "session error")
         finally:
+            # A session that ends (stream close, error, or shutdown) while it still
+            # believes a background task is running means a completion notification was
+            # never observed. It's invisible to the user (no indicator), but this warning
+            # makes a leaked/zombie session detectable at daemon shutdown/restart — pair
+            # with `ps aux | grep '[c]laude'` for a live count. (A *pure* zombie never
+            # reaches here, since an outstanding task suppresses idle-close; catching it
+            # in real time would need a bounded-idle timer, deferred by design.)
+            if self._tasks:
+                log.warning(
+                    "agent session ending with %d background task(s) still outstanding",
+                    len(self._tasks),
+                    extra={"surface": self._surface, "outstanding": len(self._tasks)},
+                )
             self._registry._discard(self._surface, self)
 
     async def _serve(self, resume: str | None) -> None:
@@ -277,6 +295,15 @@ class AgentSession:
         window. The idle timeout is suppressed while a background task is outstanding —
         we're legitimately waiting on its progress/completion, which arrives on the
         stream."""
+        # A message a prior idle read pulled off the stream but couldn't return (a user
+        # turn won the race and cancelled it) is consumed first, before any new read, so
+        # it's never lost and stays ahead of anything newer.
+        if self._held_back is not None:
+            message, self._held_back = self._held_back, None
+            if message is _STREAM_END:
+                return _IDLE_TIMEOUT
+            await self._handle_idle_message(client, message)
+            return _HANDLED
         get_task = asyncio.create_task(self._queue.get())
         recv_task = asyncio.create_task(self._recv_one(client))
         timeout = None if self._tasks else AGENT_IDLE_SECONDS
@@ -301,7 +328,9 @@ class AgentSession:
             await self._handle_idle_message(client, message)
             return _HANDLED
         # A user turn is ready and no stream message is pending — cancel the idle read
-        # (safe: pending means nothing was pulled off the shared stream) and run it.
+        # and run it. Cancelling is loss-proof: if the read had, in the same instant,
+        # pulled a message off the shared stream, _recv_one stashes it in _held_back for
+        # the next pass rather than dropping it.
         turn = get_task.result()
         await self._cancel(recv_task)
         return turn
@@ -320,20 +349,44 @@ class AgentSession:
 
     async def _recv_one(self, client: ClaudeSDKClient) -> Any:
         """Pull exactly one message off the SDK's shared stream, or ``_STREAM_END`` if it
-        has closed. A fresh one-shot iterator per call so that, when this is cancelled
-        (a user turn won the idle race), nothing is left half-read on the shared stream
-        for the next turn's ``receive_response()`` to trip over."""
+        has closed. A fresh one-shot iterator per call so nothing is left half-read on the
+        shared stream for the next turn's ``receive_response()`` to trip over.
+
+        The pull runs as its own task so a lost idle race (a user turn arrived, so this
+        read is cancelled) can't silently drop a message: the underlying stream hands an
+        item to a waiting receiver *before* the receiver's await resumes, so a message may
+        already belong to this pull even though the await was interrupted. On cancel we
+        let the pull settle one cycle — if it produced a message, it's stashed in
+        ``_held_back`` for the next reader; otherwise the pull is stopped so nothing
+        lingers half-read on the shared stream."""
         agen = client.receive_messages()
+        # Run the pull as its own task and await it *shielded*: cancelling this read
+        # (a user turn won the race) must not cancel the pull — asyncio otherwise
+        # propagates cancellation to the awaited future, which would discard a message
+        # anyio has already handed off. Shielded, the pull runs to completion and its
+        # message is stashed instead of lost.
+        pull = asyncio.ensure_future(agen.__anext__())
         try:
-            return await agen.__anext__()
+            return await asyncio.shield(pull)
         except StopAsyncIteration:
             return _STREAM_END
+        except asyncio.CancelledError:
+            await asyncio.sleep(0)  # let a just-handed-off item surface
+            if pull.done() and not pull.cancelled() and pull.exception() is None:
+                self._held_back = pull.result()
+            else:
+                pull.cancel()
+                try:
+                    await pull
+                except (asyncio.CancelledError, Exception):
+                    pass
+            raise
         finally:
             await agen.aclose()
 
     async def _handle_idle_message(self, client: ClaudeSDKClient, message: Any) -> None:
         """Dispatch a message that arrived while no user turn was running. A task
-        notification just updates the background-task indicator. An AssistantMessage is
+        notification just updates the internal running-task set. An AssistantMessage is
         the start of an agent-initiated turn (the model reacting to a finished task),
         relayed as its own background-marked turn. A lone terminal result is bookkept
         only. Any other stray system frame (e.g. session_state_changed) is ignored — it
@@ -349,29 +402,23 @@ class AgentSession:
             await self._record_usage("background", out, inp)
 
     async def _track_task_message(self, message: Any) -> bool:
-        """If ``message`` is a background-task lifecycle notification, update the running
-        set (and broadcast on any change), and report True so callers skip relaying it to
-        the transcript. task_started adds; task_notification (completed/failed/stopped)
-        removes; task_progress just keeps the entry present. Returns False otherwise."""
+        """If ``message`` is a background-task lifecycle notification, update the internal
+        running set and report True so callers skip relaying it to the transcript.
+        task_started adds; task_notification (completed/failed/stopped) removes;
+        task_progress just keeps the entry present. The set isn't surfaced to the browser
+        — it exists only to keep the session alive while a task is outstanding (see
+        ``_await_work``'s idle-suppression). Returns False for any other message."""
         if isinstance(message, TaskStartedMessage):
             self._tasks[message.task_id] = message.description
-            await broadcast_background_tasks(self._surface, self._task_list())
             return True
         if isinstance(message, TaskProgressMessage):
             # No set change; ensure it's tracked in case task_started was missed.
             self._tasks.setdefault(message.task_id, message.description)
             return True
         if isinstance(message, TaskNotificationMessage):
-            if self._tasks.pop(message.task_id, None) is not None:
-                await broadcast_background_tasks(self._surface, self._task_list())
+            self._tasks.pop(message.task_id, None)
             return True
         return False
-
-    def _task_list(self) -> list[dict[str, str]]:
-        return [
-            {"task_id": task_id, "description": description}
-            for task_id, description in self._tasks.items()
-        ]
 
     async def _run_background_turn(self, client: ClaudeSDKClient, first: Any) -> None:
         """Relay an agent-initiated turn — one the CLI ran on its own after a background
@@ -528,11 +575,15 @@ class AgentSession:
         can't leak into the next turn's shared stream. Bounded by
         _INTERRUPT_DRAIN_SECONDS (mirroring the idle-read wait_for) so a terminal that
         never arrives can't wedge the session — the next turn opening on a possibly
-        dirty stream is strictly better than a permanently stuck one (logged, P4)."""
+        dirty stream is strictly better than a permanently stuck one (logged, P4).
+
+        Drained messages still run through task tracking: a background-task completion
+        landing in the drain must clear the running set, or the task would linger and the
+        session would never idle-close."""
 
         async def _drain() -> None:
-            async for _ in response:
-                pass
+            async for message in response:
+                await self._track_task_message(message)
 
         try:
             await asyncio.wait_for(_drain(), _INTERRUPT_DRAIN_SECONDS)
@@ -594,32 +645,6 @@ class AgentSession:
             await record_activity(self._surface, "result", "stopped")
         except Exception:
             log.warning("interrupt failed (surface=%s)", self._surface, exc_info=True)
-
-    async def stop_task(self, task_id: str) -> None:
-        """Stop a running background task by id. A no-op when the client is gone or the id
-        isn't tracked (a stale Stop from the browser is harmless).
-
-        We drop the id from the running set and rebroadcast *immediately*, rather than
-        waiting for the SDK's terminal task_notification to clear it. The notification is
-        the normal clear path, but it isn't guaranteed: if the underlying work already
-        finished or died without a clean 'stopped'/'completed' message reaching us, the
-        entry would otherwise linger forever as a phantom the stop button can't remove.
-        Removing optimistically makes the control authoritative; the later notification
-        (if any) just pops an already-absent id — harmless."""
-        client = self._client
-        if client is None or task_id not in self._tasks:
-            return
-        if self._tasks.pop(task_id, None) is not None:
-            await broadcast_background_tasks(self._surface, self._task_list())
-        try:
-            await client.stop_task(task_id)
-        except Exception:
-            log.warning(
-                "stop_task failed (surface=%s, task=%s)",
-                self._surface,
-                task_id,
-                exc_info=True,
-            )
 
     def maybe_title(self, text: str) -> None:
         """Drive titling off each text-bearing user message. Image-only turns (no text)
@@ -812,13 +837,6 @@ class AgentSessionRegistry:
         session = self._sessions.get(surface)
         if session is not None:
             await session.interrupt()
-
-    async def stop_task(self, surface: str, task_id: str) -> None:
-        """Stop a running background task on the surface. A no-op when the surface has no
-        live session."""
-        session = self._sessions.get(surface)
-        if session is not None:
-            await session.stop_task(task_id)
 
     def _discard(self, surface: str, session: AgentSession | None = None) -> None:
         # Only remove if the registered session is the one asking to be discarded, so a
