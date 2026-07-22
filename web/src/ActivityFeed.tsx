@@ -46,11 +46,15 @@ function withCviDefaults(html: string): string {
     : style + html;
 }
 
-function ArtifactBlock({ title, html }: { title: string; html: string }) {
+// Size a sandboxed iframe to its content. The frame stays script-free: allow-same-origin
+// (NOT allow-scripts) lets the parent read the content's size and grow the frame to fit,
+// including after late image/font reflow. `wide` reports whether the content overflowed
+// the narrow (text-column) width and wants more room — artifacts act on it; inline
+// previews (fixed to their card's width) ignore it.
+function useIframeAutoSize(html: string) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState<number>();
   const [wide, setWide] = useState(false);
-  const doc = useMemo(() => withCviDefaults(html), [html]);
 
   useEffect(() => {
     const iframe = ref.current;
@@ -58,7 +62,7 @@ function ArtifactBlock({ title, html }: { title: string; html: string }) {
     setWide(false); // re-decide width for new content (measured at the narrow width)
     let observer: ResizeObserver | undefined;
     // Measure the RENDERED height. getBoundingClientRect() reflects CSS `zoom`
-    // (artifacts scale themselves to 1.25 to match the app's UI scale); scrollHeight
+    // (frames scale themselves to 1.25 to match the app's UI scale); scrollHeight
     // does not, so using it alone under-sizes the frame and the content scrolls
     // internally. Take the max so we never under-size regardless of zoom.
     const measureHeight = (doc: Document) => {
@@ -96,6 +100,20 @@ function ArtifactBlock({ title, html }: { title: string; html: string }) {
     };
   }, [html]);
 
+  return { ref, height, wide };
+}
+
+// A model-authored HTML page, rendered inline as a sandboxed iframe sized to its full
+// content height — always shown in full, no expand/collapse.
+//
+// Width: the frame starts at the chat-text column width (TEXT_COL) and is left-aligned
+// to that column's left edge. If the content can't fit at that width (it overflows
+// horizontally), the frame widens rightward up to WIDE_CAP — so narrow artifacts line
+// up with the surrounding text, and wide ones (big tables) get the extra room.
+function ArtifactBlock({ title, html }: { title: string; html: string }) {
+  const doc = useMemo(() => withCviDefaults(html), [html]);
+  const { ref, height, wide } = useIframeAutoSize(html);
+
   return (
     <iframe
       ref={ref}
@@ -112,6 +130,26 @@ function ArtifactBlock({ title, html }: { title: string; html: string }) {
       sandbox="allow-same-origin"
       srcDoc={doc}
       title={title || "artifact"}
+    />
+  );
+}
+
+// An AskUserQuestion option's rich `preview`, rendered inline in the picker as a
+// sandboxed, script-free iframe that fills its card's width and grows to its content
+// height. Same dark-surface + scale defaults as an artifact; unlike an artifact it
+// never breaks out wider than the card (the picker owns the layout).
+function OptionPreview({ html }: { html: string }) {
+  const doc = useMemo(() => withCviDefaults(html), [html]);
+  const { ref, height } = useIframeAutoSize(html);
+
+  return (
+    <iframe
+      ref={ref}
+      className="block w-full border-0 bg-transparent"
+      style={{ height: height != null ? `${height}px` : "6rem" }}
+      sandbox="allow-same-origin"
+      srcDoc={doc}
+      title="option"
     />
   );
 }
@@ -269,22 +307,66 @@ function AskPicker({
               {chosenText}
             </div>
           ) : (
-          <div className="space-y-1">
+          <div className="space-y-2">
             {q.options.map((o, oi) => {
               const isCursor =
                 active && positions[cursor]?.qi === qi && positions[cursor]?.oi === oi;
               const chosen = q.multiSelect
                 ? (picks[qi] as number[]).includes(oi)
                 : picks[qi] === oi;
+              const onSelect = () => {
+                setCursor(positions.findIndex((p) => p.qi === qi && p.oi === oi));
+                selectAt(qi, oi);
+              };
+              // Rich option: the preview renders in a sandboxed card, with a native
+              // Select button pinned to the card's bottom edge (items-end). The button —
+              // trusted app chrome, outside the sandbox — owns the click; nothing
+              // clickable lives inside the frame. The label is still what's sent as the
+              // answer (formatAnswer), so the preview should lead with it.
+              if (o.preview) {
+                return (
+                  <div
+                    key={oi}
+                    className={`flex items-end gap-3 rounded-lg border px-3 py-2 ${
+                      chosen
+                        ? "border-amber-800 bg-amber-950"
+                        : isCursor
+                          ? "border-zinc-700 bg-zinc-900"
+                          : "border-zinc-800"
+                    } ${submitted && !chosen ? "opacity-40" : ""}`}
+                  >
+                    <div className="min-w-0 flex-1 overflow-hidden">
+                      <OptionPreview html={o.preview} />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={submitted}
+                      aria-label={`Select ${o.label}`}
+                      onClick={onSelect}
+                      className={`shrink-0 rounded-md border px-3 py-1.5 text-xs font-semibold ${
+                        chosen
+                          ? "border-amber-700 bg-amber-800 text-amber-100"
+                          : "border-amber-900 bg-amber-950 text-amber-300 hover:bg-amber-900"
+                      } disabled:opacity-40`}
+                    >
+                      {q.multiSelect
+                        ? chosen
+                          ? "[x] Selected"
+                          : "Select"
+                        : chosen
+                          ? "✓ Selected"
+                          : `Select ${oi + 1}`}
+                    </button>
+                  </div>
+                );
+              }
+              // Plain option: the whole row is one button (label + optional description).
               return (
                 <button
                   key={oi}
                   type="button"
                   disabled={submitted}
-                  onClick={() => {
-                    setCursor(positions.findIndex((p) => p.qi === qi && p.oi === oi));
-                    selectAt(qi, oi);
-                  }}
+                  onClick={onSelect}
                   className={`flex w-full items-start gap-3 rounded-lg border px-3 py-2 text-left ${
                     chosen
                       ? "border-amber-800 bg-amber-950"

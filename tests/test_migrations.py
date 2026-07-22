@@ -43,6 +43,8 @@ def test_migrations_create_message_table(tmp_path):
         "text",
         "html",
         "summary",
+        "data",
+        "answer",
         "created_at",
     }
 

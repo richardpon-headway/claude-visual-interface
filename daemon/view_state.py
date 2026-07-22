@@ -96,14 +96,15 @@ class ViewStore:
         state.session_output_tokens = output_tokens
         state.session_input_tokens = input_tokens
 
-    def set_answer(self, surface: str, ask_id: str, answer: str) -> bool:
+    def set_answer(self, surface: str, ask_id: str, answer: str) -> ActivityEntry | None:
         """Record the chosen value on the matching `ask` entry so it rides the connect
-        snapshot (the picker re-renders answered after a reload). False if not found."""
+        snapshot (the picker re-renders answered after a reload). Returns the matched
+        entry (so the caller can persist by its message_id), or None if not found."""
         for entry in self.get_or_create(surface).activity:
             if entry.ask_id == ask_id:
                 entry.answer = answer
-                return True
-        return False
+                return entry
+        return None
 
     def append_activity(
         self,

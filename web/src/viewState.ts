@@ -7,7 +7,10 @@
 // `html` is the page, `text` its title).
 // One option in an AskUserQuestion question, and a question itself (mirrors the
 // AskUserQuestion tool's `input.questions` shape).
-export type AskOption = { label: string; description?: string };
+// `preview` is a self-contained HTML fragment rendered inline in the picker (in a
+// sandboxed iframe) as the option's rich body, beside its Select button. When absent,
+// the option falls back to a plain label (+ optional description) row.
+export type AskOption = { label: string; description?: string; preview?: string };
 export type AskQuestion = {
   question: string;
   header?: string;

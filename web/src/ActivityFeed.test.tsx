@@ -226,6 +226,43 @@ describe("ActivityFeed", () => {
     expect(onAnswer).not.toHaveBeenCalled();
   });
 
+  const previewAsk: ActivityEntry = {
+    kind: "ask",
+    text: "AskUserQuestion: Which fix?",
+    ask_id: "ask-p",
+    questions: [
+      {
+        question: "Which fix?",
+        header: "Fix",
+        options: [
+          { label: "Guard test", preview: "<h3>Guard test</h3><p>add a FE guard</p>" },
+          { label: "Derive", preview: "<h3>Derive</h3><p>compute on the FE</p>" },
+        ],
+      },
+    ],
+  };
+
+  it("renders an option's rich preview as a sandboxed iframe with the CVI defaults", () => {
+    const { container } = render(<ActivityFeed activity={[previewAsk]} />);
+    const iframes = container.querySelectorAll("iframe");
+    // One sandboxed preview per option, carrying the author's content + injected scale.
+    expect(iframes.length).toBe(2);
+    const srcdoc = iframes[0].getAttribute("srcdoc")!;
+    expect(srcdoc).toContain("add a FE guard");
+    expect(srcdoc).toContain("zoom:1.25");
+    // Script-free: the frame gets allow-same-origin only (never allow-scripts).
+    expect(iframes[0].getAttribute("sandbox")).toBe("allow-same-origin");
+  });
+
+  it("rich single-select: clicking Select sends the label-formatted answer", () => {
+    const onAnswer = vi.fn();
+    render(<ActivityFeed activity={[previewAsk]} onAnswer={onAnswer} />);
+    // The label lives in the preview HTML (inside the iframe) and on the button's
+    // aria-label; clicking Select still sends the clean label as the answer.
+    fireEvent.click(screen.getByLabelText("Select Derive"));
+    expect(onAnswer).toHaveBeenCalledWith("ask-p", "Fix: Derive");
+  });
+
   it("renders a locked answered state from a persisted answer", () => {
     const onAnswer = vi.fn();
     render(
