@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -23,9 +24,11 @@ from claude_agent_sdk import (
     tool,
 )
 
-from daemon import messages, token_usage
+from daemon import config, messages, token_usage
 from daemon.hub import hub
 from daemon.view_state import ActivityEntry, store
+
+log = logging.getLogger(__name__)
 
 SERVER_NAME = "cvi"
 SERVER_VERSION = "0.1.0"
@@ -293,10 +296,23 @@ def build_agent_options(
     accept-all. `cwd` is the directory the session runs in (chat sessions pass the
     configured `working_dir`; defaults to None so the SDK inherits the process cwd);
     `system_prompt` steers the session; `resume` carries a prior SDK session id to
-    continue that conversation."""
+    continue that conversation.
+
+    External stdio MCP servers declared in `config.yaml` (`mcp_servers`) are attached
+    alongside the in-process `cvi` server, and each gets a matching `allowed_tools`
+    entry so its tools are actually usable. `strict_mcp_config` keeps the server set
+    fully determined by CVI's config — no ambient CLI/project config is merged in."""
+    external = config.get_mcp_servers()
+    if SERVER_NAME in external:
+        log.warning(
+            "ignoring mcp_servers entry %r: name reserved for the in-process server",
+            SERVER_NAME,
+        )
+        external = {name: spec for name, spec in external.items() if name != SERVER_NAME}
     return ClaudeAgentOptions(
-        mcp_servers={SERVER_NAME: cvi_server},
-        allowed_tools=ALLOWED_TOOLS,
+        mcp_servers={SERVER_NAME: cvi_server, **external},
+        allowed_tools=[*ALLOWED_TOOLS, *(f"mcp__{name}" for name in external)],
+        strict_mcp_config=True,
         permission_mode="bypassPermissions",
         cwd=cwd,
         system_prompt=system_prompt,

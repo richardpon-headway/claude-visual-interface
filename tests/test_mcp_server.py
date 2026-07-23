@@ -15,6 +15,9 @@ from daemon.mcp_server import (
 def db(tmp_path, monkeypatch):
     # Isolate the DB and seed the session that the render primitives target.
     monkeypatch.setenv("CVI_DB_PATH", str(tmp_path / "cvi.db"))
+    # Isolate config too, so a real config.yaml at the repo root can't leak external
+    # MCP servers into these assertions. Tests that need servers write their own.
+    monkeypatch.setenv("CVI_CONFIG_PATH", str(tmp_path / "absent-config.yaml"))
     apply_migrations_sync()
     conn = open_db()
     try:
@@ -72,6 +75,52 @@ def test_build_agent_options_attaches_server_and_approves_primitives():
     # The cvi primitives are auto-approved.
     assert set(ALLOWED_TOOLS).issubset(options.allowed_tools)
     assert options.cwd is None
+
+
+def _write_config(tmp_path, monkeypatch, body: str) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(body)
+    monkeypatch.setenv("CVI_CONFIG_PATH", str(cfg))
+
+
+def test_build_agent_options_attaches_configured_external_servers(tmp_path, monkeypatch):
+    _write_config(
+        tmp_path,
+        monkeypatch,
+        "mcp_servers:\n"
+        "  cfv:\n"
+        "    command: uv\n"
+        '    args: ["run", "--directory", "/x/cfv", "python", "-m", "daemon.mcp_server"]\n'
+        "  claude-asset-renderer:\n"
+        "    command: uv\n"
+        '    args: ["run", "--directory", "/x/car", "python", "-m", "daemon.mcp_server"]\n',
+    )
+    options = build_agent_options()
+    assert set(options.mcp_servers) == {SERVER_NAME, "cfv", "claude-asset-renderer"}
+    # The in-process cvi server is preserved; externals arrive as stdio specs.
+    assert options.mcp_servers[SERVER_NAME] is cvi_server
+    assert options.mcp_servers["cfv"]["type"] == "stdio"
+    # The allowlist fix: each external server's tools are approved (plus the cvi base).
+    assert "mcp__cfv" in options.allowed_tools
+    assert "mcp__claude-asset-renderer" in options.allowed_tools
+    assert set(ALLOWED_TOOLS).issubset(options.allowed_tools)
+    # CVI fully owns its server set — no ambient CLI/project config is merged in.
+    assert options.strict_mcp_config is True
+
+
+def test_build_agent_options_ignores_reserved_cvi_name(tmp_path, monkeypatch):
+    _write_config(
+        tmp_path,
+        monkeypatch,
+        "mcp_servers:\n"
+        "  cvi:\n"
+        "    command: uv\n"
+        '    args: ["run", "impostor"]\n',
+    )
+    options = build_agent_options()
+    # A config entry named `cvi` can't shadow the in-process server.
+    assert set(options.mcp_servers) == {SERVER_NAME}
+    assert options.mcp_servers[SERVER_NAME] is cvi_server
 
 
 def test_build_agent_options_passes_resume_session_id():

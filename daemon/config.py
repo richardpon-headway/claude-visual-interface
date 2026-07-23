@@ -32,6 +32,16 @@ _DEFAULT_CONFIG_TEMPLATE = """\
 #   read and edit files under this path. Defaults to the parent of the CVI repo so
 #   sibling repositories are visible. Use an absolute path; a leading ~ is expanded.
 working_dir: {working_dir}
+#
+# mcp_servers: external stdio MCP servers attached to every chat session, alongside
+#   the built-in `cvi` server. Each entry is name -> {{command, args, env?}} — the same
+#   shape as ~/.claude.json mcpServers. The named server's own daemon must be running
+#   for its tools to work. Uncomment and adjust paths to enable:
+#
+# mcp_servers:
+#   cfv:
+#     command: uv
+#     args: ["run", "--directory", "/path/to/cfv", "python", "-m", "daemon.mcp_server"]
 """
 
 
@@ -74,6 +84,43 @@ def get_working_dir() -> Path:
         )
         return REPO_PARENT
     return candidate
+
+
+def get_mcp_servers() -> dict[str, dict]:
+    """External stdio MCP servers to attach to every chat session, read from the
+    config's ``mcp_servers`` mapping (name -> {command, args, env}) and returned as SDK
+    stdio-server specs. A malformed entry is skipped with a warning naming the key; a
+    missing / blank / non-mapping section yields no servers. Never raises — one bad
+    entry must not sink startup."""
+    raw = _load().get("mcp_servers")
+    if not isinstance(raw, dict):
+        if raw is not None:
+            log.warning("config mcp_servers is not a mapping; ignoring")
+        return {}
+    servers: dict[str, dict] = {}
+    for name, spec in raw.items():
+        if not isinstance(spec, dict):
+            log.warning("skipping mcp_servers entry %r: not a mapping", name)
+            continue
+        command = spec.get("command")
+        if not isinstance(command, str) or not command.strip():
+            log.warning("skipping mcp_servers entry %r: missing or blank command", name)
+            continue
+        args = spec.get("args", [])
+        if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
+            log.warning("skipping mcp_servers entry %r: args must be a list of strings", name)
+            continue
+        entry: dict = {"type": "stdio", "command": command, "args": list(args)}
+        env = spec.get("env")
+        if env is not None:
+            if not isinstance(env, dict) or not all(
+                isinstance(k, str) and isinstance(v, str) for k, v in env.items()
+            ):
+                log.warning("skipping mcp_servers entry %r: env must be a string map", name)
+                continue
+            entry["env"] = dict(env)
+        servers[str(name)] = entry
+    return servers
 
 
 def ensure_config_file() -> None:

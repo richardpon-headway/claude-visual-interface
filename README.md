@@ -32,6 +32,15 @@ machine-specific path) with documented defaults you can edit:
 - **`working_dir`** — the directory every chat session is rooted at, so Claude can
   read and edit files under it. Defaults to the parent of the CVI repo, making
   sibling repositories visible. Use an absolute path; a leading `~` is expanded.
+- **`mcp_servers`** — external stdio MCP servers to attach to every chat session,
+  alongside the built-in `cvi` render server. Each entry is `name -> {command, args,
+  env?}`, the same shape as `~/.claude.json` `mcpServers`. Their tools are
+  auto-approved. The named server's own daemon must be running for its tools to work.
+
+      mcp_servers:
+        cfv:
+          command: uv
+          args: ["run", "--directory", "/path/to/claude-file-viewer", "python", "-m", "daemon.mcp_server"]
 
 Edits take effect on the next session — no daemon restart needed.
 
