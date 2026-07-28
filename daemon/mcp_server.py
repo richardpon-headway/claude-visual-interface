@@ -258,7 +258,10 @@ _RENDER_HTML_GUIDANCE = (
     "UI mockup that must show its own real colors: set data-theme=\"light\" on the root "
     "<html> to opt out of the dark surface and render the mockup in its intended "
     "palette. Convention for framing content: a blue left-rule marks something you're "
-    "telling the user, an amber left-rule marks a question you're asking."
+    "telling the user, an amber left-rule marks a question you're asking. "
+    "A rendered page is the single place its content lives: do NOT also restate it "
+    "in prose. Keep any accompanying text to a one-line pointer, or nothing — never "
+    "echo the rendered page back as a plain-text answer."
 )
 
 # The picker contract: a multiple-choice decision goes through AskUserQuestion, and
