@@ -122,6 +122,25 @@ async def test_hydrate_replays_persisted_history_into_the_snapshot():
     assert "message_id" not in snap["activity"][0]
 
 
+async def test_hydrate_preserves_the_background_marker():
+    # A segment recorded as background (an agent-initiated turn) must reload as background,
+    # so its dimming + tag survive a daemon restart instead of coming back foreground.
+    surface = "vc-hydrate-background"
+    await record_activity(surface, "user", "kick off a build")
+    await record_activity(surface, "text", "build finished", background=True)
+
+    # Drop the in-memory state so hydrate rebuilds purely from the persisted rows.
+    store._surfaces.pop(surface, None)
+    store._hydrated.discard(surface)
+    await hydrate_surface(surface)
+
+    entries = store.get_or_create(surface).activity
+    assert [(e.kind, e.text, e.background) for e in entries] == [
+        ("user", "kick off a build", False),
+        ("text", "build finished", True),
+    ]
+
+
 async def test_hydrate_is_idempotent_and_does_not_clobber_live_entries():
     surface = "vc-hydrate-reconnect"
     messages.append_message(surface, "user", "first")

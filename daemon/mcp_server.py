@@ -50,7 +50,9 @@ async def render_html_on_surface(surface: str, html: str, title: str | None = No
 def _entry_from_row(row: dict[str, Any]) -> ActivityEntry:
     """Rebuild an ActivityEntry from a persisted `message` row. A picker row carries
     its structured payload ({ask_id, questions}) as JSON in `data` and its chosen value
-    in `answer`, so a reloaded picker re-renders rich and, if answered, locked."""
+    in `answer`, so a reloaded picker re-renders rich and, if answered, locked. The
+    `background` flag (0/1) is restored so an agent-initiated segment reloads dimmed +
+    tagged rather than as a foreground reply."""
     ask_id: str | None = None
     questions: list | None = None
     raw = row.get("data")
@@ -67,6 +69,7 @@ def _entry_from_row(row: dict[str, Any]) -> ActivityEntry:
         text=row["text"],
         html=row["html"],
         summary=row["summary"],
+        background=bool(row.get("background")),
         message_id=row["id"],
         ask_id=ask_id,
         questions=questions,
@@ -117,7 +120,7 @@ async def record_activity(
         else None
     )
     entry.message_id = await asyncio.to_thread(
-        messages.append_message, surface, kind, text, html, data
+        messages.append_message, surface, kind, text, html, data, background
     )
     payload: dict[str, Any] = {"kind": kind, "text": text}
     if html is not None:
