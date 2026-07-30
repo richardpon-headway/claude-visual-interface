@@ -890,6 +890,77 @@ async def test_background_completion_precedes_the_next_prompts_reply(monkeypatch
     await reg.shutdown_all()
 
 
+async def test_current_prompts_task_reaction_is_foreground_not_background(monkeypatch):
+    # The reported bug: a prompt kicks off `run_in_background` work and ends its turn
+    # while it runs; the model's actual answer then arrives on the idle stream once the
+    # task finishes. That answer continues the *current* prompt, so it must render as a
+    # normal foreground reply (background=False) — not dimmed/tagged as detached activity.
+    _seed_session(SESSION, session_type="chat")
+    store.get_or_create(SESSION).activity.clear()
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: SharedIdleClient(options)
+    )
+    reg = AgentSessionRegistry()
+
+    def entries():
+        return [(e.kind, e.text, e.background) for e in store.get_or_create(SESSION).activity]
+
+    await reg.send(SESSION, "run the tests in the background")
+    await _wait_until(
+        lambda: ("text", "answer to run the tests in the background", False) in entries()
+    )
+
+    # The current prompt launched a background task, which then finishes.
+    FakeClient.instances[0].push(_started("t1", "make test"))
+    await _wait_until(lambda: reg._sessions[SESSION]._tasks == {"t1": "make test"})
+    FakeClient.instances[0].push(_finished("t1"))
+    await _wait_until(lambda: reg._sessions[SESSION]._tasks == {})
+
+    # The model reacts on its own — but it's continuing the current prompt, so foreground.
+    FakeClient.instances[0].push_background_turn("all tests passed")
+    await _wait_until(lambda: ("text", "all tests passed", False) in entries())
+
+    kinds = entries()
+    assert ("text", "all tests passed", False) in kinds  # foreground, not background
+    assert ("text", "all tests passed", True) not in kinds
+    await reg.shutdown_all()
+
+
+async def test_task_reaction_after_a_newer_prompt_is_detached_background(monkeypatch):
+    # Once the user moves on to a newer prompt, a straggling task launched by an earlier
+    # prompt is detached from the current focus: its reaction stays dimmed/tagged
+    # (background=True), the counterpart to the continuation case above.
+    _seed_session(SESSION, session_type="chat")
+    store.get_or_create(SESSION).activity.clear()
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: SharedIdleClient(options)
+    )
+    reg = AgentSessionRegistry()
+
+    def entries():
+        return [(e.kind, e.text, e.background) for e in store.get_or_create(SESSION).activity]
+
+    # First prompt launches a long task that does NOT finish yet.
+    await reg.send(SESSION, "first")
+    await _wait_until(lambda: ("text", "answer to first", False) in entries())
+    FakeClient.instances[0].push(_started("t1", "slow build"))
+    await _wait_until(lambda: reg._sessions[SESSION]._tasks == {"t1": "slow build"})
+
+    # The user moves on to a new prompt (a new focus), which gets its own reply.
+    await reg.send(SESSION, "second")
+    await _wait_until(lambda: ("text", "answer to second", False) in entries())
+
+    # Only now does the first prompt's task finish and the model react — detached.
+    FakeClient.instances[0].push(_finished("t1"))
+    FakeClient.instances[0].push_background_turn("slow build finished")
+    await _wait_until(lambda: ("text", "slow build finished", True) in entries())
+
+    kinds = entries()
+    assert ("text", "slow build finished", True) in kinds  # dimmed/tagged as detached
+    assert ("text", "slow build finished", False) not in kinds
+    await reg.shutdown_all()
+
+
 async def test_background_tasks_are_tracked_internally_and_not_relayed(monkeypatch):
     # task_started adds to the session's internal running set; task_notification clears it.
     # The set is not surfaced to the browser, and the notifications themselves are never
