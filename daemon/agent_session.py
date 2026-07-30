@@ -195,6 +195,15 @@ class AgentSession:
         # the browser; tracked only to keep the session alive (idle-suppression) while any
         # is outstanding, so a still-running task isn't killed by an idle-close.
         self._tasks: dict[str, str] = {}
+        # Prompt "epoch": a monotonic counter bumped on each real user prompt (not picker
+        # answers). Together with `_latest_task_epoch` (the epoch of the most recently
+        # launched background task) it tells a continuation from truly-detached activity:
+        # an agent-initiated turn whose latest task was launched by the *current* prompt is
+        # that prompt's answer arriving late (rendered foreground), whereas once the user
+        # has moved on to a newer prompt a straggling task's reaction is detached
+        # background chatter (dimmed + tagged). See `_handle_idle_message`.
+        self._prompt_epoch = 0
+        self._latest_task_epoch = -1
         # A message an idle stream read had already pulled off the shared stream when it
         # lost the race to a user turn and was cancelled. Stashed here (rather than
         # dropped) so the next _await_work consumes it first — a completion signal or a
@@ -387,15 +396,22 @@ class AgentSession:
     async def _handle_idle_message(self, client: ClaudeSDKClient, message: Any) -> None:
         """Dispatch a message that arrived while no user turn was running. A task
         notification just updates the internal running-task set. An AssistantMessage is
-        the start of an agent-initiated turn (the model reacting to a finished task),
-        relayed as its own background-marked turn. A lone terminal result is bookkept
-        only. Any other stray system frame (e.g. session_state_changed) is ignored — it
-        must NOT be treated as a turn start, or the thinking flag would stick on while we
-        block waiting for a ResultMessage that isn't coming."""
+        the start of an agent-initiated turn (the model reacting to a finished task). A
+        lone terminal result is bookkept only. Any other stray system frame (e.g.
+        session_state_changed) is ignored — it must NOT be treated as a turn start, or the
+        thinking flag would stick on while we block waiting for a ResultMessage that isn't
+        coming.
+
+        The agent-initiated turn is marked *background* (dimmed + tagged) only when it's
+        detached from the user's current focus — i.e. the most recently launched task
+        predates the current prompt. When the latest task was launched by the current
+        prompt, this turn is that prompt's answer arriving after a `run_in_background`
+        step finished, so it's relayed as a normal foreground reply."""
         if await self._track_task_message(message):
             return
         if isinstance(message, AssistantMessage):
-            await self._run_background_turn(client, message)
+            background = self._latest_task_epoch != self._prompt_epoch
+            await self._run_background_turn(client, message, background=background)
         elif isinstance(message, ResultMessage):
             await self._remember_sdk_session(message.session_id)
             out, inp = token_usage.usage_tokens(message.usage)
@@ -410,6 +426,9 @@ class AgentSession:
         ``_await_work``'s idle-suppression). Returns False for any other message."""
         if isinstance(message, TaskStartedMessage):
             self._tasks[message.task_id] = message.description
+            # Stamp the launching prompt's epoch so a later reaction can tell whether it's
+            # continuing the current prompt (foreground) or a prompt the user moved past.
+            self._latest_task_epoch = self._prompt_epoch
             return True
         if isinstance(message, TaskProgressMessage):
             # No set change; ensure it's tracked in case task_started was missed.
@@ -420,17 +439,21 @@ class AgentSession:
             return True
         return False
 
-    async def _run_background_turn(self, client: ClaudeSDKClient, first: Any) -> None:
+    async def _run_background_turn(
+        self, client: ClaudeSDKClient, first: Any, *, background: bool = True
+    ) -> None:
         """Relay an agent-initiated turn — one the CLI ran on its own after a background
-        task finished — as its own background-marked entry (no user bubble). ``first`` is
-        the message already pulled off the stream; the rest of the turn is drained via
-        receive_response() to its ResultMessage. The thinking flag brackets it like any
-        turn so the spinner reflects the agent working."""
+        task finished — as its own entry (no user bubble). ``first`` is the message already
+        pulled off the stream; the rest of the turn is drained via receive_response() to
+        its ResultMessage. ``background`` marks the whole turn as detached (dimmed +
+        tagged); pass False when it's the current prompt's answer arriving late (a
+        continuation), so it reads as a normal foreground reply. The thinking flag brackets
+        it like any turn so the spinner reflects the agent working."""
         await broadcast_thinking(self._surface, True)
         self._turn_active = True
         self._interrupting = False
         try:
-            await self._relay_background(first)
+            await self._relay_background(first, background=background)
             if isinstance(first, ResultMessage):
                 return  # a lone terminal — nothing further to drain
             response = client.receive_response()
@@ -438,7 +461,7 @@ class AgentSession:
                 if self._interrupting:
                     await self._drain_interrupted(response)
                     return
-                await self._relay_background(message)
+                await self._relay_background(message, background=background)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -447,17 +470,19 @@ class AgentSession:
             self._turn_active = False
             await broadcast_thinking(self._surface, False)
 
-    async def _relay_background(self, message: Any) -> None:
-        """Handle one message of a background turn: task notifications update the
+    async def _relay_background(self, message: Any, *, background: bool = True) -> None:
+        """Handle one message of an agent-initiated turn: task notifications update the
         indicator; a ResultMessage carries session-id/usage bookkeeping; everything else
-        is relayed to the feed marked as background."""
+        is relayed to the feed. ``background`` flags the segment as detached (dimmed +
+        tagged); pass False for a continuation of the current prompt so it reads as a
+        normal foreground reply."""
         if await self._track_task_message(message):
             return
         if isinstance(message, ResultMessage):
             await self._remember_sdk_session(message.session_id)
             out, inp = token_usage.usage_tokens(message.usage)
             await self._record_usage("background", out, inp)
-        await relay_message_activity(self._surface, message, background=True)
+        await relay_message_activity(self._surface, message, background=background)
 
     async def _run_turn(self, client: ClaudeSDKClient, turn: ChatTurn) -> None:
         """Run one user turn, retrying transient API failures with exponential
@@ -476,6 +501,11 @@ class AgentSession:
         # runs so the agent gets the answer.
         prompt_message_id: int | None = None
         if turn.record_user:
+            # A genuine new prompt shifts the user's focus: any background task launched
+            # from here on belongs to this epoch, and a straggling task from an earlier
+            # prompt now reads as detached (see `_handle_idle_message`). Picker answers
+            # (record_user=False) continue the current focus and don't bump the epoch.
+            self._prompt_epoch += 1
             marker = _turn_marker(turn)
             entry = await record_activity(self._surface, "user", marker)
             # Generate this prompt's one-line outline-rail summary in the background.
