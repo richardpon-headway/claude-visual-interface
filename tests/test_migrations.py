@@ -45,6 +45,7 @@ def test_migrations_create_message_table(tmp_path):
         "summary",
         "data",
         "answer",
+        "background",
         "created_at",
     }
 

@@ -13,7 +13,18 @@ from typing import Any
 
 from daemon.db import open_db
 
-_COLUMNS = ("id", "surface", "kind", "text", "html", "summary", "data", "answer", "created_at")
+_COLUMNS = (
+    "id",
+    "surface",
+    "kind",
+    "text",
+    "html",
+    "summary",
+    "data",
+    "answer",
+    "background",
+    "created_at",
+)
 
 
 def _now_iso() -> str:
@@ -26,16 +37,19 @@ def append_message(
     text: str,
     html: str | None = None,
     data: str | None = None,
+    background: bool = False,
 ) -> int:
     """Append one transcript segment for a surface; return its new row id (used to
     fill in a prompt's summary later). `html` carries an artifact's page; `data` carries
-    a picker's structured payload as a JSON string ({ask_id, questions})."""
+    a picker's structured payload as a JSON string ({ask_id, questions}); `background`
+    marks a segment from an agent-initiated (background) turn so its dimming + tag
+    survive a reload."""
     conn = open_db()
     try:
         cursor = conn.execute(
-            "INSERT INTO message (surface, kind, text, html, data, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (surface, kind, text, html, data, _now_iso()),
+            "INSERT INTO message (surface, kind, text, html, data, background, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (surface, kind, text, html, data, int(background), _now_iso()),
         )
         conn.commit()
         return int(cursor.lastrowid)
