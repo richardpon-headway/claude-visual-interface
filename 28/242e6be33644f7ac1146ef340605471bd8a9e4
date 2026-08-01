@@ -1,0 +1,22 @@
+daemon/mcp_server.py
+  s_1c704c34151d8b::t_8e66fa119b76b2 252-258,260-261
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "28242e6be33644f7ac1146ef340605471bd8a9e4",
+  "prompts": {},
+  "sessions": {
+    "s_1c704c34151d8b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2dc94b29-a70c-45b9-b87a-86a81358a863",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
