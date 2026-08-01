@@ -249,11 +249,16 @@ cvi_server = create_sdk_mcp_server(
 # The render contract: visuals render inline in the conversation as self-contained
 # no-script pages. Kept as one constant so the chat prompt's rule can't drift.
 _RENDER_HTML_GUIDANCE = (
-    "For anything visual — a design, diagram, table, chart, or report — use "
-    "mcp__cvi__render_html to render a full HTML page inline in the conversation. That "
+    "Default to rendering an HTML page rather than answering in prose. Any output that "
+    "has structure — a design, diagram, table, chart, or report, but also a comparison, "
+    "a list, ranked or trade-off options, a step-by-step explanation, a summary of "
+    "findings, or a walkthrough of code or a decision — should be an inline HTML page "
+    "via mcp__cvi__render_html, not plain text. Reserve plain prose for genuinely "
+    "conversational replies: a short direct answer, a quick acknowledgement, or a "
+    "clarifying question. When it's a close call, render. That "
     "page must be self-contained HTML/CSS/SVG only: no JavaScript and no external/CDN "
-    "resources, as it renders in a no-script sandbox. Render rather than only describe "
-    "when the user asks to see something. "
+    "resources, as it renders in a no-script sandbox. Always render rather than only "
+    "describe when the user asks to see something. "
     "The app renders your page on a dark surface at the app's scale automatically, so: "
     "do NOT set a light/white page background and do NOT add CSS zoom (either would "
     "fight the app). Author reading and explanatory content for dark — light text on "
