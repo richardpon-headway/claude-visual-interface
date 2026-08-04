@@ -119,30 +119,27 @@ export function Surface({ surface }: { surface: string }) {
   const [active, setActive] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // Whether the viewport is pinned near the bottom. Starts true so the first load /
-  // transcript replay lands at the bottom. A ref (not state) so the auto-scroll effect
-  // reads the latest value without re-subscribing.
+  // transcript replay lands at the bottom. Held as a ref for the auto-scroll effect
+  // (reads the latest value without re-subscribing) and mirrored into state so the
+  // jump-to-bottom button re-renders as you scroll.
   const atBottomRef = useRef(true);
-  // Previous transcript length, to tell a genuinely new entry from same-entry streaming
-  // or a thinking-toggle — only a new entry while detached should raise the pill.
-  const prevLenRef = useRef(view.activity.length);
-  // Shows the "↓ new messages" pill: true only while detached AND new content has
-  // arrived since detaching (so merely scrolling up to re-read shows nothing).
-  const [hasNewBelow, setHasNewBelow] = useState(false);
+  const [atBottom, setAtBottom] = useState(true);
 
   function scrollToBottom() {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
     atBottomRef.current = true;
-    setHasNewBelow(false);
+    setAtBottom(true);
   }
 
-  // Recompute the pin whenever the user scrolls; clear the pill on return to bottom.
+  // Recompute the pin whenever the user scrolls, so the jump-to-bottom button shows
+  // whenever you're scrolled up and hides once you're back at the bottom.
   function handleScroll() {
     const el = scrollRef.current;
     if (!el) return;
-    const atBottom = isNearBottom(el, BOTTOM_SLACK_PX);
-    atBottomRef.current = atBottom;
-    if (atBottom) setHasNewBelow(false);
+    const nearBottom = isNearBottom(el, BOTTOM_SLACK_PX);
+    atBottomRef.current = nearBottom;
+    setAtBottom(nearBottom);
   }
 
   // Submitting your own prompt always snaps to the bottom — you initiated it, so re-pin
@@ -156,19 +153,11 @@ export function Surface({ surface }: { surface: string }) {
   // to read history isn't yanked back down. Pin the scroll container itself: scrollHeight
   // covers the transcript's bottom padding, which scrollIntoView on a zero-height marker
   // would leave below the fold. Re-run when the transcript grows, the last entry streams
-  // more text, or the thinking indicator toggles the composer height. When detached and a
-  // genuinely new entry arrives, raise the pill instead of scrolling.
+  // more text, or the thinking indicator toggles the composer height.
   const lastEntryText = view.activity[view.activity.length - 1]?.text ?? "";
   useEffect(() => {
     const el = scrollRef.current;
-    const grew = view.activity.length > prevLenRef.current;
-    prevLenRef.current = view.activity.length;
-    if (!el) return;
-    if (atBottomRef.current) {
-      el.scrollTop = el.scrollHeight;
-    } else if (grew) {
-      setHasNewBelow(true);
-    }
+    if (el && atBottomRef.current) el.scrollTop = el.scrollHeight;
   }, [view.activity.length, lastEntryText, view.thinking]);
 
   // Scroll-spy: mark the active prompt from the rendered anchors' positions.
@@ -260,13 +249,13 @@ export function Surface({ surface }: { surface: string }) {
           </div>
         </div>
 
-        {hasNewBelow ? (
+        {!atBottom ? (
           <button
             type="button"
             onClick={scrollToBottom}
             className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-100 shadow-lg hover:bg-zinc-700"
           >
-            ↓ New messages
+            ↓ Jump to bottom
           </button>
         ) : null}
       </div>
