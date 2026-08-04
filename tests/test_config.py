@@ -148,3 +148,26 @@ def test_mcp_servers_skips_malformed_entries_keeps_valid(tmp_path, monkeypatch):
 def test_mcp_servers_non_mapping_yields_none(tmp_path, monkeypatch):
     _write(tmp_path, monkeypatch, "mcp_servers:\n  - just\n  - a\n  - list\n")
     assert config.get_mcp_servers() == {}
+
+
+def test_auto_archive_days_defaults_when_absent(tmp_path, monkeypatch):
+    monkeypatch.setenv("CVI_CONFIG_PATH", str(tmp_path / "absent.yaml"))
+    assert config.get_auto_archive_days() == config.DEFAULT_AUTO_ARCHIVE_DAYS
+
+
+def test_auto_archive_days_reads_configured_value(tmp_path, monkeypatch):
+    _write(tmp_path, monkeypatch, "auto_archive_days: 30\n")
+    assert config.get_auto_archive_days() == 30
+
+
+def test_auto_archive_days_returns_zero_or_negative_verbatim(tmp_path, monkeypatch):
+    # <= 0 is the caller's "disabled" signal; the getter passes it through unchanged.
+    _write(tmp_path, monkeypatch, "auto_archive_days: 0\n")
+    assert config.get_auto_archive_days() == 0
+    _write(tmp_path, monkeypatch, "auto_archive_days: -1\n")
+    assert config.get_auto_archive_days() == -1
+
+
+def test_auto_archive_days_falls_back_on_non_integer(tmp_path, monkeypatch):
+    _write(tmp_path, monkeypatch, "auto_archive_days: soon\n")
+    assert config.get_auto_archive_days() == config.DEFAULT_AUTO_ARCHIVE_DAYS

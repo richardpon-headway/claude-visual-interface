@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from daemon import sessions
 from daemon.db import open_db
 
 _COLUMNS = (
@@ -43,7 +44,11 @@ def append_message(
     fill in a prompt's summary later). `html` carries an artifact's page; `data` carries
     a picker's structured payload as a JSON string ({ask_id, questions}); `background`
     marks a segment from an agent-initiated (background) turn so its dimming + tag
-    survive a reload."""
+    survive a reload.
+
+    A user prompt (`kind == "user"`) resurfaces the session if it had been
+    auto-archived — chatting in a chat should bring it back to the list. This fires on
+    the user's own message, not on the assistant/tool/artifact segments that follow."""
     conn = open_db()
     try:
         cursor = conn.execute(
@@ -52,9 +57,12 @@ def append_message(
             (surface, kind, text, html, data, int(background), _now_iso()),
         )
         conn.commit()
-        return int(cursor.lastrowid)
+        message_id = int(cursor.lastrowid)
     finally:
         conn.close()
+    if kind == "user":
+        sessions.resurface_if_archived(surface)
+    return message_id
 
 
 def set_message_answer(message_id: int, answer: str) -> bool:

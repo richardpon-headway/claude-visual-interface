@@ -33,6 +33,14 @@ _DEFAULT_CONFIG_TEMPLATE = """\
 #   sibling repositories are visible. Use an absolute path; a leading ~ is expanded.
 working_dir: {working_dir}
 #
+# auto_archive_days: sessions with no activity for this many days are archived
+#   automatically the next time the session list is loaded — unless they're starred.
+#   "Activity" is the newest message (or the session's creation time if it has none).
+#   Archiving is reversible (it just files the session away); sending a new message in
+#   an auto-archived chat brings it back. Set to 0 (or a negative value) to disable.
+#   Defaults to 14.
+# auto_archive_days: 14
+#
 # mcp_servers: external stdio MCP servers attached to every chat session, alongside
 #   the built-in `cvi` server. Each entry is name -> {{command, args, env?}} — the same
 #   shape as ~/.claude.json mcpServers. The named server's own daemon must be running
@@ -84,6 +92,26 @@ def get_working_dir() -> Path:
         )
         return REPO_PARENT
     return candidate
+
+
+DEFAULT_AUTO_ARCHIVE_DAYS = 14
+
+
+def get_auto_archive_days() -> int:
+    """Days of inactivity after which an unstarred session is auto-archived on the next
+    session-list load. Reads ``auto_archive_days`` (default 14). A value <= 0 disables
+    auto-archiving; callers treat the returned number that way. A present-but-invalid
+    value falls back to the default with a warning — never raises."""
+    raw = _load().get("auto_archive_days")
+    if raw is None:
+        return DEFAULT_AUTO_ARCHIVE_DAYS
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        log.warning(
+            "config auto_archive_days is not an integer; using %d", DEFAULT_AUTO_ARCHIVE_DAYS
+        )
+        return DEFAULT_AUTO_ARCHIVE_DAYS
 
 
 def get_mcp_servers() -> dict[str, dict]:

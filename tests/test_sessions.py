@@ -15,21 +15,51 @@ def db(tmp_path, monkeypatch):
     monkeypatch.setenv("CVI_DB_PATH", str(tmp_path / "cvi.db"))
     # The rename endpoint now writes a token-monitor sidecar; keep it in the tmp dir.
     monkeypatch.setenv("CVI_TOKEN_MONITOR_SIDECAR_DIR", str(tmp_path / "session-meta"))
+    # Point config at an absent file so the auto-archive sweep that list_sessions now
+    # runs uses the built-in default window (14 days), independent of the developer's
+    # real config.yaml. Sessions inserted with the placeholder created_at 't' sort after
+    # any real ISO timestamp, so the default sweep never touches them.
+    monkeypatch.setenv("CVI_CONFIG_PATH", str(tmp_path / "absent.yaml"))
     apply_migrations_sync()
 
 
-def _insert_session(session_id, *, updated_at, archived_at=None, deleted_at=None, starred_at=None):
+def _insert_session(
+    session_id,
+    *,
+    updated_at,
+    created_at="t",
+    archived_at=None,
+    deleted_at=None,
+    starred_at=None,
+):
     conn = open_db()
     try:
         conn.execute(
             "INSERT INTO session "
             "(id, type, status, created_at, updated_at, archived_at, deleted_at, starred_at) "
-            "VALUES (?, 'chat', 'ready', 't', ?, ?, ?, ?)",
-            (session_id, updated_at, archived_at, deleted_at, starred_at),
+            "VALUES (?, 'chat', 'ready', ?, ?, ?, ?, ?)",
+            (session_id, created_at, updated_at, archived_at, deleted_at, starred_at),
         )
         conn.commit()
     finally:
         conn.close()
+
+
+def _insert_message(surface, *, created_at):
+    conn = open_db()
+    try:
+        conn.execute(
+            "INSERT INTO message (surface, kind, text, created_at) VALUES (?, 'user', 'hi', ?)",
+            (surface, created_at),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# Comfortably older than any auto-archive window used in these tests, and lexicographically
+# below any recent ISO timestamp (so the sweep treats it as stale).
+_LONG_AGO = "2000-01-01T00:00:00+00:00"
 
 
 def test_create_chat_session_is_ready_with_a_default_title():
@@ -307,3 +337,114 @@ def test_get_session_returns_row_and_404s_on_missing():
         assert resp.json()["id"] == "s"
         assert resp.json()["status"] == "ready"
         assert client.get("/sessions/ghost").status_code == 404
+
+
+# --- auto-archive of stale sessions --------------------------------------------------
+
+
+def _archived_at(session_id):
+    return sessions.get_session(session_id)["archived_at"]
+
+
+def test_sweep_archives_unstarred_session_with_only_an_old_message():
+    _insert_session("stale", updated_at=_LONG_AGO, created_at=_LONG_AGO)
+    _insert_message("stale", created_at=_LONG_AGO)
+    assert sessions.archive_stale_sessions(14) == 1
+    assert _archived_at("stale") is not None
+
+
+def test_sweep_spares_a_session_with_a_recent_message():
+    # Old session row, but a fresh message keeps it active — last activity, not
+    # created_at/updated_at, is what counts.
+    _insert_session("active", updated_at=_LONG_AGO, created_at=_LONG_AGO)
+    _insert_message("active", created_at=sessions._now_iso())
+    assert sessions.archive_stale_sessions(14) == 0
+    assert _archived_at("active") is None
+
+
+def test_sweep_spares_a_starred_stale_session():
+    _insert_session(
+        "pinned", updated_at=_LONG_AGO, created_at=_LONG_AGO, starred_at=sessions._now_iso()
+    )
+    _insert_message("pinned", created_at=_LONG_AGO)
+    assert sessions.archive_stale_sessions(14) == 0
+    assert _archived_at("pinned") is None
+
+
+def test_sweep_archives_a_stale_empty_session_by_created_at():
+    # No messages at all → the session's own creation time is the activity signal.
+    _insert_session("empty_old", updated_at=_LONG_AGO, created_at=_LONG_AGO)
+    assert sessions.archive_stale_sessions(14) == 1
+    assert _archived_at("empty_old") is not None
+
+
+def test_sweep_spares_a_recent_empty_session():
+    _insert_session("empty_new", updated_at=_LONG_AGO, created_at=sessions._now_iso())
+    assert sessions.archive_stale_sessions(14) == 0
+    assert _archived_at("empty_new") is None
+
+
+def test_sweep_ignores_already_archived_and_deleted_sessions():
+    _insert_session(
+        "filed", updated_at=_LONG_AGO, created_at=_LONG_AGO, archived_at="2000-02-02T00:00:00+00:00"
+    )
+    _insert_session(
+        "gone", updated_at=_LONG_AGO, created_at=_LONG_AGO, deleted_at="2000-02-02T00:00:00+00:00"
+    )
+    # Neither is a live, unarchived session, so the sweep leaves both untouched.
+    assert sessions.archive_stale_sessions(14) == 0
+    assert _archived_at("filed") == "2000-02-02T00:00:00+00:00"
+
+
+def test_sweep_is_disabled_when_days_is_zero_or_negative():
+    _insert_session("stale", updated_at=_LONG_AGO, created_at=_LONG_AGO)
+    assert sessions.archive_stale_sessions(0) == 0
+    assert sessions.archive_stale_sessions(-5) == 0
+    assert _archived_at("stale") is None
+
+
+def test_list_sessions_runs_the_sweep_and_drops_stale_rows():
+    _insert_session("stale", updated_at=_LONG_AGO, created_at=_LONG_AGO)
+    _insert_session("fresh", updated_at=_LONG_AGO, created_at=sessions._now_iso())
+    # Default window (14 days) via the absent-config fallback set in the fixture.
+    assert [s["id"] for s in sessions.list_sessions()] == ["fresh"]
+    # The stale one was actually archived, not just filtered out of the default view.
+    assert "stale" in {s["id"] for s in sessions.list_sessions(include_archived=True)}
+
+
+# --- resurfacing an auto-archived chat when it's used again --------------------------
+
+
+def test_resurface_if_archived_unarchives_only_a_currently_archived_session():
+    _insert_session(
+        "s", updated_at=_LONG_AGO, archived_at="2000-02-02T00:00:00+00:00"
+    )
+    assert sessions.resurface_if_archived("s") is True
+    row = sessions.get_session("s")
+    assert row["archived_at"] is None
+    assert row["updated_at"] > _LONG_AGO  # bumped, so it sorts back to the top
+
+    # A live session isn't touched (and updated_at isn't churned) on repeat calls.
+    _insert_session("live", updated_at="2026-01-01T00:00:00Z")
+    assert sessions.resurface_if_archived("live") is False
+    assert sessions.get_session("live")["updated_at"] == "2026-01-01T00:00:00Z"
+
+
+def test_user_message_resurfaces_an_archived_session():
+    _insert_session("s", updated_at=_LONG_AGO, archived_at="2000-02-02T00:00:00+00:00")
+    messages.append_message("s", "user", "back again")
+    assert sessions.get_session("s")["archived_at"] is None
+    assert [r["id"] for r in sessions.list_sessions()] == ["s"]
+
+
+def test_non_user_message_does_not_resurface_an_archived_session():
+    _insert_session("s", updated_at=_LONG_AGO, archived_at="2000-02-02T00:00:00+00:00")
+    messages.append_message("s", "text", "assistant reply")
+    assert sessions.get_session("s")["archived_at"] == "2000-02-02T00:00:00+00:00"
+
+
+def test_iso_timestamps_compare_chronologically_as_strings():
+    # The sweep relies on lexicographic ordering of _now_iso() values being chronological.
+    earlier = "2000-01-01T00:00:00+00:00"
+    later = sessions._now_iso()
+    assert earlier < later
