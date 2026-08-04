@@ -5,7 +5,9 @@ import { ChatInput } from "./ChatInput";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { activePromptId, promptLandmarks } from "./rail";
+import { BOTTOM_SLACK_PX, isNearBottom } from "./scroll";
 import { useSurfaceSocket } from "./useSurfaceSocket";
+import type { SendMessage } from "./useSurfaceSocket";
 
 // Click-to-edit session title in the header. The committed name is sent to the
 // daemon's rename endpoint; the new title flows back over the "title" websocket
@@ -116,16 +118,57 @@ export function Surface({ surface }: { surface: string }) {
   const [railOpen, setRailOpen] = useState(false);
   const [active, setActive] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Whether the viewport is pinned near the bottom. Starts true so the first load /
+  // transcript replay lands at the bottom. A ref (not state) so the auto-scroll effect
+  // reads the latest value without re-subscribing.
+  const atBottomRef = useRef(true);
+  // Previous transcript length, to tell a genuinely new entry from same-entry streaming
+  // or a thinking-toggle — only a new entry while detached should raise the pill.
+  const prevLenRef = useRef(view.activity.length);
+  // Shows the "↓ new messages" pill: true only while detached AND new content has
+  // arrived since detaching (so merely scrolling up to re-read shows nothing).
+  const [hasNewBelow, setHasNewBelow] = useState(false);
 
-  // Stick to the bottom as new content arrives. Pin the scroll container itself —
-  // scrollHeight covers the transcript's bottom padding, which scrollIntoView on a
-  // zero-height marker would leave below the fold. Re-run when the transcript grows,
-  // the last entry streams more text, or the thinking indicator toggles the composer
-  // height — each changes content height after the activity count has settled.
+  function scrollToBottom() {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+    atBottomRef.current = true;
+    setHasNewBelow(false);
+  }
+
+  // Recompute the pin whenever the user scrolls; clear the pill on return to bottom.
+  function handleScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const atBottom = isNearBottom(el, BOTTOM_SLACK_PX);
+    atBottomRef.current = atBottom;
+    if (atBottom) setHasNewBelow(false);
+  }
+
+  // Submitting your own prompt always snaps to the bottom — you initiated it, so re-pin
+  // before the message lands and the effect below sticks to the reply.
+  const handleSend: SendMessage = (text, images) => {
+    scrollToBottom();
+    sendMessage(text, images);
+  };
+
+  // Stick to the bottom as new content arrives — but only while pinned, so scrolling up
+  // to read history isn't yanked back down. Pin the scroll container itself: scrollHeight
+  // covers the transcript's bottom padding, which scrollIntoView on a zero-height marker
+  // would leave below the fold. Re-run when the transcript grows, the last entry streams
+  // more text, or the thinking indicator toggles the composer height. When detached and a
+  // genuinely new entry arrives, raise the pill instead of scrolling.
   const lastEntryText = view.activity[view.activity.length - 1]?.text ?? "";
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    const grew = view.activity.length > prevLenRef.current;
+    prevLenRef.current = view.activity.length;
+    if (!el) return;
+    if (atBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+    } else if (grew) {
+      setHasNewBelow(true);
+    }
   }, [view.activity.length, lastEntryText, view.thinking]);
 
   // Scroll-spy: mark the active prompt from the rendered anchors' positions.
@@ -179,7 +222,7 @@ export function Surface({ surface }: { surface: string }) {
         </span>
       </header>
 
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         {railOpen && prompts.length > 0 ? (
           <nav className="w-56 shrink-0 space-y-0.5 overflow-auto border-r border-zinc-800 p-2">
             {prompts.map((p) => (
@@ -198,7 +241,7 @@ export function Surface({ surface }: { surface: string }) {
           </nav>
         ) : null}
 
-        <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
+        <div ref={scrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-auto">
           <div className="px-4 py-4">
             <ErrorBoundary
               fallback={
@@ -216,6 +259,16 @@ export function Surface({ surface }: { surface: string }) {
             </ErrorBoundary>
           </div>
         </div>
+
+        {hasNewBelow ? (
+          <button
+            type="button"
+            onClick={scrollToBottom}
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-100 shadow-lg hover:bg-zinc-700"
+          >
+            ↓ New messages
+          </button>
+        ) : null}
       </div>
 
       <div className="shrink-0 border-t border-zinc-800">
@@ -236,7 +289,7 @@ export function Surface({ surface }: { surface: string }) {
               {view.session_input_tokens.toLocaleString()} in
             </span>
           </div>
-          <ChatInput onSend={sendMessage} busy={busy} onStop={stop} />
+          <ChatInput onSend={handleSend} busy={busy} onStop={stop} />
         </div>
       </div>
     </div>
