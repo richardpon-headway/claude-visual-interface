@@ -1,0 +1,49 @@
+daemon/messages.py
+  s_336b01338e4c88::t_edcf3f9ddd0a7c 14
+  s_336b01338e4c88::t_48242b56ec7726 47-51,60,63-65
+tests/test_sessions.py
+  s_336b01338e4c88::t_ad2039daa07b30 18-22,26-34,40-41,48-62
+  s_336b01338e4c88::t_6384bcb42058ce 340-450
+  s_336b01338e4c88::t_4dedfed5501d31 63-64
+daemon/sessions.py
+  s_336b01338e4c88::t_73566de54c4208 5,7,10,13
+  s_336b01338e4c88::t_dd59648e5fab23 236-255
+  s_336b01338e4c88::t_cdec453e50bcc4 96-124,127-131
+  s_ca2a9db4b32344::t_977b4783513dc3 14
+daemon/config.py
+  s_336b01338e4c88::t_ef2be773edd614 97-110,114-116
+  s_336b01338e4c88::t_e1015c386886cd 111-113
+  s_336b01338e4c88::t_db72dc06486e6b 36-43
+tests/test_config.py
+  s_336b01338e4c88::t_d0b86eb87f2244 151-173
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "2803c303c0211383fbd343df102951fb9202435f",
+  "prompts": {},
+  "sessions": {
+    "s_336b01338e4c88": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "320bd3c7-5619-4702-8eef-92f75e1ee52a",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    },
+    "s_ca2a9db4b32344": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a7f7486-5276-458a-913a-fe407de96b24",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
