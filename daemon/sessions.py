@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from daemon import config
 from daemon.db import open_db
+
+log = logging.getLogger(__name__)
 
 # The placeholder title a chat is born with, until auto-titling replaces it. Single
 # source of truth: create_chat_session writes it, and the auto-title guards
@@ -89,9 +93,42 @@ def open_or_create_chat() -> str:
     return create_chat_session()
 
 
+def archive_stale_sessions(days: int) -> int:
+    """Archive every unstarred, live session whose most recent activity is older than
+    `days` days; return how many were archived. Activity is the newest message's
+    timestamp, falling back to the session's own created_at when it has no messages (so
+    stale empty 'New chat' rows get swept too). A `days` <= 0 disables the sweep.
+
+    Timestamps are all `datetime.now(UTC).isoformat()` strings (same fixed +00:00
+    offset), so a lexicographic string compare against the cutoff is chronological."""
+    if days <= 0:
+        return 0
+    now = _now_iso()
+    cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
+    conn = open_db()
+    try:
+        cursor = conn.execute(
+            "UPDATE session SET archived_at = ?, updated_at = ? "
+            "WHERE archived_at IS NULL AND deleted_at IS NULL AND starred_at IS NULL "
+            "AND COALESCE("
+            "  (SELECT MAX(created_at) FROM message WHERE message.surface = session.id),"
+            "  created_at"
+            ") < ?",
+            (now, now, cutoff),
+        )
+        conn.commit()
+        return cursor.rowcount
+    finally:
+        conn.close()
+
+
 def list_sessions(*, include_archived: bool = False) -> list[dict[str, Any]]:
     """Sessions for the home page, newest-activity first. Soft-deleted sessions are
-    always excluded; archived ones only when include_archived is False."""
+    always excluded; archived ones only when include_archived is False. Runs the
+    stale-session sweep first so the returned list already reflects it."""
+    archived = archive_stale_sessions(config.get_auto_archive_days())
+    if archived:
+        log.info("auto-archived %d stale session(s)", archived)
     where = "WHERE deleted_at IS NULL"
     if not include_archived:
         where += " AND archived_at IS NULL"
@@ -194,6 +231,26 @@ def set_agent_session_id(session_id: str, agent_session_id: str) -> bool:
 
 def set_archived(session_id: str, archived: bool) -> bool:
     return _set_lifecycle_timestamp(session_id, "archived_at", archived)
+
+
+def resurface_if_archived(session_id: str) -> bool:
+    """Un-archive a session, but only if it is currently archived (and not deleted) —
+    so an auto-archived chat you start talking in again returns to the list. The
+    conditional WHERE means it writes (and bumps updated_at, sorting the chat back to
+    the top) exactly once, never on the normal appends to a live session. Returns True
+    only when it actually resurfaced one."""
+    now = _now_iso()
+    conn = open_db()
+    try:
+        cursor = conn.execute(
+            "UPDATE session SET archived_at = NULL, updated_at = ? "
+            "WHERE id = ? AND archived_at IS NOT NULL AND deleted_at IS NULL",
+            (now, session_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
 
 
 def set_deleted(session_id: str, deleted: bool) -> bool:
