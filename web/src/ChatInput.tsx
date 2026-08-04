@@ -78,6 +78,19 @@ export function ChatInput({
     };
   }, [attachImageFile]);
 
+  // Escape hatch for a stuck overlay: a file drag that ends outside the window (dropped
+  // on another app, or cancelled at the OS level) fires neither drop nor a window
+  // dragleave, so `dragging` can hang true. Esc always clears it (harmless no-op
+  // otherwise; no preventDefault, so other Esc handlers still fire). A ✕ on the overlay
+  // covers the same for mouse users.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setDragging(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   function handlePaste(e: React.ClipboardEvent) {
     // Attach every image in the paste (a folder selection Cmd-C'd carries several).
     const files = Array.from(e.clipboardData.items)
@@ -115,9 +128,18 @@ export function ChatInput({
     <form onSubmit={submit} className="flex shrink-0 flex-col gap-2 p-2">
       {dragging ? (
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/60 ring-2 ring-inset ring-zinc-400">
-          <span className="rounded border border-zinc-600 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-200">
-            Drop an image to attach
-          </span>
+          <div className="pointer-events-auto flex items-center gap-2 rounded border border-zinc-600 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-200">
+            <span>Drop an image to attach</span>
+            <button
+              type="button"
+              onClick={() => setDragging(false)}
+              aria-label="Dismiss"
+              title="Dismiss (Esc)"
+              className="-mr-1 rounded px-1 leading-none text-zinc-400 hover:text-zinc-100"
+            >
+              ✕
+            </button>
+          </div>
         </div>
       ) : null}
       {images.length > 0 ? (

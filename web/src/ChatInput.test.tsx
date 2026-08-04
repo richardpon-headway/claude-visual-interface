@@ -184,6 +184,30 @@ describe("ChatInput", () => {
     expect(overlay()).toBeNull();
   });
 
+  it("dismisses a stuck overlay with the Escape key", () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+    const overlay = () => screen.queryByText(/drop an image to attach/i);
+
+    // The drag ends outside the window (no drop, no window dragleave), so the overlay
+    // is stuck — Esc is the escape hatch.
+    fireEvent.dragOver(document.body, { dataTransfer: { types: ["Files"] } });
+    expect(overlay()).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(overlay()).toBeNull();
+  });
+
+  it("dismisses a stuck overlay via the ✕ button", () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+    const overlay = () => screen.queryByText(/drop an image to attach/i);
+
+    fireEvent.dragOver(document.body, { dataTransfer: { types: ["Files"] } });
+    expect(overlay()).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /dismiss/i }));
+    expect(overlay()).toBeNull();
+  });
+
   it("does not show the overlay for a non-file drag", () => {
     const onSend = vi.fn();
     render(<ChatInput onSend={onSend} />);
