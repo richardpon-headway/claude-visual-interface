@@ -42,8 +42,13 @@ export function ChatInput({
     reader.readAsDataURL(file);
   }, []);
 
-  // Accept image drops anywhere in the window, not just over the composer. The
-  // overlay only shows for file drags (not text/link drags), and clears when the
+  // Accept image drops anywhere the window sees the event. The visual affordance
+  // (below) is deliberately localized to the composer: rendered artifacts are
+  // sandboxed iframes that swallow drag events, so a drop over them never reaches this
+  // window handler and leaks to the browser (it navigates to the file). Rather than
+  // fight that, we point users at the composer — the region guaranteed to catch a drop
+  // — instead of dimming the whole screen as if it were all droppable.
+  // The overlay only shows for file drags (not text/link drags), and clears when the
   // cursor leaves the window — element-to-element moves keep relatedTarget set.
   useEffect(() => {
     function isFileDrag(e: DragEvent) {
@@ -125,22 +130,30 @@ export function ChatInput({
   }
 
   return (
-    <form onSubmit={submit} className="flex shrink-0 flex-col gap-2 p-2">
+    <form onSubmit={submit} className="relative flex shrink-0 flex-col gap-2 p-2">
       {dragging ? (
-        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/60 ring-2 ring-inset ring-zinc-400">
-          <div className="pointer-events-auto flex items-center gap-2 rounded border border-zinc-600 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-200">
-            <span>Drop an image to attach</span>
-            <button
-              type="button"
-              onClick={() => setDragging(false)}
-              aria-label="Dismiss"
-              title="Dismiss (Esc)"
-              className="-mr-1 rounded px-1 leading-none text-zinc-400 hover:text-zinc-100"
-            >
-              ✕
-            </button>
+        <>
+          {/* A very subtle full-window tint signals drag mode is active without
+              advertising the whole screen as a drop target. pointer-events-none so it
+              never intercepts the real window-level drop handler. */}
+          <div className="pointer-events-none fixed inset-0 z-40 bg-zinc-950/20" />
+          {/* The honest target: highlighted over the composer, the one region where a
+              drop is guaranteed to land. */}
+          <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded border-2 border-dashed border-emerald-400/80 bg-emerald-400/10">
+            <div className="pointer-events-auto flex items-center gap-2 rounded border border-emerald-500/50 bg-zinc-900 px-3 py-1.5 text-sm text-emerald-100">
+              <span>Drop screenshot here</span>
+              <button
+                type="button"
+                onClick={() => setDragging(false)}
+                aria-label="Dismiss"
+                title="Dismiss (Esc)"
+                className="-mr-1 rounded px-1 leading-none text-emerald-300/70 hover:text-emerald-100"
+              >
+                ✕
+              </button>
+            </div>
           </div>
-        </div>
+        </>
       ) : null}
       {images.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2">

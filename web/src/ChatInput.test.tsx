@@ -165,10 +165,10 @@ describe("ChatInput", () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
-  it("shows a window-wide overlay while dragging a file and clears on drop or leave", () => {
+  it("shows the composer drop target while dragging a file and clears on drop or leave", () => {
     const onSend = vi.fn();
     render(<ChatInput onSend={onSend} />);
-    const overlay = () => screen.queryByText(/drop an image to attach/i);
+    const overlay = () => screen.queryByText(/drop screenshot here/i);
 
     // A file drag anywhere in the window shows the overlay.
     fireEvent.dragOver(document.body, { dataTransfer: { types: ["Files"] } });
@@ -187,7 +187,7 @@ describe("ChatInput", () => {
   it("dismisses a stuck overlay with the Escape key", () => {
     const onSend = vi.fn();
     render(<ChatInput onSend={onSend} />);
-    const overlay = () => screen.queryByText(/drop an image to attach/i);
+    const overlay = () => screen.queryByText(/drop screenshot here/i);
 
     // The drag ends outside the window (no drop, no window dragleave), so the overlay
     // is stuck — Esc is the escape hatch.
@@ -200,7 +200,7 @@ describe("ChatInput", () => {
   it("dismisses a stuck overlay via the ✕ button", () => {
     const onSend = vi.fn();
     render(<ChatInput onSend={onSend} />);
-    const overlay = () => screen.queryByText(/drop an image to attach/i);
+    const overlay = () => screen.queryByText(/drop screenshot here/i);
 
     fireEvent.dragOver(document.body, { dataTransfer: { types: ["Files"] } });
     expect(overlay()).toBeInTheDocument();
@@ -213,7 +213,7 @@ describe("ChatInput", () => {
     render(<ChatInput onSend={onSend} />);
 
     fireEvent.dragOver(document.body, { dataTransfer: { types: ["text/plain"] } });
-    expect(screen.queryByText(/drop an image to attach/i)).toBeNull();
+    expect(screen.queryByText(/drop screenshot here/i)).toBeNull();
   });
 
   describe("busy toggle", () => {
