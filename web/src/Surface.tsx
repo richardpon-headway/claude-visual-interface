@@ -119,28 +119,46 @@ export function Surface({ surface }: { surface: string }) {
   const [active, setActive] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  // Whether the viewport is pinned near the bottom. Starts true so the first load /
-  // transcript replay lands at the bottom. Held as a ref for the auto-scroll effect
-  // (reads the latest value without re-subscribing) and mirrored into state so the
-  // jump-to-bottom button re-renders as you scroll.
-  const atBottomRef = useRef(true);
-  const [atBottom, setAtBottom] = useState(true);
+  // Whether we're auto-following the bottom ("pinned"). Starts true so the first load /
+  // transcript replay lands at the bottom, and *stays* true through streaming, async
+  // renders, and returning from a backgrounded tab — only a deliberate user scroll-up
+  // detaches it. Held as a ref for the auto-scroll effect (reads the latest value
+  // without re-subscribing) and mirrored into state so the jump-to-bottom button
+  // re-renders when you detach / re-attach. prevTopRef lets a scroll event tell a real
+  // upward user scroll (scrollTop moves *down*) apart from programmatic re-pins and
+  // content growth (which never move scrollTop down off the bottom).
+  const pinnedRef = useRef(true);
+  const [pinned, setPinned] = useState(true);
+  const prevTopRef = useRef(0);
 
   function scrollToBottom() {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-    atBottomRef.current = true;
-    setAtBottom(true);
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+      prevTopRef.current = el.scrollTop;
+    }
+    pinnedRef.current = true;
+    setPinned(true);
   }
 
-  // Recompute the pin whenever the user scrolls, so the jump-to-bottom button shows
-  // whenever you're scrolled up and hides once you're back at the bottom.
+  // Decide pin/unpin from scroll events. We must *not* unpin on every event that lands
+  // off the bottom — content growth, programmatic re-pins, and returning from a hidden
+  // tab all fire scroll events, and treating those as "the user scrolled up" is exactly
+  // what made the pin drop spuriously. So: reaching the bottom (re-)pins; otherwise we
+  // detach only when scrollTop actually moved *down*, which only a real user scroll-up
+  // (or clicking a rail item to jump to an earlier prompt) does — programmatic pins and
+  // appended content never move it down off the bottom.
   function handleScroll() {
     const el = scrollRef.current;
     if (!el) return;
-    const nearBottom = isNearBottom(el, BOTTOM_SLACK_PX);
-    atBottomRef.current = nearBottom;
-    setAtBottom(nearBottom);
+    const top = el.scrollTop;
+    if (isNearBottom(el, BOTTOM_SLACK_PX)) {
+      pinnedRef.current = true;
+    } else if (top < prevTopRef.current - 1) {
+      pinnedRef.current = false;
+    }
+    prevTopRef.current = top;
+    setPinned(pinnedRef.current);
   }
 
   // Submitting your own prompt always snaps to the bottom — you initiated it, so re-pin
@@ -162,12 +180,30 @@ export function Surface({ surface }: { surface: string }) {
     const content = contentRef.current;
     if (!el || !content) return;
     const stickToBottom = () => {
-      if (atBottomRef.current) el.scrollTop = el.scrollHeight;
+      if (pinnedRef.current) el.scrollTop = el.scrollHeight;
     };
     const observer = new ResizeObserver(stickToBottom);
     observer.observe(content); // transcript growth (new/streaming entries, async renders)
     observer.observe(el); // viewport growth (composer / thinking row toggling)
     return () => observer.disconnect();
+  }, []);
+
+  // Coming back to a backgrounded tab: the browser pauses layout and the ResizeObserver
+  // while hidden, so output that streamed in while you were away hasn't been followed
+  // yet — the view is parked where you left it. On becoming visible again, snap to the
+  // bottom if still pinned, before the first paint, so you land on the newest output
+  // with no visible lurch instead of stranded mid-thread with a jump button.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      const el = scrollRef.current;
+      if (el && pinnedRef.current) {
+        el.scrollTop = el.scrollHeight;
+        prevTopRef.current = el.scrollTop;
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, []);
 
   // Scroll-spy: mark the active prompt from the rendered anchors' positions.
@@ -259,7 +295,7 @@ export function Surface({ surface }: { surface: string }) {
           </div>
         </div>
 
-        {!atBottom ? (
+        {!pinned ? (
           <button
             type="button"
             onClick={scrollToBottom}
