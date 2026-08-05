@@ -118,6 +118,7 @@ export function Surface({ surface }: { surface: string }) {
   const [railOpen, setRailOpen] = useState(false);
   const [active, setActive] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   // Whether the viewport is pinned near the bottom. Starts true so the first load /
   // transcript replay lands at the bottom. Held as a ref for the auto-scroll effect
   // (reads the latest value without re-subscribing) and mirrored into state so the
@@ -149,16 +150,25 @@ export function Surface({ surface }: { surface: string }) {
     sendMessage(text, images);
   };
 
-  // Stick to the bottom as new content arrives — but only while pinned, so scrolling up
-  // to read history isn't yanked back down. Pin the scroll container itself: scrollHeight
-  // covers the transcript's bottom padding, which scrollIntoView on a zero-height marker
-  // would leave below the fold. Re-run when the transcript grows, the last entry streams
-  // more text, or the thinking indicator toggles the composer height.
-  const lastEntryText = view.activity[view.activity.length - 1]?.text ?? "";
+  // Stay glued to the bottom while pinned, so the latest output stays in view as it
+  // arrives — but never yank the view down while the user is reading history above.
+  // A ResizeObserver re-pins on *any* content or viewport size change: streaming text,
+  // async-rendered code/images that land after the last render, and the composer/thinking
+  // row resizing the scroll area. (A deps-based effect missed those late, non-React
+  // growths, so the view drifted off the bottom.) Pin the scroll container itself —
+  // scrollHeight covers the transcript's bottom padding.
   useEffect(() => {
     const el = scrollRef.current;
-    if (el && atBottomRef.current) el.scrollTop = el.scrollHeight;
-  }, [view.activity.length, lastEntryText, view.thinking]);
+    const content = contentRef.current;
+    if (!el || !content) return;
+    const stickToBottom = () => {
+      if (atBottomRef.current) el.scrollTop = el.scrollHeight;
+    };
+    const observer = new ResizeObserver(stickToBottom);
+    observer.observe(content); // transcript growth (new/streaming entries, async renders)
+    observer.observe(el); // viewport growth (composer / thinking row toggling)
+    return () => observer.disconnect();
+  }, []);
 
   // Scroll-spy: mark the active prompt from the rendered anchors' positions.
   useEffect(() => {
@@ -231,7 +241,7 @@ export function Surface({ surface }: { surface: string }) {
         ) : null}
 
         <div ref={scrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-auto">
-          <div className="px-4 py-4">
+          <div ref={contentRef} className="px-4 py-4">
             <ErrorBoundary
               fallback={
                 <div className="mx-auto w-full max-w-3xl rounded-lg border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-zinc-400">
