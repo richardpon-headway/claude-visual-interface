@@ -1,0 +1,24 @@
+web/src/Surface.tsx
+  s_84184e243882f6::t_efd001080f7f70 139-142,144
+  s_84184e243882f6::t_69e8e8361b20c7 190
+  s_84184e243882f6::t_b0bdf671747543 130-138,143,145,150,158-161,165-168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "1b63f0ad132247294125563537d6c79ab19c620a",
+  "prompts": {},
+  "sessions": {
+    "s_84184e243882f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5a3ba07-41e7-412b-8b4b-2252384c0fd2",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
