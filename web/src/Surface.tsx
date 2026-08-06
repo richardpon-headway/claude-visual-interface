@@ -119,57 +119,56 @@ export function Surface({ surface }: { surface: string }) {
   const [active, setActive] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  // We jump to the bottom only at well-defined moments — first load, when a response
-  // finishes, and when you send — and never while a response streams (so you can read
-  // history undisturbed). A response's final artifacts/images measure their height a
-  // few frames *after* they render, so a one-shot scroll would land above the real
-  // bottom; each jump therefore opens a short "settle" window during which any content
-  // resize re-asserts the bottom. `atBottom` only drives the jump button's visibility.
+  // Stick-to-bottom model: the view follows new output *only while you're parked at the
+  // bottom*. The moment you scroll up it releases and leaves you undisturbed; scroll back
+  // to the bottom and it re-engages. There are no scroll-direction/velocity heuristics —
+  // "am I near the bottom right now?" is the whole signal, so a programmatic scroll (which
+  // always lands at the bottom) can never be misread as the user scrolling away.
+  // `stickRef` drives following; `atBottom` mirrors it for the jump button's visibility.
   const [atBottom, setAtBottom] = useState(true);
-  const settlingRef = useRef(false);
-  const settleTimerRef = useRef<number | undefined>(undefined);
+  const stickRef = useRef(true);
 
   function jumpToBottom() {
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
+    // Re-engage following. Because the observer below sticks continuously while
+    // `stickRef` is true, any content that lands *after* this call (a round-tripped
+    // prompt, a late-measuring image/artifact) is followed automatically — no timer.
+    stickRef.current = true;
     setAtBottom(true);
-    // Keep re-asserting the bottom briefly so late artifact/image/iframe height
-    // measurement doesn't leave us stranded above the true bottom.
-    settlingRef.current = true;
-    window.clearTimeout(settleTimerRef.current);
-    settleTimerRef.current = window.setTimeout(() => {
-      settlingRef.current = false;
-    }, 800);
   }
 
-  // Track only whether we're at the bottom, to show/hide the jump button. No pinned
-  // state or scroll-direction heuristics — jumps happen on explicit events, so a
-  // browser-driven scroll adjustment can never be misread as "the user scrolled up".
+  // Every scroll re-derives whether we're following: near the bottom → keep sticking;
+  // scrolled up → release. This is what lets you scroll freely while output streams.
   function handleScroll() {
     const el = scrollRef.current;
-    if (el) setAtBottom(isNearBottom(el, BOTTOM_SLACK_PX));
+    if (!el) return;
+    const near = isNearBottom(el, BOTTOM_SLACK_PX);
+    stickRef.current = near;
+    setAtBottom(near);
   }
 
-  // Submitting your own prompt snaps to the bottom — you initiated it.
+  // Submitting your own prompt re-anchors to the bottom — you initiated it — and, via
+  // jumpToBottom, re-engages following so the prompt + streaming reply are pinned in view.
   const handleSend: SendMessage = (text, images) => {
     jumpToBottom();
     sendMessage(text, images);
   };
 
-  // A single observer that re-asserts the bottom *only* during a settle window opened
-  // by jumpToBottom. This absorbs late, non-React growth (async-rendered code/images/
-  // iframes) so a jump lands on the real bottom instead of a placeholder-height one —
-  // without ever yanking the view while you're reading history mid-stream.
+  // One observer keeps the view pinned to the bottom whenever we're sticking. It fires on
+  // transcript growth (streaming tokens, late-rendered code/images/iframes) and viewport
+  // growth (composer / thinking row toggling), so following stays glued to the real bottom
+  // as content settles — while never touching the view once you've scrolled up.
   useEffect(() => {
     const el = scrollRef.current;
     const content = contentRef.current;
     if (!el || !content) return;
-    const stickWhileSettling = () => {
-      if (settlingRef.current) el.scrollTop = el.scrollHeight;
+    const stickToBottom = () => {
+      if (stickRef.current) el.scrollTop = el.scrollHeight;
     };
-    const observer = new ResizeObserver(stickWhileSettling);
-    observer.observe(content); // transcript growth (late artifact/image renders)
+    const observer = new ResizeObserver(stickToBottom);
+    observer.observe(content); // transcript growth (streaming + late artifact/image renders)
     observer.observe(el); // viewport growth (composer / thinking row toggling)
     return () => observer.disconnect();
   }, []);
@@ -182,14 +181,6 @@ export function Surface({ surface }: { surface: string }) {
       jumpToBottom();
     }
   }, [view.activity.length]);
-
-  // Snap to the bottom when a response finishes (the thinking flag falls). We do NOT
-  // follow while it streams — this is the only moment streamed output pulls the view down.
-  const prevThinkingRef = useRef(view.thinking);
-  useEffect(() => {
-    if (prevThinkingRef.current && !view.thinking) jumpToBottom();
-    prevThinkingRef.current = view.thinking;
-  }, [view.thinking]);
 
   // Scroll-spy: mark the active prompt from the rendered anchors' positions.
   useEffect(() => {
