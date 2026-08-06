@@ -127,11 +127,27 @@ export function Surface({ surface }: { surface: string }) {
   // `stickRef` drives following; `atBottom` mirrors it for the jump button's visibility.
   const [atBottom, setAtBottom] = useState(true);
   const stickRef = useRef(true);
+  // Set just before *we* move the view programmatically. The scroll event that our own
+  // assignment triggers must not be mistaken for the user scrolling away: right after a
+  // submit the transcript is still settling (prompt echo, streaming reply, composer
+  // shrinking back to one line), so a self-induced scroll measured mid-shuffle can read
+  // as "not at the bottom" and silently release following. handleScroll consumes and
+  // clears this flag so only genuine user scrolls re-derive stickiness.
+  const programmaticRef = useRef(false);
+
+  function scrollToBottom(el: HTMLDivElement) {
+    const max = el.scrollHeight - el.clientHeight;
+    // Already pinned — assigning wouldn't move anything or fire a scroll event, so don't
+    // arm the guard (an armed-but-unconsumed flag would swallow the user's next scroll).
+    if (el.scrollTop >= max) return;
+    programmaticRef.current = true;
+    el.scrollTop = max;
+  }
 
   function jumpToBottom() {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
+    scrollToBottom(el);
     // Re-engage following. Because the observer below sticks continuously while
     // `stickRef` is true, any content that lands *after* this call (a round-tripped
     // prompt, a late-measuring image/artifact) is followed automatically — no timer.
@@ -139,11 +155,17 @@ export function Surface({ surface }: { surface: string }) {
     setAtBottom(true);
   }
 
-  // Every scroll re-derives whether we're following: near the bottom → keep sticking;
-  // scrolled up → release. This is what lets you scroll freely while output streams.
+  // Every *user* scroll re-derives whether we're following: near the bottom → keep
+  // sticking; scrolled up → release. This is what lets you scroll freely while output
+  // streams. Scrolls we caused ourselves (jumpToBottom / the stick observer) are ignored
+  // so our own repositioning can't be misread as the user scrolling away.
   function handleScroll() {
     const el = scrollRef.current;
     if (!el) return;
+    if (programmaticRef.current) {
+      programmaticRef.current = false;
+      return;
+    }
     const near = isNearBottom(el, BOTTOM_SLACK_PX);
     stickRef.current = near;
     setAtBottom(near);
@@ -165,7 +187,7 @@ export function Surface({ surface }: { surface: string }) {
     const content = contentRef.current;
     if (!el || !content) return;
     const stickToBottom = () => {
-      if (stickRef.current) el.scrollTop = el.scrollHeight;
+      if (stickRef.current) scrollToBottom(el);
     };
     const observer = new ResizeObserver(stickToBottom);
     observer.observe(content); // transcript growth (streaming + late artifact/image renders)
