@@ -1,0 +1,24 @@
+web/index.html
+  s_73eb6f497d08d3::t_7c77cd54997599 6
+web/public/favicon.svg
+  s_73eb6f497d08d3::t_8ac5c332a90a65 1-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "6251441b5ae64449a4fe74c0afe5f5f224e5f5ba",
+  "prompts": {},
+  "sessions": {
+    "s_73eb6f497d08d3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b23474c4-2d13-4d96-b439-62ad90945b32",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richard.pon@findheadway.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
