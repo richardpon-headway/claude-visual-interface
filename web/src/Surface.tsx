@@ -119,92 +119,77 @@ export function Surface({ surface }: { surface: string }) {
   const [active, setActive] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  // Whether we're auto-following the bottom ("pinned"). Starts true so the first load /
-  // transcript replay lands at the bottom, and *stays* true through streaming, async
-  // renders, and returning from a backgrounded tab — only a deliberate user scroll-up
-  // detaches it. Held as a ref for the auto-scroll effect (reads the latest value
-  // without re-subscribing) and mirrored into state so the jump-to-bottom button
-  // re-renders when you detach / re-attach. prevTopRef lets a scroll event tell a real
-  // upward user scroll (scrollTop moves *down*) apart from programmatic re-pins and
-  // content growth (which never move scrollTop down off the bottom).
-  const pinnedRef = useRef(true);
-  const [pinned, setPinned] = useState(true);
-  const prevTopRef = useRef(0);
+  // We jump to the bottom only at well-defined moments — first load, when a response
+  // finishes, and when you send — and never while a response streams (so you can read
+  // history undisturbed). A response's final artifacts/images measure their height a
+  // few frames *after* they render, so a one-shot scroll would land above the real
+  // bottom; each jump therefore opens a short "settle" window during which any content
+  // resize re-asserts the bottom. `atBottom` only drives the jump button's visibility.
+  const [atBottom, setAtBottom] = useState(true);
+  const settlingRef = useRef(false);
+  const settleTimerRef = useRef<number | undefined>(undefined);
 
-  function scrollToBottom() {
-    const el = scrollRef.current;
-    if (el) {
-      el.scrollTop = el.scrollHeight;
-      prevTopRef.current = el.scrollTop;
-    }
-    pinnedRef.current = true;
-    setPinned(true);
-  }
-
-  // Decide pin/unpin from scroll events. We must *not* unpin on every event that lands
-  // off the bottom — content growth, programmatic re-pins, and returning from a hidden
-  // tab all fire scroll events, and treating those as "the user scrolled up" is exactly
-  // what made the pin drop spuriously. So: reaching the bottom (re-)pins; otherwise we
-  // detach only when scrollTop actually moved *down*, which only a real user scroll-up
-  // (or clicking a rail item to jump to an earlier prompt) does — programmatic pins and
-  // appended content never move it down off the bottom.
-  function handleScroll() {
+  function jumpToBottom() {
     const el = scrollRef.current;
     if (!el) return;
-    const top = el.scrollTop;
-    if (isNearBottom(el, BOTTOM_SLACK_PX)) {
-      pinnedRef.current = true;
-    } else if (top < prevTopRef.current - 1) {
-      pinnedRef.current = false;
-    }
-    prevTopRef.current = top;
-    setPinned(pinnedRef.current);
+    el.scrollTop = el.scrollHeight;
+    setAtBottom(true);
+    // Keep re-asserting the bottom briefly so late artifact/image/iframe height
+    // measurement doesn't leave us stranded above the true bottom.
+    settlingRef.current = true;
+    window.clearTimeout(settleTimerRef.current);
+    settleTimerRef.current = window.setTimeout(() => {
+      settlingRef.current = false;
+    }, 800);
   }
 
-  // Submitting your own prompt always snaps to the bottom — you initiated it, so re-pin
-  // before the message lands and the effect below sticks to the reply.
+  // Track only whether we're at the bottom, to show/hide the jump button. No pinned
+  // state or scroll-direction heuristics — jumps happen on explicit events, so a
+  // browser-driven scroll adjustment can never be misread as "the user scrolled up".
+  function handleScroll() {
+    const el = scrollRef.current;
+    if (el) setAtBottom(isNearBottom(el, BOTTOM_SLACK_PX));
+  }
+
+  // Submitting your own prompt snaps to the bottom — you initiated it.
   const handleSend: SendMessage = (text, images) => {
-    scrollToBottom();
+    jumpToBottom();
     sendMessage(text, images);
   };
 
-  // Stay glued to the bottom while pinned, so the latest output stays in view as it
-  // arrives — but never yank the view down while the user is reading history above.
-  // A ResizeObserver re-pins on *any* content or viewport size change: streaming text,
-  // async-rendered code/images that land after the last render, and the composer/thinking
-  // row resizing the scroll area. (A deps-based effect missed those late, non-React
-  // growths, so the view drifted off the bottom.) Pin the scroll container itself —
-  // scrollHeight covers the transcript's bottom padding.
+  // A single observer that re-asserts the bottom *only* during a settle window opened
+  // by jumpToBottom. This absorbs late, non-React growth (async-rendered code/images/
+  // iframes) so a jump lands on the real bottom instead of a placeholder-height one —
+  // without ever yanking the view while you're reading history mid-stream.
   useEffect(() => {
     const el = scrollRef.current;
     const content = contentRef.current;
     if (!el || !content) return;
-    const stickToBottom = () => {
-      if (pinnedRef.current) el.scrollTop = el.scrollHeight;
+    const stickWhileSettling = () => {
+      if (settlingRef.current) el.scrollTop = el.scrollHeight;
     };
-    const observer = new ResizeObserver(stickToBottom);
-    observer.observe(content); // transcript growth (new/streaming entries, async renders)
+    const observer = new ResizeObserver(stickWhileSettling);
+    observer.observe(content); // transcript growth (late artifact/image renders)
     observer.observe(el); // viewport growth (composer / thinking row toggling)
     return () => observer.disconnect();
   }, []);
 
-  // Coming back to a backgrounded tab: the browser pauses layout and the ResizeObserver
-  // while hidden, so output that streamed in while you were away hasn't been followed
-  // yet — the view is parked where you left it. On becoming visible again, snap to the
-  // bottom if still pinned, before the first paint, so you land on the newest output
-  // with no visible lurch instead of stranded mid-thread with a jump button.
+  // First time the transcript arrives (snapshot on open), land at the bottom.
+  const didInitJumpRef = useRef(false);
   useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState !== "visible") return;
-      const el = scrollRef.current;
-      if (el && pinnedRef.current) {
-        el.scrollTop = el.scrollHeight;
-        prevTopRef.current = el.scrollTop;
-      }
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
-  }, []);
+    if (!didInitJumpRef.current && view.activity.length > 0) {
+      didInitJumpRef.current = true;
+      jumpToBottom();
+    }
+  }, [view.activity.length]);
+
+  // Snap to the bottom when a response finishes (the thinking flag falls). We do NOT
+  // follow while it streams — this is the only moment streamed output pulls the view down.
+  const prevThinkingRef = useRef(view.thinking);
+  useEffect(() => {
+    if (prevThinkingRef.current && !view.thinking) jumpToBottom();
+    prevThinkingRef.current = view.thinking;
+  }, [view.thinking]);
 
   // Scroll-spy: mark the active prompt from the rendered anchors' positions.
   useEffect(() => {
@@ -295,10 +280,10 @@ export function Surface({ surface }: { surface: string }) {
           </div>
         </div>
 
-        {!pinned ? (
+        {!atBottom ? (
           <button
             type="button"
-            onClick={scrollToBottom}
+            onClick={jumpToBottom}
             className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-100 shadow-lg hover:bg-zinc-700"
           >
             ↓ Jump to bottom
