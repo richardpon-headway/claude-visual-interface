@@ -7,8 +7,8 @@
 --
 -- `id` autoincrements, giving a stable insertion order to read back by. No foreign
 -- key to `session`: a surface is an opaque string here (the in-memory store treats
--- it the same, and /dev/emit records to surfaces with no session row). `summary` is
--- a user prompt's outline-rail label, filled in after the row is written.
+-- it the same, and activity can be recorded to surfaces with no session row).
+-- `summary` is a user prompt's outline-rail label, filled in after the row is written.
 
 BEGIN;
 

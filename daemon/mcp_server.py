@@ -1,13 +1,15 @@
-"""The CVI MCP server: the render vocabulary a Claude session pushes through.
+"""The CVI render vocabulary a Claude session drives through its reply text.
 
-The daemon hosts a single in-process MCP server (via the Claude Agent SDK) that a
-session connects to. A surface is one scrolling conversation; the agent renders
-content into it with one primitive:
+A surface is one scrolling conversation. Rather than call a tool, the agent renders
+a page by wrapping self-contained HTML in a `<cvi-artifact>` tag in its normal reply;
+the relay (see `activity_relay.split_render_segments`) sniffs that tag out of the
+streamed text and calls `render_html_on_surface` here. Using no tool keeps the render
+path off the MCP surface entirely — nothing to gate, so it survives a session that has
+already touched a PHI-class MCP tool.
 
-- render_html — a self-contained HTML page, inline in the conversation
-
-It appends a segment to the per-surface activity buffer and broadcasts it to the
-browser over the WebSocket; the buffer rides the connect snapshot for late joiners.
+The render effect appends a segment to the per-surface activity buffer and broadcasts
+it to the browser over the WebSocket; the buffer rides the connect snapshot for late
+joiners. This module also owns the chat system prompt and the session-options builder.
 """
 
 from __future__ import annotations
@@ -18,11 +20,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from claude_agent_sdk import (
-    ClaudeAgentOptions,
-    create_sdk_mcp_server,
-    tool,
-)
+from claude_agent_sdk import ClaudeAgentOptions
 
 from daemon import config, messages, token_usage
 from daemon.hub import hub
@@ -30,21 +28,18 @@ from daemon.view_state import ActivityEntry, store
 
 log = logging.getLogger(__name__)
 
-SERVER_NAME = "cvi"
-SERVER_VERSION = "0.1.0"
-
-
-def _ok(text: str) -> dict[str, Any]:
-    return {"content": [{"type": "text", "text": text}]}
-
 
 # --- render helpers ---------------------------------------------------------------
 
-async def render_html_on_surface(surface: str, html: str, title: str | None = None) -> None:
+async def render_html_on_surface(
+    surface: str, html: str, title: str | None = None, background: bool = False
+) -> None:
     """Render a model-authored HTML page as an inline artifact block in the
     conversation stream: it rides the activity buffer (and the connect snapshot) and
-    appears in order, like any other turn. The canonical effect behind render_html."""
-    await record_activity(surface, "artifact", title or "", html=html)
+    appears in order, like any other turn. The canonical render effect, called by the
+    relay when it sniffs a `<cvi-artifact>` tag out of the model's reply text.
+    `background` marks a page produced by an agent-initiated (background-task) turn."""
+    await record_activity(surface, "artifact", title or "", html=html, background=background)
 
 
 def _entry_from_row(row: dict[str, Any]) -> ActivityEntry:
@@ -204,56 +199,21 @@ async def broadcast_thinking(surface: str, active: bool) -> None:
     )
 
 
-# --- render primitives ------------------------------------------------------------
-
-@tool(
-    "render_html",
-    "Render a self-contained HTML page inline in the conversation — for anything "
-    "visual that isn't code: a design, diagram, table, report, or text-driven review. "
-    "Each call appears as its own block in the conversation. Emit self-contained "
-    "HTML/CSS/SVG only — no JavaScript and no external/CDN resources (the page renders "
-    "in a no-script sandbox).",
-    {
-        "type": "object",
-        "properties": {
-            "surface": {"type": "string", "description": "Surface UUID to route to"},
-            "html": {"type": "string", "description": "A complete, self-contained HTML document"},
-            "title": {"type": "string", "description": "Short label for the page (optional)"},
-        },
-        "required": ["surface", "html"],
-    },
-)
-async def render_html(args: dict[str, Any]) -> dict[str, Any]:
-    surface = args["surface"]
-    await render_html_on_surface(surface, args["html"], args.get("title"))
-    return _ok(f"rendered html on surface {surface}")
-
-
-# The full primitive vocabulary: render content into the conversation.
-TOOLS = [
-    render_html,
-]
-
-TOOL_NAMES = [t.name for t in TOOLS]
-
-# Fully-qualified names the Agent SDK exposes to a session: mcp__<server>__<tool>.
-ALLOWED_TOOLS = [f"mcp__{SERVER_NAME}__{name}" for name in TOOL_NAMES]
-
-cvi_server = create_sdk_mcp_server(
-    name=SERVER_NAME,
-    version=SERVER_VERSION,
-    tools=TOOLS,
-)
-
-
 # The render contract: visuals render inline in the conversation as self-contained
 # no-script pages. Kept as one constant so the chat prompt's rule can't drift.
 _RENDER_HTML_GUIDANCE = (
     "Default to rendering an HTML page rather than answering in prose. Any output that "
     "has structure — a design, diagram, table, chart, or report, but also a comparison, "
     "a list, ranked or trade-off options, a step-by-step explanation, a summary of "
-    "findings, or a walkthrough of code or a decision — should be an inline HTML page "
-    "via mcp__cvi__render_html, not plain text. Reserve plain prose for genuinely "
+    "findings, or a walkthrough of code or a decision — should be an inline HTML page, "
+    "not plain text. To render a page, wrap the complete HTML document in a "
+    "<cvi-artifact> tag: <cvi-artifact title=\"Short label\">…your HTML…</cvi-artifact> "
+    "(the title is optional). Everything between the tags is rendered inline as a "
+    "self-contained page; any text outside the tags is shown as normal prose, so you "
+    "may precede a page with a one-line pointer. Use the <cvi-artifact> tag ONLY to "
+    "render a page for the user to see — when you instead want to SHOW HTML source as "
+    "an example (teaching, quoting code), put it in a normal ```html code block, which "
+    "is never rendered. Reserve plain prose for genuinely "
     "conversational replies: a short direct answer, a quick acknowledgement, or a "
     "clarifying question. When it's a close call, render. That "
     "page must be self-contained HTML/CSS/SVG only: no JavaScript and no external/CDN "
@@ -274,17 +234,17 @@ _RENDER_HTML_GUIDANCE = (
 
 # The picker contract: a multiple-choice decision goes through AskUserQuestion, and
 # each option may carry a rich HTML preview rendered inline beside a Select button — so
-# the options appear once, in the picker, never also as a render_html page or a text list.
+# the options appear once, in the picker, never also as a rendered page or a text list.
 _ASK_PICKER_GUIDANCE = (
     "When you need the user to choose between options, use the AskUserQuestion tool "
     "rather than listing the choices in prose. Each option may carry a rich HTML "
-    "`preview`: a self-contained HTML/CSS/SVG fragment (same rules as render_html — no "
-    "JavaScript, no external/CDN resources, no CSS zoom, authored for the dark surface) "
-    "that renders inline in the picker beside a Select button the user clicks. Put an "
-    "option's full detail in its preview and lead the preview with the option's label so "
-    "the card's heading matches the choice. Do NOT also render the same options with "
-    "render_html or repeat them as a text list — the picker is the single place the "
-    "options appear."
+    "`preview`: a self-contained HTML/CSS/SVG fragment (same rules as a rendered page — "
+    "no JavaScript, no external/CDN resources, no CSS zoom, authored for the dark "
+    "surface) that renders inline in the picker beside a Select button the user clicks. "
+    "Put an option's full detail in its preview and lead the preview with the option's "
+    "label so the card's heading matches the choice. Do NOT also render the same options "
+    "as a <cvi-artifact> page or repeat them as a text list — the picker is the single "
+    "place the options appear."
 )
 
 # The framing for a conversational session — the system prompt every chat agent runs.
@@ -301,28 +261,24 @@ def build_agent_options(
     system_prompt: str | None = None,
     resume: str | None = None,
 ) -> ClaudeAgentOptions:
-    """Build the session-connection point: options that attach the CVI MCP server and
-    grant full read/write tool access. A daemon session is headless (no interactive
+    """Build the session-connection point: options that grant full read/write tool
+    access and attach any external MCP servers. Rendering is no longer a tool — the
+    session renders by emitting a `<cvi-artifact>` tag in its reply text — so CVI
+    contributes no in-process server here. A daemon session is headless (no interactive
     permission prompts), so `bypassPermissions` is the equivalent of the CLI's
     accept-all. `cwd` is the directory the session runs in (chat sessions pass the
     configured `working_dir`; defaults to None so the SDK inherits the process cwd);
     `system_prompt` steers the session; `resume` carries a prior SDK session id to
     continue that conversation.
 
-    External stdio MCP servers declared in `config.yaml` (`mcp_servers`) are attached
-    alongside the in-process `cvi` server, and each gets a matching `allowed_tools`
-    entry so its tools are actually usable. `strict_mcp_config` keeps the server set
-    fully determined by CVI's config — no ambient CLI/project config is merged in."""
+    External stdio MCP servers declared in `config.yaml` (`mcp_servers`) are attached,
+    each with a matching `allowed_tools` entry so its tools are actually usable.
+    `strict_mcp_config` keeps the server set fully determined by CVI's config — no
+    ambient CLI/project config is merged in."""
     external = config.get_mcp_servers()
-    if SERVER_NAME in external:
-        log.warning(
-            "ignoring mcp_servers entry %r: name reserved for the in-process server",
-            SERVER_NAME,
-        )
-        external = {name: spec for name, spec in external.items() if name != SERVER_NAME}
     return ClaudeAgentOptions(
-        mcp_servers={SERVER_NAME: cvi_server, **external},
-        allowed_tools=[*ALLOWED_TOOLS, *(f"mcp__{name}" for name in external)],
+        mcp_servers={**external},
+        allowed_tools=[f"mcp__{name}" for name in external],
         strict_mcp_config=True,
         permission_mode="bypassPermissions",
         cwd=cwd,

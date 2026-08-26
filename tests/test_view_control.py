@@ -17,7 +17,7 @@ from daemon.mcp_server import (
     broadcast_tokens,
     hydrate_surface,
     record_activity,
-    render_html,
+    render_html_on_surface,
 )
 from daemon.view_state import store
 
@@ -36,12 +36,12 @@ class FakeWS:
         self.received.append(data)
 
 
-async def test_render_html_appends_an_inline_artifact_and_broadcasts():
+async def test_render_html_on_surface_appends_an_inline_artifact_and_broadcasts():
     surface = "vc-html"
     ws = FakeWS()
     hub.register(surface, ws)
     try:
-        await render_html.handler({"surface": surface, "html": "<p>hi</p>", "title": "design"})
+        await render_html_on_surface(surface, "<p>hi</p>", "design")
     finally:
         hub.unregister(surface, ws)
 
@@ -56,12 +56,12 @@ async def test_render_html_appends_an_inline_artifact_and_broadcasts():
     ]
 
 
-async def test_render_html_defaults_title_to_empty():
+async def test_render_html_on_surface_defaults_title_to_empty():
     surface = "vc-html-notitle"
     ws = FakeWS()
     hub.register(surface, ws)
     try:
-        await render_html.handler({"surface": surface, "html": "<p>hi</p>"})
+        await render_html_on_surface(surface, "<p>hi</p>")
     finally:
         hub.unregister(surface, ws)
 

@@ -15,16 +15,14 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from daemon import config, session_sidecar, sessions
 from daemon.agent_session import ImageInput, agents
 from daemon.db import apply_migrations
 from daemon.hub import hub
-from daemon.mcp_server import SERVER_NAME, TOOLS, broadcast_title, hydrate_surface
+from daemon.mcp_server import broadcast_title, hydrate_surface
 from daemon.view_state import store
-
-_TOOLS_BY_NAME = {t.name: t for t in TOOLS}
 
 HOST = "127.0.0.1"
 PORT = 47825
@@ -37,7 +35,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await apply_migrations()
     config.ensure_config_file()
     log.info("chat working_dir = %s", config.get_working_dir())
-    log.info("MCP server '%s' ready with %d primitive(s)", SERVER_NAME, len(TOOLS))
     yield
     await agents.shutdown_all()
 
@@ -151,22 +148,6 @@ async def open_chat() -> dict[str, str]:
     empty sessions on every launch."""
     session_id = await asyncio.to_thread(sessions.open_or_create_chat)
     return {"session_id": session_id}
-
-
-class EmitRequest(BaseModel):
-    tool: str
-    args: dict[str, Any] = Field(default_factory=dict)
-
-
-@app.post("/dev/emit")
-async def dev_emit(req: EmitRequest) -> dict[str, Any]:
-    """Dev harness: invoke an MCP primitive by name so the push→render path can be
-    exercised by hand — e.g. ``curl`` an ``open_code`` while a browser watches
-    ``/ws/<surface>`` — without a real Claude session."""
-    tool = _TOOLS_BY_NAME.get(req.tool)
-    if tool is None:
-        raise HTTPException(status_code=404, detail=f"unknown primitive: {req.tool}")
-    return await tool.handler(req.args)
 
 
 @app.websocket("/ws/{surface}")

@@ -9,10 +9,12 @@ live transcript.
 from __future__ import annotations
 
 import logging
+import re
+from dataclasses import dataclass
 
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
 
-from daemon.mcp_server import record_activity
+from daemon.mcp_server import record_activity, render_html_on_surface
 
 log = logging.getLogger(__name__)
 
@@ -21,22 +23,82 @@ log = logging.getLogger(__name__)
 _MAX_SUMMARY = 120
 
 
+@dataclass
+class RenderSegment:
+    """One ordered piece of a text block: either prose (`kind="text"`) or a page the
+    model asked to render (`kind="artifact"`, carrying its `html` and optional `title`)."""
+
+    kind: str
+    text: str = ""
+    html: str = ""
+    title: str = ""
+
+
+# Left-to-right scanner over a model text block. The alternation order matters: a
+# fenced code block and an inline code span are matched (and thus consumed) BEFORE the
+# artifact tag, so a `<cvi-artifact>` that appears inside code — a ```html example or a
+# `<cvi-artifact>` shown in prose while explaining the feature — is treated as literal
+# text and never rendered. A `<cvi-artifact>` with no closing tag simply doesn't match,
+# so a truncated page is never rendered either.
+_SEGMENT_SCANNER = re.compile(
+    r"(?P<fence>```.*?```)"
+    r"|(?P<inline>`[^`\n]*`)"
+    r"|(?P<artifact><cvi-artifact(?P<attrs>[^>]*)>(?P<html>.*?)</cvi-artifact>)",
+    re.DOTALL | re.IGNORECASE,
+)
+_TITLE_ATTR = re.compile(
+    r"""title\s*=\s*(?P<q>["'])(?P<val>.*?)(?P=q)""", re.IGNORECASE
+)
+
+
+def split_render_segments(text: str) -> list[RenderSegment]:
+    """Split a model text block into ordered prose/artifact segments. Each
+    `<cvi-artifact …>…</cvi-artifact>` (outside any code span) becomes an `artifact`
+    segment; the surrounding prose becomes `text` segments, in reading order.
+    Whitespace-only prose is dropped. Text with no artifact tag yields at most one
+    `text` segment (or none, if blank)."""
+    segments: list[RenderSegment] = []
+    buf: list[str] = []
+
+    def flush_text() -> None:
+        joined = "".join(buf).strip()
+        buf.clear()
+        if joined:
+            segments.append(RenderSegment(kind="text", text=joined))
+
+    pos = 0
+    for m in _SEGMENT_SCANNER.finditer(text):
+        buf.append(text[pos : m.start()])
+        pos = m.end()
+        if m.group("artifact") is not None:
+            flush_text()
+            title_match = _TITLE_ATTR.search(m.group("attrs") or "")
+            segments.append(
+                RenderSegment(
+                    kind="artifact",
+                    html=m.group("html").strip(),
+                    title=title_match.group("val") if title_match else "",
+                )
+            )
+        else:
+            # A code span (fenced or inline) — keep it verbatim as prose.
+            buf.append(m.group(0))
+    buf.append(text[pos:])
+    flush_text()
+    return segments
+
+
 def _truncate(text: str, limit: int = _MAX_SUMMARY) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 def summarize_tool_use(block: ToolUseBlock) -> str:
     """A one-line "what this tool call is doing" for the activity feed: the tool
-    name (any mcp__server__ prefix stripped) plus a short digest of its key argument.
-    The render_html body is deliberately never echoed — only its title — so a big
-    HTML page can't flood the feed."""
-    name = block.name.split("__")[-1]  # mcp__cvi__render_html -> render_html
+    name (any mcp__server__ prefix stripped) plus a short digest of its key argument."""
+    name = block.name.split("__")[-1]
     args = block.input if isinstance(block.input, dict) else {}
 
-    if name == "render_html":
-        title = args.get("title")
-        detail = f"→ {title}" if title else ""
-    elif name == "Grep":
+    if name == "Grep":
         where = args.get("path") or args.get("glob")
         detail = f"{args.get('pattern', '')} in {where}" if where else str(args.get("pattern", ""))
     elif name == "Bash":
@@ -70,8 +132,21 @@ async def relay_message_activity(
     if isinstance(message, AssistantMessage):
         for block in message.content:
             if isinstance(block, TextBlock):
-                log.info("[chat %s] %s", session_id, block.text)
-                await record_activity(session_id, "text", block.text, background=background)
+                # Sniff the reply for `<cvi-artifact>` pages and emit them as artifacts;
+                # everything else stays prose. Done here — before any log or persist —
+                # so raw HTML never floods the terminal or the text feed.
+                for seg in split_render_segments(block.text):
+                    if seg.kind == "artifact":
+                        detail = f" → {seg.title}" if seg.title else ""
+                        log.info("[chat %s] artifact:%s", session_id, detail)
+                        await render_html_on_surface(
+                            session_id, seg.html, seg.title, background=background
+                        )
+                    else:
+                        log.info("[chat %s] %s", session_id, seg.text)
+                        await record_activity(
+                            session_id, "text", seg.text, background=background
+                        )
             elif isinstance(block, ToolUseBlock):
                 if block.name.split("__")[-1] == "AskUserQuestion":
                     await _relay_ask(session_id, block)
