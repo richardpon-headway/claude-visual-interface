@@ -1,0 +1,14 @@
+Makefile
+  h_7b65865080601f 5-9,14,19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "2f6d194f213932285d5b9b00bdfdc2843b0e9697",
+  "prompts": {},
+  "humans": {
+    "h_7b65865080601f": {
+      "author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
