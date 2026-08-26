@@ -1,0 +1,43 @@
+tests/test_mcp_server.py
+  s_8cdcaf74bb012f::t_2a8db862853bf2 12,29-31,33-34,42-44,46-47,70-71
+daemon/main.py
+  s_1e88abda18a49f::t_176ff2bbe08eba 18,24
+daemon/mcp_server.py
+  s_1e88abda18a49f::t_3521412c08cd24 1-12,23,34-36,39-42,208-216,237,241-247,264-267,274-277,280-281
+daemon/migrations/005_message.sql
+  s_eaf84d754203f8::t_004cf80115b7b1 10-11
+tests/test_view_control.py
+  s_1e88abda18a49f::t_815cfda17f8d05 20,39,44,59,64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "c2e5798ec5837d87b1de629f672c7fce3c47be04",
+  "prompts": {},
+  "sessions": {
+    "s_1e88abda18a49f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad9afe4-bc98-41a4-a574-0b99c15a16ce",
+        "model": "unknown"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    },
+    "s_8cdcaf74bb012f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "76ba2930-3828-4425-967d-cd6aa84ab1d8",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    },
+    "s_eaf84d754203f8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d36cb44f-7dff-49b8-8876-6b7238745264",
+        "model": "unknown"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
