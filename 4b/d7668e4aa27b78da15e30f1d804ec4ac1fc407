@@ -1,0 +1,20 @@
+daemon/messages.py
+  h_7b65865080601f 26,42,47-50,58-60
+daemon/migrations/011_message_images.sql
+  h_7b65865080601f 1-14
+tests/test_messages.py
+  h_7b65865080601f 30-43
+tests/test_migrations.py
+  h_7b65865080601f 48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "4bd7668e4aa27b78da15e30f1d804ec4ac1fc407",
+  "prompts": {},
+  "humans": {
+    "h_7b65865080601f": {
+      "author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
