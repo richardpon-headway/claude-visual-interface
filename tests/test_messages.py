@@ -27,6 +27,20 @@ def test_append_returns_rowid_and_carries_html():
     assert row["html"] == "<p>hi</p>"
 
 
+def test_append_carries_images_json():
+    mid = messages.append_message(
+        "s", "user", "what's this?", images='["3f2a.webp", "9c4d.webp"]'
+    )
+    row = messages.list_messages("s")[0]
+    assert row["id"] == mid
+    assert row["images"] == '["3f2a.webp", "9c4d.webp"]'
+
+
+def test_append_defaults_images_to_null():
+    messages.append_message("s", "user", "no image here")
+    assert messages.list_messages("s")[0]["images"] is None
+
+
 def test_set_message_summary_updates_the_row():
     mid = messages.append_message("s", "user", "fix the parser please")
     assert messages.set_message_summary(mid, "fix the parser") is True
