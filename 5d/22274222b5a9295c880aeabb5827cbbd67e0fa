@@ -1,0 +1,19 @@
+uv.lock
+  s_e15243783bfe95::t_521b10db1c56c0 171,189,549-610
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "5d22274222b5a9295c880aeabb5827cbbd67e0fa",
+  "prompts": {},
+  "sessions": {
+    "s_e15243783bfe95": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eb6c4674-1722-4a61-8022-04f5974ab5f8",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
