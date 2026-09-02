@@ -1,0 +1,22 @@
+daemon/agent_session.py
+  h_7b65865080601f 34,509-522
+daemon/mcp_server.py
+  h_7b65865080601f 62-70,81,110,116-120,125-126,132,134,145-146
+daemon/view_state.py
+  h_7b65865080601f 35-37,111,121
+tests/test_view_control.py
+  h_7b65865080601f 144-158
+tests/test_view_state.py
+  h_7b65865080601f 57,68,118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e40be48a09c92ea88a41d4847c35ddc1543b1737",
+  "prompts": {},
+  "humans": {
+    "h_7b65865080601f": {
+      "author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
