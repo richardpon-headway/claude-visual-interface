@@ -1,0 +1,18 @@
+daemon/main.py
+  h_7b65865080601f 18,21,131-141
+tests/test_screenshots_route.py
+  h_7b65865080601f 1-44
+web/vite.config.ts
+  h_7b65865080601f 28-30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "aa7f50e41f7c4c08c450b2da04949729b7271f75",
+  "prompts": {},
+  "humans": {
+    "h_7b65865080601f": {
+      "author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
