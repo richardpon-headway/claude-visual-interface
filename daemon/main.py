@@ -15,9 +15,10 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from daemon import config, session_sidecar, sessions
+from daemon import config, screenshots, session_sidecar, sessions
 from daemon.agent_session import ImageInput, agents
 from daemon.db import apply_migrations
 from daemon.hub import hub
@@ -125,6 +126,17 @@ async def get_session(session_id: str) -> dict[str, Any]:
     if session is None:
         raise HTTPException(status_code=404, detail=f"no session with id {session_id}")
     return session
+
+
+@app.get("/screenshots/{name}")
+async def get_screenshot(name: str) -> FileResponse:
+    """Serve a persisted user screenshot by filename. `resolve_screenshot_path` is the
+    path-traversal guard — it accepts only a bare `<uuid>.webp` name and returns the path
+    only if the file exists — so a bad or missing name is a 404, never a filesystem probe."""
+    path = await asyncio.to_thread(screenshots.resolve_screenshot_path, name)
+    if path is None:
+        raise HTTPException(status_code=404, detail="no such screenshot")
+    return FileResponse(path, media_type="image/webp")
 
 
 class ChatRequest(BaseModel):
