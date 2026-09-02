@@ -1,0 +1,19 @@
+web/src/viewState.ts
+  s_c78eeb2daa7b3e::t_9faf5c529f6dc0 30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "072996c465aa4bd0633db6e36280429e14b883f2",
+  "prompts": {},
+  "sessions": {
+    "s_c78eeb2daa7b3e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e642b49-cf14-4b02-8129-c5e090df20df",
+        "model": "unknown"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
