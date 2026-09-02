@@ -32,6 +32,9 @@ class ActivityEntry:
     ask_id: str | None = None
     questions: list | None = None
     answer: str | None = None
+    # For a "user" entry: the on-disk filenames of the turn's downscaled screenshots
+    # (served via GET /screenshots/<name>). None for turns without images.
+    images: list[str] | None = None
     # The persisted `message` row id, so a prompt's summary can be written back to
     # the right row. Server-only — stripped from the snapshot (see ViewStore.snapshot).
     message_id: int | None = None
@@ -105,6 +108,7 @@ class ViewStore:
         ask_id: str | None = None,
         questions: list | None = None,
         background: bool = False,
+        images: list[str] | None = None,
     ) -> ActivityEntry:
         activity = self.get_or_create(surface).activity
         entry = ActivityEntry(
@@ -114,6 +118,7 @@ class ViewStore:
             ask_id=ask_id,
             questions=questions,
             background=background,
+            images=images,
         )
         activity.append(entry)
         return entry

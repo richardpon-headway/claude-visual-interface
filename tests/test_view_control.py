@@ -141,6 +141,21 @@ async def test_hydrate_preserves_the_background_marker():
     ]
 
 
+async def test_hydrate_preserves_a_user_turns_images():
+    # A user turn's screenshot filenames must reload so the transcript re-renders its
+    # thumbnails after a daemon restart, and they must ride the connect snapshot.
+    surface = "vc-hydrate-images"
+    await record_activity(surface, "user", "what's this?", images=["3f2a.webp", "9c4d.webp"])
+
+    store._surfaces.pop(surface, None)
+    store._hydrated.discard(surface)
+    await hydrate_surface(surface)
+
+    entry = store.get_or_create(surface).activity[0]
+    assert entry.images == ["3f2a.webp", "9c4d.webp"]
+    assert store.snapshot(surface)["activity"][0]["images"] == ["3f2a.webp", "9c4d.webp"]
+
+
 async def test_hydrate_is_idempotent_and_does_not_clobber_live_entries():
     surface = "vc-hydrate-reconnect"
     messages.append_message(surface, "user", "first")
