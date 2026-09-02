@@ -25,6 +25,9 @@ export default defineConfig({
         },
       },
       "/chats": { target: DAEMON, changeOrigin: false },
+      // Persisted user screenshots, served by the daemon as image bytes. No SPA route
+      // collides with "/screenshots", so every request proxies straight through.
+      "/screenshots": { target: DAEMON, changeOrigin: false },
     },
   },
   test: {

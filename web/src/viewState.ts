@@ -27,6 +27,7 @@ export type ActivityEntry = {
   ask_id?: string | null; // for an "ask" entry: the tool-use id, echoed back to answer
   questions?: AskQuestion[] | null; // for an "ask" entry: the picker's questions
   answer?: string | null; // for an "ask" entry: the chosen value, once answered
+  images?: string[] | null; // for a "user" entry: screenshot filenames (GET /screenshots/<name>)
 };
 
 // Transient view state — mirrors daemon ViewState (store.snapshot): the conversation

@@ -2,10 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { ImageAttachment, SendMessage, StopAgent } from "./useSurfaceSocket";
 
-// Cap on images per turn. base64 inflates ~33%, so this keeps a realistic batch of
-// screenshots inline on the WebSocket frame under the daemon's 16 MB limit; mirrors
-// the daemon's own cap.
-const MAX_IMAGES = 8;
+// Cap on images per turn. Images ride inline as base64 (+~33%) on the WebSocket frame;
+// the daemon raises its frame limit to 64 MB to fit this batch. Mirrors the daemon's
+// own cap (_MAX_IMAGES_PER_TURN in daemon/main.py).
+const MAX_IMAGES = 32;
 
 // The chat box at the bottom of the right pane. Submitting sends a turn to the
 // surface's agent; the message echoes back into the transcript as a `user` entry.

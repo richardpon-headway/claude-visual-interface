@@ -15,9 +15,10 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from daemon import config, session_sidecar, sessions
+from daemon import config, screenshots, session_sidecar, sessions
 from daemon.agent_session import ImageInput, agents
 from daemon.db import apply_migrations
 from daemon.hub import hub
@@ -127,6 +128,17 @@ async def get_session(session_id: str) -> dict[str, Any]:
     return session
 
 
+@app.get("/screenshots/{name}")
+async def get_screenshot(name: str) -> FileResponse:
+    """Serve a persisted user screenshot by filename. `resolve_screenshot_path` is the
+    path-traversal guard — it accepts only a bare `<uuid>.webp` name and returns the path
+    only if the file exists — so a bad or missing name is a 404, never a filesystem probe."""
+    path = await asyncio.to_thread(screenshots.resolve_screenshot_path, name)
+    if path is None:
+        raise HTTPException(status_code=404, detail="no such screenshot")
+    return FileResponse(path, media_type="image/webp")
+
+
 class ChatRequest(BaseModel):
     title: str | None = None
 
@@ -179,10 +191,12 @@ async def ws_surface(websocket: WebSocket, surface: str) -> None:
         hub.unregister(surface, websocket)
 
 
-# Cap on images per turn. base64 inflates ~33%, so this keeps a realistic batch of
-# screenshots inline on the `message` frame under uvicorn's 16 MB WebSocket limit;
-# mirrors the front-end's cap.
-_MAX_IMAGES_PER_TURN = 8
+# Cap on images per turn. Images ride inline as base64 (+~33%) on the `message` frame,
+# so the real ceiling is the WebSocket frame size — raised to 64 MB (see uvicorn.run's
+# ws_max_size below) to fit this batch. It's a coarse proxy for bytes: a batch of large
+# full-res screenshots can still hit the frame limit before reaching this count.
+# Mirrors the front-end's cap (web/src/ChatInput.tsx MAX_IMAGES).
+_MAX_IMAGES_PER_TURN = 32
 
 
 def _parse_image(raw: Any) -> ImageInput | None:
@@ -274,7 +288,11 @@ def main() -> None:
     import uvicorn
 
     log.info("listening on http://%s:%d", HOST, PORT)
-    uvicorn.run(app, host=HOST, port=PORT, log_level="info")
+    # Raise the inbound WebSocket frame limit from the 16 MB default to 64 MB so a full
+    # batch of pasted screenshots (up to _MAX_IMAGES_PER_TURN, inline as base64) fits.
+    uvicorn.run(
+        app, host=HOST, port=PORT, log_level="info", ws_max_size=64 * 1024 * 1024
+    )
 
 
 if __name__ == "__main__":

@@ -31,7 +31,7 @@ from claude_agent_sdk import (
     TaskStartedMessage,
 )
 
-from daemon import messages, session_sidecar, sessions, titles, token_usage
+from daemon import messages, screenshots, session_sidecar, sessions, titles, token_usage
 from daemon.activity_relay import relay_message_activity
 from daemon.config import get_working_dir
 from daemon.mcp_server import (
@@ -506,8 +506,20 @@ class AgentSession:
             # prompt now reads as detached (see `_handle_idle_message`). Picker answers
             # (record_user=False) continue the current focus and don't bump the epoch.
             self._prompt_epoch += 1
-            marker = _turn_marker(turn)
-            entry = await record_activity(self._surface, "user", marker)
+            # Persist any pasted/dropped screenshots to disk (downscaled) so the turn's
+            # images survive a reload; the model still gets the full-res copies separately.
+            image_names: list[str] | None = None
+            if turn.images:
+                image_names = await asyncio.to_thread(
+                    screenshots.persist_images, turn.images
+                )
+            # With the screenshots rendered inline, record the user's actual text and drop
+            # the "[image]" count prefix. If nothing persisted (all writes failed), fall
+            # back to the marker so the turn still leaves a textual trace.
+            text = turn.text if image_names else _turn_marker(turn)
+            entry = await record_activity(
+                self._surface, "user", text, images=image_names or None
+            )
             # Generate this prompt's one-line outline-rail summary in the background.
             index = self._prompt_count
             self._prompt_count += 1

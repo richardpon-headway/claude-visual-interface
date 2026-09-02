@@ -54,6 +54,7 @@ def test_append_activity_accumulates_and_rides_the_snapshot():
             "ask_id": None,
             "questions": None,
             "answer": None,
+            "images": None,
         },
         {
             "kind": "tool",
@@ -64,6 +65,7 @@ def test_append_activity_accumulates_and_rides_the_snapshot():
             "ask_id": None,
             "questions": None,
             "answer": None,
+            "images": None,
         },
     ]
 
@@ -113,6 +115,7 @@ def test_load_activity_replaces_the_transcript_and_rides_the_snapshot():
             "ask_id": None,
             "questions": None,
             "answer": None,
+            "images": None,
         }
     ]
 

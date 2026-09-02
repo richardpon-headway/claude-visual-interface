@@ -131,7 +131,7 @@ def test_parse_image_accepts_valid_and_fails_closed_on_malformed():
     assert _parse_image("nope") is None  # not an object
 
 
-def test_parse_images_validates_a_list_and_caps_at_eight():
+def test_parse_images_validates_a_list_and_caps_at_thirty_two():
     png = {"media_type": "image/png", "data": "QUJD"}
     bad = {"media_type": "text/plain", "data": "QUJD"}
 
@@ -142,4 +142,4 @@ def test_parse_images_validates_a_list_and_caps_at_eight():
     # A mixed list drops only the malformed entries.
     assert _parse_images([png, bad, png]) == [ImageInput("image/png", "QUJD")] * 2
     # An over-cap list is truncated to the per-turn maximum.
-    assert _parse_images([png] * 12) == [ImageInput("image/png", "QUJD")] * 8
+    assert _parse_images([png] * 40) == [ImageInput("image/png", "QUJD")] * 32

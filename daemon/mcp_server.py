@@ -59,6 +59,15 @@ def _entry_from_row(row: dict[str, Any]) -> ActivityEntry:
         if isinstance(payload, dict):
             ask_id = payload.get("ask_id")
             questions = payload.get("questions")
+    images: list[str] | None = None
+    raw_images = row.get("images")
+    if raw_images:
+        try:
+            parsed = json.loads(raw_images)
+        except (ValueError, TypeError):
+            parsed = None
+        if isinstance(parsed, list):
+            images = parsed
     return ActivityEntry(
         kind=row["kind"],
         text=row["text"],
@@ -69,6 +78,7 @@ def _entry_from_row(row: dict[str, Any]) -> ActivityEntry:
         ask_id=ask_id,
         questions=questions,
         answer=row.get("answer"),
+        images=images,
     )
 
 
@@ -97,25 +107,31 @@ async def record_activity(
     ask_id: str | None = None,
     questions: list | None = None,
     background: bool = False,
+    images: list[str] | None = None,
 ):
     """Append a conversation segment on a surface and push it to subscribers; return
     the stored entry (callers that need to enrich it later — e.g. a prompt's summary —
     hold the reference). `html` carries an artifact's page; `ask_id`/`questions` carry an
     AskUserQuestion picker's payload; `background` marks a segment that belongs to an
-    agent-initiated (background-task) turn; each is omitted from the broadcast otherwise."""
-    entry = store.append_activity(surface, kind, text, html, ask_id, questions, background)
+    agent-initiated (background-task) turn; `images` carries a user turn's screenshot
+    filenames (already written to disk); each is omitted from the broadcast otherwise."""
+    entry = store.append_activity(
+        surface, kind, text, html, ask_id, questions, background, images
+    )
     # Write the segment through to SQLite so the transcript survives a daemon restart;
     # hold the row id on the entry so a later summary (or a picker answer) can target it.
     # A picker's structured payload (its tool-use id + `questions`, including each
     # option's rich HTML preview) is persisted as JSON so a restarted picker re-renders
-    # rich instead of falling back to text.
+    # rich instead of falling back to text. `images` is stored the same way — a JSON list
+    # of screenshot filenames — so a reloaded user turn re-renders its thumbnails.
     data = (
         json.dumps({"ask_id": ask_id, "questions": questions})
         if ask_id is not None or questions is not None
         else None
     )
+    images_json = json.dumps(images) if images else None
     entry.message_id = await asyncio.to_thread(
-        messages.append_message, surface, kind, text, html, data, background
+        messages.append_message, surface, kind, text, html, data, images_json, background
     )
     payload: dict[str, Any] = {"kind": kind, "text": text}
     if html is not None:
@@ -126,6 +142,8 @@ async def record_activity(
         payload["questions"] = questions
     if background:
         payload["background"] = True
+    if images:
+        payload["images"] = images
     await hub.broadcast(
         surface,
         {"type": "activity", "surface": surface, "payload": payload},

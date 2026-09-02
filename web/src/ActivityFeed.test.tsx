@@ -137,7 +137,36 @@ describe("ActivityFeed", () => {
       <ActivityFeed activity={[{ kind: "user", text: "open utils.py" }]} />,
     );
     expect(screen.getByText("open utils.py")).toBeInTheDocument();
-    expect(container.querySelector("li.justify-end")).toBeInTheDocument();
+    expect(container.querySelector("li.items-end")).toBeInTheDocument();
+  });
+
+  it("renders a user turn's screenshots as images served from /screenshots", () => {
+    const { container } = render(
+      <ActivityFeed
+        activity={[{ kind: "user", text: "what's this?", images: ["abc.webp", "def.webp"] }]}
+      />,
+    );
+    const imgs = container.querySelectorAll("img");
+    expect(imgs).toHaveLength(2);
+    expect(imgs[0]).toHaveAttribute("src", "/screenshots/abc.webp");
+  });
+
+  it("shows a placeholder when a screenshot image fails to load", () => {
+    const { container } = render(
+      <ActivityFeed activity={[{ kind: "user", text: "", images: ["gone.webp"] }]} />,
+    );
+    fireEvent.error(container.querySelector("img")!);
+    expect(screen.getByText("screenshot no longer available")).toBeInTheDocument();
+    expect(container.querySelector("img")).not.toBeInTheDocument();
+  });
+
+  it("renders an image-only user turn without an empty text bubble", () => {
+    const { container } = render(
+      <ActivityFeed activity={[{ kind: "user", text: "", images: ["solo.webp"] }]} />,
+    );
+    expect(container.querySelector("img")).toBeInTheDocument();
+    // No bubble div (the zinc-800 rounded bubble) when there's no text.
+    expect(container.querySelector("div.bg-zinc-800")).not.toBeInTheDocument();
   });
 
   it("renders an ask entry as a question card with its options", () => {
