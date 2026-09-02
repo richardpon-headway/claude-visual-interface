@@ -8,6 +8,28 @@ import type { ActivityEntry, AskQuestion } from "./viewState";
 // (model-rendered HTML) break out to the full transcript width instead.
 const PROSE = "mx-auto w-full max-w-3xl";
 
+// A persisted user screenshot, served by the daemon at /screenshots/<name>. If the file
+// was deleted (manual cleanup), the <img> errors and we swap to a muted placeholder so
+// the transcript degrades gracefully instead of showing a broken image.
+function HistoryImage({ name }: { name: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <div className="flex h-24 w-32 items-center justify-center rounded border border-zinc-700 bg-zinc-900 px-2 text-center text-xs text-zinc-500">
+        screenshot no longer available
+      </div>
+    );
+  }
+  return (
+    <img
+      src={`/screenshots/${name}`}
+      alt="screenshot"
+      onError={() => setFailed(true)}
+      className="max-h-64 max-w-xs rounded border border-zinc-700 object-contain"
+    />
+  );
+}
+
 // A model-authored HTML page, rendered inline as a sandboxed iframe sized to its
 // full content height — always shown in full, no expand/collapse. The frame stays
 // script-free: we add allow-same-origin (NOT allow-scripts) only so the parent can
@@ -440,13 +462,24 @@ function ActivityRow({
   isLatestAsk?: boolean;
 }) {
   // Your prompts read as right-aligned bubbles; each carries a stable anchor id so
-  // the outline rail can scroll to it.
+  // the outline rail can scroll to it. Any attached screenshots render as thumbnails
+  // below the text; an image-only turn shows just the thumbnails (no empty bubble).
   if (entry.kind === "user") {
+    const images = entry.images ?? [];
     return (
-      <li id={promptId} className={`${PROSE} flex justify-end scroll-mt-4`}>
-        <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-zinc-800 px-4 py-3 text-sm text-zinc-100">
-          {entry.text}
-        </div>
+      <li id={promptId} className={`${PROSE} flex flex-col items-end gap-2 scroll-mt-4`}>
+        {entry.text ? (
+          <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-zinc-800 px-4 py-3 text-sm text-zinc-100">
+            {entry.text}
+          </div>
+        ) : null}
+        {images.length > 0 ? (
+          <div className="flex max-w-[85%] flex-wrap justify-end gap-2">
+            {images.map((name) => (
+              <HistoryImage key={name} name={name} />
+            ))}
+          </div>
+        ) : null}
       </li>
     );
   }
