@@ -1,0 +1,20 @@
+daemon/main.py
+  h_7b65865080601f 194-199,291-295
+tests/test_ws_route.py
+  h_7b65865080601f 134,145
+web/src/ChatInput.test.tsx
+  h_7b65865080601f 110,115,117
+web/src/ChatInput.tsx
+  h_7b65865080601f 5-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a42653cf2f9e6efb3fd28f6286270d3a08436103",
+  "prompts": {},
+  "humans": {
+    "h_7b65865080601f": {
+      "author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
