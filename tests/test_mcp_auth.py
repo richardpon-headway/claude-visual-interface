@@ -100,6 +100,86 @@ async def test_keeper_authenticates_then_shuts_down(tmp_path, monkeypatch):
     assert keeper.current_token() is None
 
 
+async def test_keeper_restarts_to_refresh_when_token_expires(tmp_path, monkeypatch):
+    # The first process writes an already-expired token; the keeper must restart to force
+    # a refresh and then serve the fresh, valid token.
+    monkeypatch.setattr(mcp_auth, "_INITIAL_POLL_SECONDS", 0.01)
+    monkeypatch.setattr(mcp_auth, "_POLL_INTERVAL_SECONDS", 0.01)
+    monkeypatch.setattr(mcp_auth, "_MIN_POLL_SECONDS", 0.01)
+    monkeypatch.setattr(mcp_auth.shutil, "which", lambda cmd: "/usr/bin/" + cmd)
+    keeper = _keeper(tmp_path)
+    spawns: list[_FakeProc] = []
+
+    async def fake_spawn(command, args, env):
+        n = len(spawns)
+        # Spawn 0: already-expired token (forces a refresh cycle). Spawn 1+: fresh token.
+        expires_in = -10 if n == 0 else 10_000
+        _write_token(Path(env["MCP_REMOTE_CONFIG_DIR"]), f"tok-{n}", expires_in=expires_in)
+        proc = _FakeProc()
+        spawns.append(proc)
+        return proc
+
+    monkeypatch.setattr(mcp_auth, "_create_subprocess", fake_spawn)
+    keeper.start()
+    for _ in range(300):
+        if keeper.current_token() == "tok-1":
+            break
+        await asyncio.sleep(0.01)
+    # It cycled (restarted) and now serves the fresh, valid token — not the expired one.
+    assert len(spawns) >= 2
+    assert keeper.current_token() == "tok-1"
+    await keeper.aclose()
+
+
+async def test_keeper_keeps_serving_valid_token_across_a_refresh_restart(tmp_path, monkeypatch):
+    # A still-valid token must not be blanked just because the process restarts.
+    monkeypatch.setattr(mcp_auth, "_INITIAL_POLL_SECONDS", 0.01)
+    monkeypatch.setattr(mcp_auth, "_POLL_INTERVAL_SECONDS", 0.01)
+    monkeypatch.setattr(mcp_auth, "_MIN_POLL_SECONDS", 0.01)
+    monkeypatch.setattr(mcp_auth.shutil, "which", lambda cmd: "/usr/bin/" + cmd)
+    keeper = _keeper(tmp_path)
+
+    async def fake_spawn(command, args, env):
+        _write_token(Path(env["MCP_REMOTE_CONFIG_DIR"]), "tok-valid", expires_in=10_000)
+        return _FakeProc()
+
+    monkeypatch.setattr(mcp_auth, "_create_subprocess", fake_spawn)
+    keeper.start()
+    for _ in range(300):
+        if keeper.current_token() == "tok-valid":
+            break
+        await asyncio.sleep(0.01)
+    assert keeper.current_token() == "tok-valid"
+    await keeper.aclose()
+
+
+async def test_keeper_restarts_after_crash(tmp_path, monkeypatch):
+    # A process that dies before authenticating is restarted (bounded backoff), and no
+    # token is ever served.
+    monkeypatch.setattr(mcp_auth, "_INITIAL_POLL_SECONDS", 0.01)
+    monkeypatch.setattr(mcp_auth, "_BACKOFF_START_SECONDS", 0.01)
+    monkeypatch.setattr(mcp_auth, "_BACKOFF_MAX_SECONDS", 0.02)
+    monkeypatch.setattr(mcp_auth.shutil, "which", lambda cmd: "/usr/bin/" + cmd)
+    keeper = _keeper(tmp_path)
+    spawns: list[_FakeProc] = []
+
+    async def fake_spawn(command, args, env):
+        proc = _FakeProc()
+        proc.returncode = 1  # already dead — simulates a crash before writing a token
+        spawns.append(proc)
+        return proc
+
+    monkeypatch.setattr(mcp_auth, "_create_subprocess", fake_spawn)
+    keeper.start()
+    for _ in range(300):
+        if len(spawns) >= 3:
+            break
+        await asyncio.sleep(0.01)
+    assert len(spawns) >= 3  # keeps restarting after a crash
+    assert keeper.current_token() is None
+    await keeper.aclose()
+
+
 async def test_keeper_without_npx_gives_up(tmp_path, monkeypatch):
     monkeypatch.setattr(mcp_auth.shutil, "which", lambda cmd: None)
     keeper = _keeper(tmp_path)
