@@ -7,10 +7,20 @@ hermetic (no PATH / npx / network), mirroring the fake-SDK pattern in test_agent
 
 import asyncio
 import json
+import signal
 from pathlib import Path
+
+import pytest
 
 import daemon.mcp_auth as mcp_auth
 from daemon.mcp_auth import RemoteMcpAuthKeeper, RemoteMcpAuthRegistry
+
+
+@pytest.fixture(autouse=True)
+def _no_real_signals(monkeypatch):
+    # Fake procs carry fake pids; never signal a real process group from a test.
+    monkeypatch.setattr(mcp_auth.os, "getpgid", lambda pid: pid)
+    monkeypatch.setattr(mcp_auth.os, "killpg", lambda pgid, sig: None)
 
 
 def _write_token(config_dir: Path, token: str, expires_in: int = 900) -> None:
@@ -31,22 +41,16 @@ def _write_token(config_dir: Path, token: str, expires_in: int = 900) -> None:
 
 
 class _FakeProc:
-    """Stand-in for asyncio's subprocess: alive until terminated."""
+    """Stand-in for asyncio's subprocess: alive (returncode None) until it exits. Teardown
+    is observed via the patched process-group signal, not a per-proc terminate()."""
 
     def __init__(self) -> None:
         self.returncode: int | None = None
-        self.terminated = False
+        self.pid = 4242
 
     async def wait(self) -> int:
         self.returncode = 0 if self.returncode is None else self.returncode
         return self.returncode
-
-    def terminate(self) -> None:
-        self.terminated = True
-        self.returncode = -15
-
-    def kill(self) -> None:
-        self.returncode = -9
 
 
 def _keeper(tmp_path: Path) -> RemoteMcpAuthKeeper:
@@ -78,6 +82,8 @@ async def test_keeper_authenticates_then_shuts_down(tmp_path, monkeypatch):
     monkeypatch.setattr(mcp_auth, "_INITIAL_POLL_SECONDS", 0.01)
     monkeypatch.setattr(mcp_auth, "_POLL_INTERVAL_SECONDS", 0.01)
     monkeypatch.setattr(mcp_auth.shutil, "which", lambda cmd: "/usr/bin/" + cmd)
+    signalled: list[int] = []
+    monkeypatch.setattr(mcp_auth.os, "killpg", lambda pgid, sig: signalled.append(sig))
     keeper = _keeper(tmp_path)
     proc = _FakeProc()
 
@@ -96,8 +102,24 @@ async def test_keeper_authenticates_then_shuts_down(tmp_path, monkeypatch):
     assert keeper.current_token() == "tok-live"
 
     await keeper.aclose()
-    assert proc.terminated
+    assert signal.SIGTERM in signalled  # the process group was signalled on teardown
     assert keeper.current_token() is None
+
+
+async def test_terminate_escalates_to_kill_on_timeout(tmp_path, monkeypatch):
+    # A process that won't exit after SIGTERM within the timeout is escalated to SIGKILL.
+    monkeypatch.setattr(mcp_auth, "_TERMINATE_TIMEOUT_SECONDS", 0.02)
+    signalled: list[int] = []
+    monkeypatch.setattr(mcp_auth.os, "killpg", lambda pgid, sig: signalled.append(sig))
+    keeper = _keeper(tmp_path)
+
+    class _HangingProc(_FakeProc):
+        async def wait(self) -> int:
+            await asyncio.sleep(3600)  # never exits on its own → forces the kill path
+            return 0
+
+    await keeper._terminate(_HangingProc())
+    assert signalled == [signal.SIGTERM, signal.SIGKILL]
 
 
 async def test_keeper_restarts_to_refresh_when_token_expires(tmp_path, monkeypatch):
@@ -217,7 +239,6 @@ async def test_registry_starts_only_remote_keepers(tmp_path, monkeypatch):
     registry = RemoteMcpAuthRegistry()
     registry.startup_all()
     # Only the remote server gets a keeper; the local stdio server does not.
-    assert registry.token_for("cfv") is None  # no keeper for a local stdio server
     assert "eddy" in registry._keepers
     assert "cfv" not in registry._keepers
     await registry.shutdown_all()

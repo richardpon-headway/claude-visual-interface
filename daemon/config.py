@@ -183,6 +183,12 @@ def get_mcp_servers() -> dict[str, dict]:
                     "skipping mcp_servers entry %r: remote.url must be a non-empty string", name
                 )
                 continue
+            if not url.startswith(("http://", "https://")):
+                log.warning(
+                    "skipping mcp_servers entry %r: remote.url must start with http:// or https://",
+                    name,
+                )
+                continue
             transport = remote.get("transport")
             if transport not in ("http", "sse"):
                 log.warning(
@@ -190,6 +196,16 @@ def get_mcp_servers() -> dict[str, dict]:
                     name,
                 )
                 continue
+            if url not in args:
+                # The keeper authenticates against the URL in `args`; sessions connect to
+                # `remote.url`. If they differ, the keeper and sessions target different
+                # servers — almost always a copy-paste slip. Warn, don't skip.
+                log.warning(
+                    "mcp_servers entry %r: remote.url %r is not among args; the auth keeper "
+                    "and sessions may target different servers",
+                    name,
+                    url,
+                )
             entry["type"] = "remote"
             entry["url"] = url
             entry["transport"] = transport

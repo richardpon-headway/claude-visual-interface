@@ -40,6 +40,7 @@ import json
 import logging
 import os
 import shutil
+import signal
 import time
 from pathlib import Path
 
@@ -64,6 +65,16 @@ _MIN_POLL_SECONDS = 1.0
 # revoked refresh token, the remote being down) doesn't hot-loop.
 _BACKOFF_START_SECONDS = 1.0
 _BACKOFF_MAX_SECONDS = 60.0
+# How long to wait for a signalled keeper to exit before escalating from SIGTERM to SIGKILL.
+_TERMINATE_TIMEOUT_SECONDS = 5.0
+
+
+def _kill_process_group(pid: int, sig: int) -> None:
+    """Signal the whole process group led by `pid`. The keeper is spawned with
+    start_new_session, so it leads its own group and its `mcp-remote` grandchild shares it
+    — signalling the group reaps the grandchild too, which a bare per-process signal would
+    orphan. A module-level seam so tests can observe the signal without real processes."""
+    os.killpg(os.getpgid(pid), sig)
 
 
 async def _create_subprocess(
@@ -72,15 +83,28 @@ async def _create_subprocess(
     """Spawn the keeper. `stdin` is an open pipe we never write to: mcp-remote treats a
     closed stdin as the MCP client disconnecting and exits, so an open-but-idle pipe
     keeps it alive holding the remote connection. stderr inherits the daemon's so
-    mcp-remote's auth prompts/errors surface in the daemon terminal. A module-level seam
-    so tests can substitute a fake process."""
+    mcp-remote's auth prompts/errors surface in the daemon terminal. `start_new_session`
+    puts the keeper in its own process group so teardown can reap the whole tree (npx +
+    its node grandchild). A module-level seam so tests can substitute a fake process."""
     return await asyncio.create_subprocess_exec(
         command,
         *args,
         env=env,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.DEVNULL,
+        start_new_session=True,
     )
+
+
+def _restrict_dir_perms(path: Path) -> None:
+    """Best-effort owner-only (0700) perms on the token-cache dirs — they hold OAuth
+    refresh tokens. The token FILES are already 0600 (written by mcp-remote); this
+    tightens the enclosing directories too."""
+    for p in (path, path.parent):
+        try:
+            os.chmod(p, 0o700)
+        except OSError:
+            pass
 
 
 class RemoteMcpAuthKeeper:
@@ -170,6 +194,7 @@ class RemoteMcpAuthKeeper:
             with open(newest) as f:
                 data = json.load(f)
         except (OSError, ValueError):
+            log.debug("MCP auth keeper token file unreadable", extra={"server": self._name})
             return None
         token = data.get("access_token")
         if not isinstance(token, str) or not token:
@@ -227,22 +252,24 @@ class RemoteMcpAuthKeeper:
                 return "refresh"
 
     async def _terminate(self, proc: asyncio.subprocess.Process | None) -> None:
-        # SIGTERM is sent before the (cancellable) wait, so even if this coroutine is
-        # cancelled while awaiting exit the process has already been signalled. Never
-        # swallow a CancelledError here — let it propagate — and only escalate to kill on
-        # a genuine wait timeout.
+        # Signal the whole process group, not just the direct child: the keeper is
+        # `npx mcp-remote`, whose real worker (node) is a grandchild, so a bare signal
+        # would orphan the node bridge. SIGTERM is sent before the (cancellable) wait, so
+        # even if this coroutine is cancelled while awaiting exit the group has already
+        # been signalled. Never swallow a CancelledError here — let it propagate — and
+        # only escalate to kill on a genuine wait timeout.
         if proc is None or proc.returncode is not None:
             return
         try:
-            proc.terminate()
-        except ProcessLookupError:
+            _kill_process_group(proc.pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
             return
         try:
-            await asyncio.wait_for(proc.wait(), timeout=5)
+            await asyncio.wait_for(proc.wait(), timeout=_TERMINATE_TIMEOUT_SECONDS)
         except TimeoutError:
             try:
-                proc.kill()
-            except ProcessLookupError:
+                _kill_process_group(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
                 pass
 
     async def _run(self) -> None:
@@ -250,8 +277,7 @@ class RemoteMcpAuthKeeper:
             # Fail loudly, not silently: the server simply won't get a token and is
             # omitted from sessions, but the reason is visible.
             log.error(
-                "MCP auth keeper for %r cannot start: %r not found on PATH",
-                self._name,
+                "MCP auth keeper cannot start: command %r not found on PATH",
                 self._command,
                 extra={"server": self._name},
             )
@@ -263,11 +289,17 @@ class RemoteMcpAuthKeeper:
             try:
                 log.info("MCP auth keeper starting", extra={"server": self._name})
                 self._auth_dir.mkdir(parents=True, exist_ok=True)
+                _restrict_dir_perms(self._auth_dir)
                 proc = await _create_subprocess(self._command, self._args, self._build_env())
                 if await self._await_token(proc):
                     backoff = _BACKOFF_START_SECONDS
                     log.info("MCP auth keeper authenticated", extra={"server": self._name})
                     reason = await self._supervise(proc)
+                else:
+                    log.warning(
+                        "MCP auth keeper exited before authenticating; restarting",
+                        extra={"server": self._name},
+                    )
             except asyncio.CancelledError:
                 raise
             except Exception:

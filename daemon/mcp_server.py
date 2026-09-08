@@ -304,7 +304,10 @@ def build_agent_options(
         if spec.get("type") == "remote":
             token = remote_auth.token_for(name)
             if token is None:
-                log.warning(
+                # Expected while a keeper is still doing its cold-start OAuth; this runs on
+                # every session build, so keep it at debug — the keeper's own lifecycle
+                # logs carry the actionable signal.
+                log.debug(
                     "MCP server %r has no auth token yet; omitting from this session",
                     name,
                     extra={"server": name},
