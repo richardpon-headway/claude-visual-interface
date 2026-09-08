@@ -1,0 +1,31 @@
+README.md
+  s_cad891e793c521::t_855cbb69b02a29 45-60
+daemon/config.py
+  s_cad891e793c521::t_54f7fd65c86d32 44-45,53-65,131-147,175-195
+daemon/main.py
+  s_cad891e793c521::t_88031fb9da7250 25,40-42,44
+daemon/mcp_server.py
+  s_cad891e793c521::t_e36a0c673c654a 27,293-319,321-322
+tests/test_config.py
+  s_cad891e793c521::t_cf9b129ab715af 153-231
+tests/test_mcp_auth.py
+  s_cad891e793c521::t_a57413e22626b7 1-144
+tests/test_mcp_server.py
+  s_cad891e793c521::t_ff6817574e4704 3,80-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "d783e3e87c1ab60f9008e3148eaa4e5e11826f9e",
+  "prompts": {},
+  "sessions": {
+    "s_cad891e793c521": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f0a06a57-9c1c-40d8-aac9-8c2f1f152e1b",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
