@@ -42,6 +42,22 @@ machine-specific path) with documented defaults you can edit:
           command: uv
           args: ["run", "--directory", "/path/to/claude-file-viewer", "python", "-m", "daemon.mcp_server"]
 
+  A **remote OAuth server** (one reached over HTTP behind an OAuth login, e.g. bridged
+  by `mcp-remote`) additionally carries a `remote` block with its direct-connect `url`
+  and `transport` (`http` or `sse`). The daemon runs a single shared auth keeper for it
+  so the OAuth browser sign-in happens **once** per server for the daemon's lifetime —
+  not once per chat session — and attaches every session directly to `url` with the
+  keeper's token injected. This avoids the browser-tab storm of each session spawning
+  its own bridge.
+
+      mcp_servers:
+        eddy:
+          command: npx
+          args: ["-y", "mcp-remote@0.1.38", "https://example.internal/mcp"]
+          remote:
+            url: https://example.internal/mcp
+            transport: http
+
 Edits take effect on the next session — no daemon restart needed.
 
 ## Layout

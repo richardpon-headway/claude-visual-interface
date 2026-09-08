@@ -150,6 +150,85 @@ def test_mcp_servers_non_mapping_yields_none(tmp_path, monkeypatch):
     assert config.get_mcp_servers() == {}
 
 
+def test_mcp_servers_remote_block_parses_http(tmp_path, monkeypatch):
+    _write(
+        tmp_path,
+        monkeypatch,
+        "mcp_servers:\n"
+        "  eddy:\n"
+        "    command: npx\n"
+        '    args: ["-y", "mcp-remote@0.1.38", "https://ex.internal/mcp"]\n'
+        "    remote:\n"
+        "      url: https://ex.internal/mcp\n"
+        "      transport: http\n",
+    )
+    assert config.get_mcp_servers()["eddy"] == {
+        "type": "remote",
+        "command": "npx",
+        "args": ["-y", "mcp-remote@0.1.38", "https://ex.internal/mcp"],
+        "url": "https://ex.internal/mcp",
+        "transport": "http",
+    }
+
+
+def test_mcp_servers_remote_block_parses_sse(tmp_path, monkeypatch):
+    _write(
+        tmp_path,
+        monkeypatch,
+        "mcp_servers:\n"
+        "  linear:\n"
+        "    command: npx\n"
+        '    args: ["mcp-remote", "https://mcp.linear.app/mcp"]\n'
+        "    remote:\n"
+        "      url: https://mcp.linear.app/mcp\n"
+        "      transport: sse\n",
+    )
+    spec = config.get_mcp_servers()["linear"]
+    assert spec["type"] == "remote"
+    assert spec["transport"] == "sse"
+    assert spec["url"] == "https://mcp.linear.app/mcp"
+
+
+def test_mcp_servers_without_remote_stays_stdio(tmp_path, monkeypatch):
+    _write(
+        tmp_path,
+        monkeypatch,
+        "mcp_servers:\n  cfv:\n    command: uv\n    args: [\"run\"]\n",
+    )
+    assert config.get_mcp_servers()["cfv"]["type"] == "stdio"
+
+
+def test_mcp_servers_skips_remote_with_bad_transport_or_url(tmp_path, monkeypatch):
+    _write(
+        tmp_path,
+        monkeypatch,
+        "mcp_servers:\n"
+        "  good:\n"
+        "    command: npx\n"
+        '    args: ["mcp-remote", "https://ex/mcp"]\n'
+        "    remote:\n"
+        "      url: https://ex/mcp\n"
+        "      transport: http\n"
+        "  bad_transport:\n"
+        "    command: npx\n"
+        '    args: ["x"]\n'
+        "    remote:\n"
+        "      url: https://ex/mcp\n"
+        "      transport: websocket\n"
+        "  missing_url:\n"
+        "    command: npx\n"
+        '    args: ["x"]\n'
+        "    remote:\n"
+        "      transport: http\n"
+        "  remote_not_mapping:\n"
+        "    command: npx\n"
+        '    args: ["x"]\n'
+        "    remote: nope\n",
+    )
+    # The one valid remote survives; each malformed remote entry is dropped, not coerced.
+    assert set(config.get_mcp_servers()) == {"good"}
+
+
 def test_auto_archive_days_defaults_when_absent(tmp_path, monkeypatch):
     monkeypatch.setenv("CVI_CONFIG_PATH", str(tmp_path / "absent.yaml"))
     assert config.get_auto_archive_days() == config.DEFAULT_AUTO_ARCHIVE_DAYS

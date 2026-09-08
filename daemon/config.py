@@ -41,8 +41,8 @@ working_dir: {working_dir}
 #   Defaults to 14.
 # auto_archive_days: 14
 #
-# mcp_servers: external stdio MCP servers attached to every chat session, alongside
-#   the built-in `cvi` server. Each entry is name -> {{command, args, env?}} — the same
+# mcp_servers: external MCP servers attached to every chat session, alongside the
+#   built-in `cvi` server. Each entry is name -> {{command, args, env?}} — the same
 #   shape as ~/.claude.json mcpServers. The named server's own daemon must be running
 #   for its tools to work. Uncomment and adjust paths to enable:
 #
@@ -50,6 +50,19 @@ working_dir: {working_dir}
 #   cfv:
 #     command: uv
 #     args: ["run", "--directory", "/path/to/cfv", "python", "-m", "daemon.mcp_server"]
+#
+#   A remote OAuth server (one reached over HTTP with an OAuth login) additionally
+#   carries a `remote` block. The daemon runs ONE shared `mcp-remote` auth keeper for it
+#   (command/args) so the OAuth browser sign-in happens once, and attaches every session
+#   directly to `url` over `transport` (http or sse) with the keeper's token injected —
+#   instead of each session spawning its own bridge:
+#
+#   eddy:
+#     command: npx
+#     args: ["-y", "mcp-remote@0.1.38", "https://example.internal/mcp"]
+#     remote:
+#       url: https://example.internal/mcp
+#       transport: http
 """
 
 
@@ -115,11 +128,23 @@ def get_auto_archive_days() -> int:
 
 
 def get_mcp_servers() -> dict[str, dict]:
-    """External stdio MCP servers to attach to every chat session, read from the
-    config's ``mcp_servers`` mapping (name -> {command, args, env}) and returned as SDK
-    stdio-server specs. A malformed entry is skipped with a warning naming the key; a
-    missing / blank / non-mapping section yields no servers. Never raises — one bad
-    entry must not sink startup."""
+    """External MCP servers to attach to every chat session, read from the config's
+    ``mcp_servers`` mapping (name -> {command, args, env}) and returned as internal
+    server specs.
+
+    A plain local server is returned as an SDK stdio spec
+    (``{"type": "stdio", "command", "args", env?}``). An entry that also carries a
+    ``remote`` block (``{url, transport}``) is a remote OAuth server bridged by
+    ``mcp-remote``; it is returned as ``{"type": "remote", "command", "args", env?, url,
+    transport}`` so the daemon can (a) launch one shared auth keeper for it from
+    command/args and (b) attach sessions to it directly at ``url`` over ``transport``
+    (see ``daemon.mcp_auth`` and ``build_agent_options``). The ``"remote"`` type is an
+    internal marker — ``build_agent_options`` rewrites it into an SDK http/sse spec; the
+    SDK never sees it.
+
+    A malformed entry is skipped with a warning naming the key; a missing / blank /
+    non-mapping section yields no servers. Never raises — one bad entry must not sink
+    startup."""
     raw = _load().get("mcp_servers")
     if not isinstance(raw, dict):
         if raw is not None:
@@ -147,6 +172,27 @@ def get_mcp_servers() -> dict[str, dict]:
                 log.warning("skipping mcp_servers entry %r: env must be a string map", name)
                 continue
             entry["env"] = dict(env)
+        remote = spec.get("remote")
+        if remote is not None:
+            if not isinstance(remote, dict):
+                log.warning("skipping mcp_servers entry %r: remote must be a mapping", name)
+                continue
+            url = remote.get("url")
+            if not isinstance(url, str) or not url.strip():
+                log.warning(
+                    "skipping mcp_servers entry %r: remote.url must be a non-empty string", name
+                )
+                continue
+            transport = remote.get("transport")
+            if transport not in ("http", "sse"):
+                log.warning(
+                    "skipping mcp_servers entry %r: remote.transport must be 'http' or 'sse'",
+                    name,
+                )
+                continue
+            entry["type"] = "remote"
+            entry["url"] = url
+            entry["transport"] = transport
         servers[str(name)] = entry
     return servers
 
