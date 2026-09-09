@@ -1,5 +1,6 @@
 import pytest
 
+import daemon.mcp_server as mcp_server
 from daemon.db import apply_migrations_sync, open_db
 from daemon.mcp_server import (
     CVI_CHAT_SYSTEM_PROMPT,
@@ -74,6 +75,38 @@ def test_build_agent_options_attaches_configured_external_servers(tmp_path, monk
     assert "mcp__claude-asset-renderer" in options.allowed_tools
     # CVI fully owns its server set — no ambient CLI/project config is merged in.
     assert options.strict_mcp_config is True
+
+
+_REMOTE_CONFIG = (
+    "mcp_servers:\n"
+    "  eddy:\n"
+    "    command: npx\n"
+    '    args: ["-y", "mcp-remote@0.1.38", "https://ex.internal/mcp"]\n'
+    "    remote:\n"
+    "      url: https://ex.internal/mcp\n"
+    "      transport: http\n"
+)
+
+
+def test_build_agent_options_attaches_remote_server_with_bearer(tmp_path, monkeypatch):
+    _write_config(tmp_path, monkeypatch, _REMOTE_CONFIG)
+    monkeypatch.setattr(mcp_server.remote_auth, "token_for", lambda name: "tok-123")
+    options = build_agent_options()
+    assert options.mcp_servers["eddy"] == {
+        "type": "http",
+        "url": "https://ex.internal/mcp",
+        "headers": {"Authorization": "Bearer tok-123"},
+    }
+    assert "mcp__eddy" in options.allowed_tools
+
+
+def test_build_agent_options_omits_remote_server_without_token(tmp_path, monkeypatch):
+    _write_config(tmp_path, monkeypatch, _REMOTE_CONFIG)
+    monkeypatch.setattr(mcp_server.remote_auth, "token_for", lambda name: None)
+    options = build_agent_options()
+    # No keeper token yet → the server (and its tool allow) is left off this build.
+    assert "eddy" not in options.mcp_servers
+    assert "mcp__eddy" not in options.allowed_tools
 
 
 def test_build_agent_options_passes_resume_session_id():

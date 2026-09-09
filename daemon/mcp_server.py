@@ -24,6 +24,7 @@ from claude_agent_sdk import ClaudeAgentOptions
 
 from daemon import config, messages, token_usage
 from daemon.hub import hub
+from daemon.mcp_auth import remote_auth
 from daemon.view_state import ActivityEntry, store
 
 log = logging.getLogger(__name__)
@@ -289,14 +290,39 @@ def build_agent_options(
     `system_prompt` steers the session; `resume` carries a prior SDK session id to
     continue that conversation.
 
-    External stdio MCP servers declared in `config.yaml` (`mcp_servers`) are attached,
-    each with a matching `allowed_tools` entry so its tools are actually usable.
-    `strict_mcp_config` keeps the server set fully determined by CVI's config — no
-    ambient CLI/project config is merged in."""
-    external = config.get_mcp_servers()
+    External MCP servers declared in `config.yaml` (`mcp_servers`) are attached, each
+    with a matching `allowed_tools` entry so its tools are actually usable. A plain local
+    server is attached as its stdio spec. A remote OAuth server is attached *directly* at
+    its `url` over its `transport`, with the current token from its shared auth keeper
+    (`daemon.mcp_auth`) injected as an `Authorization` header — so the session never
+    spawns its own `mcp-remote`. A remote server whose keeper hasn't authenticated yet is
+    omitted this build (and logged); the next session respawn picks it up once a token
+    exists. `strict_mcp_config` keeps the server set fully determined by CVI's config —
+    no ambient CLI/project config is merged in."""
+    servers: dict[str, dict[str, object]] = {}
+    for name, spec in config.get_mcp_servers().items():
+        if spec.get("type") == "remote":
+            token = remote_auth.token_for(name)
+            if token is None:
+                # Expected while a keeper is still doing its cold-start OAuth; this runs on
+                # every session build, so keep it at debug — the keeper's own lifecycle
+                # logs carry the actionable signal.
+                log.debug(
+                    "MCP server %r has no auth token yet; omitting from this session",
+                    name,
+                    extra={"server": name},
+                )
+                continue
+            servers[name] = {
+                "type": spec["transport"],
+                "url": spec["url"],
+                "headers": {"Authorization": f"Bearer {token}"},
+            }
+        else:
+            servers[name] = spec
     return ClaudeAgentOptions(
-        mcp_servers={**external},
-        allowed_tools=[f"mcp__{name}" for name in external],
+        mcp_servers=servers,
+        allowed_tools=[f"mcp__{name}" for name in servers],
         strict_mcp_config=True,
         permission_mode="bypassPermissions",
         cwd=cwd,

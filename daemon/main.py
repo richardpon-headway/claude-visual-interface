@@ -22,6 +22,7 @@ from daemon import config, screenshots, session_sidecar, sessions
 from daemon.agent_session import ImageInput, agents
 from daemon.db import apply_migrations
 from daemon.hub import hub
+from daemon.mcp_auth import remote_auth
 from daemon.mcp_server import broadcast_title, hydrate_surface
 from daemon.view_state import store
 
@@ -36,7 +37,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await apply_migrations()
     config.ensure_config_file()
     log.info("chat working_dir = %s", config.get_working_dir())
+    # One shared auth keeper per remote OAuth MCP server, owned for the daemon's whole
+    # lifetime so sessions never each run their own OAuth (see daemon.mcp_auth).
+    remote_auth.startup_all()
     yield
+    await remote_auth.shutdown_all()
     await agents.shutdown_all()
 
 
