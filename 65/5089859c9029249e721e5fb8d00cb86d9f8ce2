@@ -1,0 +1,14 @@
+web/src/ActivityFeed.tsx
+  h_7b65865080601f 11-50,53-54,57,66-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "655089859c9029249e721e5fb8d00cb86d9f8ce2",
+  "prompts": {},
+  "humans": {
+    "h_7b65865080601f": {
+      "author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
