@@ -8,11 +8,53 @@ import type { ActivityEntry, AskQuestion } from "./viewState";
 // (model-rendered HTML) break out to the full transcript width instead.
 const PROSE = "mx-auto w-full max-w-3xl";
 
+// A full-viewport overlay showing one screenshot at up to its stored size. Click the
+// scrim or the close button, or press Escape, to dismiss; body scroll is locked while
+// open. The image is capped to the viewport (object-contain) so a large stored copy
+// fits without overflow. Reuses the app's existing scrim+Esc modal pattern.
+function Lightbox({ name, onClose }: { name: string; onClose: () => void }) {
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6"
+      onClick={onClose}
+    >
+      <img
+        src={`/screenshots/${name}`}
+        alt="screenshot"
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-full max-w-full rounded object-contain shadow-2xl"
+      />
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close"
+        className="absolute right-4 top-4 rounded-full bg-zinc-800/80 px-3 py-1 text-sm text-zinc-200 hover:bg-zinc-700"
+      >
+        Esc ✕
+      </button>
+    </div>
+  );
+}
+
 // A persisted user screenshot, served by the daemon at /screenshots/<name>. If the file
 // was deleted (manual cleanup), the <img> errors and we swap to a muted placeholder so
-// the transcript degrades gracefully instead of showing a broken image.
+// the transcript degrades gracefully instead of showing a broken image. Click a thumbnail
+// to open it full-size in a Lightbox overlay.
 function HistoryImage({ name }: { name: string }) {
   const [failed, setFailed] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   if (failed) {
     return (
       <div className="flex h-24 w-32 items-center justify-center rounded border border-zinc-700 bg-zinc-900 px-2 text-center text-xs text-zinc-500">
@@ -21,12 +63,16 @@ function HistoryImage({ name }: { name: string }) {
     );
   }
   return (
-    <img
-      src={`/screenshots/${name}`}
-      alt="screenshot"
-      onError={() => setFailed(true)}
-      className="max-h-64 max-w-xs rounded border border-zinc-700 object-contain"
-    />
+    <>
+      <img
+        src={`/screenshots/${name}`}
+        alt="screenshot"
+        onError={() => setFailed(true)}
+        onClick={() => setExpanded(true)}
+        className="max-h-64 max-w-xs cursor-zoom-in rounded border border-zinc-700 object-contain"
+      />
+      {expanded ? <Lightbox name={name} onClose={() => setExpanded(false)} /> : null}
+    </>
   );
 }
 
