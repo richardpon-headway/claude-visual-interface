@@ -1,0 +1,20 @@
+daemon/agent_session.py
+  h_7b65865080601f 81-86,190-192,200-202,245-249,251-271,293,298-303,313-317,358-361,721-738,931-938
+daemon/main.py
+  h_7b65865080601f 254-257,268-270
+tests/test_agent_session.py
+  h_7b65865080601f 244-316
+tests/test_ws_route.py
+  h_7b65865080601f 123-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "1aee3cf903a3e00d67afb1ca47bc62f4cfa75bbb",
+  "prompts": {},
+  "humans": {
+    "h_7b65865080601f": {
+      "author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
