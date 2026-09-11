@@ -241,6 +241,79 @@ async def test_shutdown_all_closes_a_live_session():
     assert reg.active_surfaces() == []
 
 
+async def test_reconnect_reopens_the_client_resuming_the_conversation():
+    # A live session told to reconnect drops its client and opens a fresh one, resuming
+    # the recorded SDK session id, while staying registered on the same surface.
+    _seed_session(SESSION)
+    store.get_or_create(SESSION).activity.clear()
+    reg = AgentSessionRegistry()
+
+    await reg.send(SESSION, "hi")
+    await _wait_until(
+        lambda: len(FakeClient.instances) == 1
+        and any(e.kind == "result" for e in store.get_or_create(SESSION).activity)
+    )
+    # The first turn landed the SDK session id; the reconnect should resume it.
+    assert len(FakeClient.instances) == 1
+
+    await reg.reconnect(SESSION)
+    await _wait_until(lambda: len(FakeClient.instances) == 2)
+
+    assert reg.active_surfaces() == [SESSION]  # same session, still live
+    assert FakeClient.instances[1].options.resume == SESSION  # reopened resuming the convo
+
+    await reg.shutdown_all()
+
+
+async def test_reconnect_interrupts_an_in_flight_turn_then_reopens(monkeypatch):
+    # A reconnect arriving mid-turn interrupts the running turn first (so recovery isn't
+    # blocked by a turn wedged on a dead server), then reopens the client.
+    _seed_session(SESSION)
+    store.get_or_create(SESSION).activity.clear()
+    release = asyncio.Event()
+
+    class GatedReconnectClient(FakeClient):
+        def __init__(self, options=None):
+            super().__init__(options)
+            self.interrupted = False
+
+        async def receive_response(self):
+            yield AssistantMessage(content=[TextBlock(text="working")], model="test")
+            await release.wait()  # hold the turn open until an interrupt releases it
+            yield ResultMessage(
+                subtype="success",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id=SESSION,
+            )
+
+        async def interrupt(self):
+            self.interrupted = True
+            release.set()  # the SDK abort ends the held-open turn
+
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: GatedReconnectClient(options)
+    )
+    reg = AgentSessionRegistry()
+
+    await reg.send(SESSION, "hang")
+    await _wait_until(
+        lambda: len(FakeClient.instances) == 1
+        and ("text", "working")
+        in [(e.kind, e.text) for e in store.get_or_create(SESSION).activity]
+    )
+
+    await reg.reconnect(SESSION)
+    await _wait_until(lambda: len(FakeClient.instances) == 2)
+
+    assert FakeClient.instances[0].interrupted is True  # the in-flight turn was interrupted
+    assert reg.active_surfaces() == [SESSION]  # session survived the reconnect
+
+    await reg.shutdown_all()
+
+
 async def test_chat_session_starts_and_chats():
     # A session with a row starts on first message and runs a turn end to end.
     _seed_session("chat-no-wt", session_type="chat")

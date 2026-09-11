@@ -78,6 +78,12 @@ _IDLE_TIMEOUT = object()
 _HANDLED = object()
 # _recv_one returns this when the SDK message stream has ended (client disconnected).
 _STREAM_END = object()
+# _RECONNECT: a reconnect was requested — _serve returns this so _run reopens the client
+# (resuming the same conversation) with freshly-read config + MCP tokens, e.g. after a
+# remote server's auth token rotated and left the live attachment dead. Also enqueued as a
+# wake so a between-turns idle wait unblocks promptly; the enqueued marker is discarded
+# where dequeued — the exit is driven by _reconnect_pending, not the marker itself.
+_RECONNECT = object()
 
 
 @dataclass
@@ -181,7 +187,9 @@ class AgentSession:
         # `prompt-N` index) and the in-flight summary tasks.
         self._prompt_count = 0
         self._summary_tasks: set[asyncio.Task[None]] = set()
-        self._queue: asyncio.Queue[ChatTurn] = asyncio.Queue()
+        # Carries user turns plus the _RECONNECT wake marker (a reconnect request enqueues
+        # it to unblock a between-turns idle wait).
+        self._queue: asyncio.Queue[ChatTurn | object] = asyncio.Queue()
         # The live client while a connection is open, so a concurrent caller can
         # interrupt the in-flight turn. `_turn_active` gates interrupt to a running
         # turn; `_interrupting` tells the relay loop to stop relaying once the SDK
@@ -189,6 +197,9 @@ class AgentSession:
         self._client: ClaudeSDKClient | None = None
         self._turn_active = False
         self._interrupting = False
+        # Set by reconnect() so the serve loop, at its next safe point, exits the current
+        # client and lets _run reopen one resuming the same conversation.
+        self._reconnect_pending = False
         # Background tasks the CLI has told us are running (task_id -> description). A
         # launched `run_in_background` shell lands here on its task_started notification
         # and is removed on task_notification (completed/failed/stopped). Not surfaced to
@@ -231,25 +242,33 @@ class AgentSession:
 
     async def _run(self) -> None:
         try:
-            try:
-                await self._serve(self._resume)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                # A failure on the resume path is most likely a stale/missing prior
-                # session — fall back to a fresh one (once) so chat still works,
-                # observably (P4). With no resume id, it's a genuine session error.
-                if self._resume is None:
+            resume = self._resume
+            while True:
+                try:
+                    outcome = await self._serve(resume)
+                except asyncio.CancelledError:
                     raise
-                log.warning(
-                    "could not resume session for surface %s; starting fresh",
-                    self._surface,
-                    exc_info=True,
-                )
-                await record_activity(
-                    self._surface, "result", "could not resume prior session; starting fresh"
-                )
-                await self._serve(None)
+                except Exception:
+                    # A failure on the resume path is most likely a stale/missing prior
+                    # session — fall back to a fresh one (per reopen attempt) so chat still
+                    # works, observably (P4). With no resume id, it's a genuine session error.
+                    if resume is None:
+                        raise
+                    log.warning(
+                        "could not resume session for surface %s; starting fresh",
+                        self._surface,
+                        exc_info=True,
+                    )
+                    await record_activity(
+                        self._surface, "result", "could not resume prior session; starting fresh"
+                    )
+                    outcome = await self._serve(None)
+                if outcome is not _RECONNECT:
+                    return
+                # Reconnect: reopen the client resuming the live conversation (or the
+                # original resume id if no turn has landed one yet), picking up
+                # freshly-read config + MCP tokens.
+                resume = self._sdk_session_id or self._resume
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -271,11 +290,17 @@ class AgentSession:
                 )
             self._registry._discard(self._surface, self)
 
-    async def _serve(self, resume: str | None) -> None:
+    async def _serve(self, resume: str | None) -> object:
         async with ClaudeSDKClient(options=self._options(resume)) as client:
             self._client = client
             try:
                 while True:
+                    # A reconnect was requested (rotated token / dead MCP server): exit this
+                    # client so _run reopens a fresh one resuming the same conversation.
+                    # Checked before _deferred so a stashed turn survives to the reopen.
+                    if self._reconnect_pending:
+                        self._reconnect_pending = False
+                        return _RECONNECT
                     # A user turn deferred because a background turn ran ahead of it
                     # (both surfaced in one idle wait) runs first, before waiting again.
                     if self._deferred is not None:
@@ -285,9 +310,11 @@ class AgentSession:
                     work = await self._await_work(client)
                     if work is _IDLE_TIMEOUT:
                         log.info("agent session idle, closing (surface=%s)", self._surface)
-                        return
-                    if work is _HANDLED:
-                        continue  # a background message/turn was consumed this pass
+                        return None
+                    if work is _HANDLED or work is _RECONNECT:
+                        # _RECONNECT here is the wake marker that unblocked an idle wait; the
+                        # reconnect itself fires on the next loop via _reconnect_pending.
+                        continue
                     await self._run_turn(client, work)
             finally:
                 self._client = None
@@ -328,7 +355,10 @@ class AgentSession:
             # matches the order things actually happened). Otherwise cancel the pending
             # get — it hasn't removed anything from the queue.
             if get_task in done:
-                self._deferred = get_task.result()
+                queued = get_task.result()
+                # A _RECONNECT wake marker is not a turn — drop it (the reconnect fires via
+                # _reconnect_pending). A real user turn is deferred to run next loop.
+                self._deferred = queued if queued is not _RECONNECT else None
             else:
                 await self._cancel(get_task)
             message = recv_task.result()
@@ -688,6 +718,24 @@ class AgentSession:
         except Exception:
             log.warning("interrupt failed (surface=%s)", self._surface, exc_info=True)
 
+    async def reconnect(self) -> None:
+        """Drop and reopen this session's Claude client, resuming the same conversation, so
+        it re-attaches every MCP server with freshly-read config and tokens — recovery for a
+        server whose connection died mid-session (e.g. a rotated remote-auth token) without
+        ending the session. Any in-flight turn is interrupted first so recovery is prompt
+        even when a turn is wedged on the dead server. A no-op once the owner task has
+        exited (idle-close), so a stray reconnect can't enqueue onto a dead queue."""
+        if not self.is_live():
+            return
+        if self._turn_active:
+            await self.interrupt()
+        self._reconnect_pending = True
+        # Wake a between-turns idle wait so the reconnect is actioned now, not at the next
+        # message. The marker is discarded where dequeued; _reconnect_pending drives the exit.
+        self._queue.put_nowait(_RECONNECT)
+        log.info("reconnecting agent session", extra={"surface": self._surface})
+        await record_activity(self._surface, "result", "reconnecting…")
+
     def maybe_title(self, text: str) -> None:
         """Drive titling off each text-bearing user message. Image-only turns (no text)
         are skipped, so they don't advance the window or the refresh cadence. While the
@@ -879,6 +927,14 @@ class AgentSessionRegistry:
         session = self._sessions.get(surface)
         if session is not None:
             await session.interrupt()
+
+    async def reconnect(self, surface: str) -> None:
+        """Reconnect the surface's live session — drop and reopen its client, resuming the
+        conversation, so it re-attaches MCP servers with fresh config/tokens. A no-op when
+        the surface has no live session."""
+        session = self._sessions.get(surface)
+        if session is not None:
+            await session.reconnect()
 
     def _discard(self, surface: str, session: AgentSession | None = None) -> None:
         # Only remove if the registered session is the one asking to be discarded, so a

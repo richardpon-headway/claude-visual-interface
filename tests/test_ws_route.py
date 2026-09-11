@@ -120,6 +120,22 @@ async def test_inbound_stop_frame_interrupts_the_turn(monkeypatch):
     assert called == {"interrupt": surface}
 
 
+async def test_inbound_reconnect_frame_routes_to_the_agent_registry(monkeypatch):
+    surface = "ws-reconnect"
+    called: dict[str, object] = {}
+
+    async def fake_reconnect(s):
+        called["reconnect"] = s
+
+    monkeypatch.setattr(agent_session.agents, "reconnect", fake_reconnect)
+
+    # No payload needed — reconnect applies to whatever session is on the surface; a
+    # stray payload is ignored.
+    await _handle_inbound(surface, json.dumps({"type": "reconnect", "payload": {"x": 1}}))
+
+    assert called == {"reconnect": surface}
+
+
 def test_parse_image_accepts_valid_and_fails_closed_on_malformed():
     assert _parse_image(None) is None
     assert _parse_image({"media_type": "image/png", "data": "QUJD"}) == ImageInput(

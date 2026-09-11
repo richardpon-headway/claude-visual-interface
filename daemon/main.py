@@ -251,8 +251,10 @@ async def _stop_surface(surface: str) -> None:
 
 async def _handle_inbound(surface: str, raw: str) -> None:
     """Apply a browser→daemon frame. `message` routes a chat turn to the surface's
-    live agent session; `stop` aborts the agent's current work on the surface. Anything
-    malformed or unknown is ignored (the socket stays open)."""
+    live agent session; `stop` aborts the agent's current work on the surface;
+    `reconnect` drops and reopens the session's client (resuming the conversation) so it
+    re-attaches its MCP servers. Anything malformed or unknown is ignored (the socket
+    stays open)."""
     try:
         msg = json.loads(raw)
     except (ValueError, TypeError):
@@ -262,6 +264,9 @@ async def _handle_inbound(surface: str, raw: str) -> None:
     msg_type = msg.get("type")
     if msg_type == "stop":  # no payload — applies to whatever is running
         await _stop_surface(surface)
+        return
+    if msg_type == "reconnect":  # no payload — reconnect whatever session is on the surface
+        await agents.reconnect(surface)
         return
     payload = msg.get("payload")
     if not isinstance(payload, dict):
