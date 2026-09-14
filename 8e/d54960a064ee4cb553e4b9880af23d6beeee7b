@@ -1,0 +1,19 @@
+web/src/ActivityFeed.tsx
+  s_8b41cdf09631df::t_6f4267306fbd4b 362-388,401-404,424,431,440,443-450,460,467-470
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8ed54960a064ee4cb553e4b9880af23d6beeee7b",
+  "prompts": {},
+  "sessions": {
+    "s_8b41cdf09631df": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f6f85978-4963-4aca-8692-4258318b3ddf",
+        "model": "unknown"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
