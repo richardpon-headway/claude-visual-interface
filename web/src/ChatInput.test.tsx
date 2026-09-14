@@ -216,6 +216,96 @@ describe("ChatInput", () => {
     expect(screen.queryByText(/drop screenshot here/i)).toBeNull();
   });
 
+  function pasteText(input: HTMLElement, text: string) {
+    fireEvent.paste(input, {
+      clipboardData: {
+        items: [],
+        getData: (t: string) => (t === "text/plain" ? text : ""),
+      },
+    });
+  }
+  const pasteChip = () => screen.queryByRole("button", { name: /remove pasted text/i });
+
+  describe("large text paste", () => {
+    it("chips a paste over the line bound instead of filling the textarea", () => {
+      const onSend = vi.fn();
+      render(<ChatInput onSend={onSend} />);
+      const input = screen.getByRole("textbox", { name: /message the agent/i });
+
+      pasteText(input, Array.from({ length: 20 }, (_, i) => `line ${i}`).join("\n"));
+      expect(pasteChip()).toBeInTheDocument();
+      expect((input as HTMLTextAreaElement).value).toBe(""); // stayed out of the box
+    });
+
+    it("chips a paste over the char bound even on a single line", () => {
+      const onSend = vi.fn();
+      render(<ChatInput onSend={onSend} />);
+      const input = screen.getByRole("textbox", { name: /message the agent/i });
+
+      pasteText(input, "x".repeat(1500));
+      expect(pasteChip()).toBeInTheDocument();
+    });
+
+    it("leaves a small paste to the textarea's default (no chip)", () => {
+      const onSend = vi.fn();
+      render(<ChatInput onSend={onSend} />);
+      const input = screen.getByRole("textbox", { name: /message the agent/i });
+
+      pasteText(input, "just a short note\nsecond line");
+      expect(pasteChip()).toBeNull();
+    });
+
+    it("stitches the typed prompt and the chipped paste into one message body", () => {
+      const onSend = vi.fn();
+      render(<ChatInput onSend={onSend} />);
+      const input = screen.getByRole("textbox", { name: /message the agent/i });
+
+      const blob = Array.from({ length: 20 }, (_, i) => `L${i}`).join("\n");
+      pasteText(input, blob);
+      fireEvent.change(input, { target: { value: "what's wrong here?" } });
+      fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+      expect(onSend).toHaveBeenCalledWith(`what's wrong here?\n\n${blob}`, undefined);
+    });
+
+    it("can send a chipped paste with no typed prompt", () => {
+      const onSend = vi.fn();
+      render(<ChatInput onSend={onSend} />);
+      const input = screen.getByRole("textbox", { name: /message the agent/i });
+
+      const blob = "y".repeat(1200);
+      pasteText(input, blob);
+      fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+      expect(onSend).toHaveBeenCalledWith(blob, undefined);
+    });
+
+    it("removes a paste chip before send", () => {
+      const onSend = vi.fn();
+      render(<ChatInput onSend={onSend} />);
+      const input = screen.getByRole("textbox", { name: /message the agent/i });
+
+      pasteText(input, "z".repeat(1200));
+      fireEvent.click(screen.getByRole("button", { name: /remove pasted text/i }));
+      expect(pasteChip()).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: /send/i }));
+      expect(onSend).not.toHaveBeenCalled();
+    });
+
+    it("expands and collapses a paste chip preview", () => {
+      const onSend = vi.fn();
+      render(<ChatInput onSend={onSend} />);
+      const input = screen.getByRole("textbox", { name: /message the agent/i });
+
+      pasteText(input, Array.from({ length: 20 }, (_, i) => `row ${i}`).join("\n"));
+      expect(screen.queryByText(/row 19/)).toBeNull(); // collapsed by default
+      fireEvent.click(screen.getByRole("button", { name: /expand pasted text/i }));
+      expect(screen.getByText(/row 19/)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /collapse pasted text/i }));
+      expect(screen.queryByText(/row 19/)).toBeNull();
+    });
+  });
+
   describe("busy toggle", () => {
     it("shows Stop (not Send) while busy and calls onStop when clicked", () => {
       const onSend = vi.fn();
