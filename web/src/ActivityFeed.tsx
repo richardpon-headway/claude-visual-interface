@@ -359,9 +359,33 @@ function AskPicker({
   return (
     <li className={`${PROSE} space-y-2`}>
       {questions.map((q, qi) => {
-        const prefix = `${q.header || q.question}: `;
-        const line = answerLines[qi] ?? "";
-        const chosenText = line.startsWith(prefix) ? line.slice(prefix.length) : line;
+        // Which option indices are the committed answer for this question — from this
+        // session's exact picks when we just submitted, else reconstructed from the
+        // persisted answer line by matching option labels (survives reload, where the
+        // picks state is gone). Once locked we keep every option rendered and use this
+        // to highlight the chosen one(s), rather than collapsing to just the pick — so
+        // the other options (and their descriptions/previews) stay readable for context.
+        const chosenSet = ((): Set<number> => {
+          const p = picks[qi];
+          const hasLive = q.multiSelect ? (p as number[]).length > 0 : p !== null;
+          if (submitted && hasLive) {
+            return q.multiSelect ? new Set(p as number[]) : new Set([p as number]);
+          }
+          const prefix = `${q.header || q.question}: `;
+          const line = answerLines[qi] ?? "";
+          const text = line.startsWith(prefix) ? line.slice(prefix.length) : line;
+          const set = new Set<number>();
+          if (q.multiSelect) {
+            const parts = text.split(", ");
+            q.options.forEach((o, oi) => {
+              if (parts.includes(o.label)) set.add(oi);
+            });
+          } else {
+            const oi = q.options.findIndex((o) => o.label === text);
+            if (oi >= 0) set.add(oi);
+          }
+          return set;
+        })();
         return (
         <div key={qi} className="rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3">
           {q.header ? (
@@ -370,18 +394,14 @@ function AskPicker({
             </span>
           ) : null}
           <div className="mb-2 text-sm font-medium text-zinc-100">{q.question}</div>
-          {locked ? (
-            <div className="rounded-lg border border-amber-800 bg-amber-950 px-3 py-2 text-sm text-amber-100">
-              {chosenText}
-            </div>
-          ) : (
           <div className="space-y-2">
             {q.options.map((o, oi) => {
               const isCursor =
                 active && positions[cursor]?.qi === qi && positions[cursor]?.oi === oi;
-              const chosen = q.multiSelect
-                ? (picks[qi] as number[]).includes(oi)
-                : picks[qi] === oi;
+              const chosen = chosenSet.has(oi);
+              // When locked, non-chosen options stay on screen but dimmed so the chosen
+              // answer reads as the commitment while the alternatives remain legible.
+              const dim = locked && !chosen;
               const onSelect = () => {
                 setCursor(positions.findIndex((p) => p.qi === qi && p.oi === oi));
                 selectAt(qi, oi);
@@ -401,14 +421,14 @@ function AskPicker({
                         : isCursor
                           ? "border-zinc-700 bg-zinc-900"
                           : "border-zinc-800"
-                    } ${submitted && !chosen ? "opacity-40" : ""}`}
+                    } ${dim ? "opacity-60" : ""}`}
                   >
                     <div className="min-w-0 flex-1 overflow-hidden">
                       <OptionPreview html={o.preview} />
                     </div>
                     <button
                       type="button"
-                      disabled={submitted}
+                      disabled={locked}
                       aria-label={`Select ${o.label}`}
                       onClick={onSelect}
                       className={`shrink-0 rounded-md border px-3 py-1.5 text-xs font-semibold ${
@@ -417,13 +437,17 @@ function AskPicker({
                           : "border-amber-900 bg-amber-950 text-amber-300 hover:bg-amber-900"
                       } disabled:opacity-40`}
                     >
-                      {q.multiSelect
+                      {locked
                         ? chosen
-                          ? "[x] Selected"
-                          : "Select"
-                        : chosen
                           ? "✓ Selected"
-                          : `Select ${oi + 1}`}
+                          : "Not selected"
+                        : q.multiSelect
+                          ? chosen
+                            ? "[x] Selected"
+                            : "Select"
+                          : chosen
+                            ? "✓ Selected"
+                            : `Select ${oi + 1}`}
                     </button>
                   </div>
                 );
@@ -433,15 +457,17 @@ function AskPicker({
                 <button
                   key={oi}
                   type="button"
-                  disabled={submitted}
+                  disabled={locked}
                   onClick={onSelect}
                   className={`flex w-full items-start gap-3 rounded-lg border px-3 py-2 text-left ${
                     chosen
                       ? "border-amber-800 bg-amber-950"
                       : isCursor
                         ? "border-zinc-700 bg-zinc-900"
-                        : "border-transparent hover:bg-zinc-900"
-                  } ${submitted && !chosen ? "opacity-40" : ""}`}
+                        : locked
+                          ? "border-zinc-800"
+                          : "border-transparent hover:bg-zinc-900"
+                  } ${dim ? "opacity-60" : ""}`}
                 >
                   {q.multiSelect ? (
                     <span
@@ -466,7 +492,6 @@ function AskPicker({
               );
             })}
           </div>
-          )}
         </div>
         );
       })}

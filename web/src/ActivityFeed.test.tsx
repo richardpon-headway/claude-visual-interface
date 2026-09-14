@@ -292,7 +292,7 @@ describe("ActivityFeed", () => {
     expect(onAnswer).toHaveBeenCalledWith("ask-p", "Fix: Derive");
   });
 
-  it("renders a locked answered state from a persisted answer", () => {
+  it("renders a locked answered state from a persisted answer, keeping all options", () => {
     const onAnswer = vi.fn();
     render(
       <ActivityFeed
@@ -300,11 +300,20 @@ describe("ActivityFeed", () => {
         onAnswer={onAnswer}
       />,
     );
+    // Both the chosen option AND the unchosen alternatives stay on screen so the
+    // original context is still readable after answering.
     expect(screen.getByText("Custom modal")).toBeInTheDocument();
-    expect(screen.queryByText("Native")).toBeNull(); // unchosen option not offered
+    expect(screen.getByText("Native")).toBeInTheDocument(); // unchosen option still shown
     expect(screen.getByText(/answered/)).toBeInTheDocument();
-    // A stray key can't re-answer a locked picker.
+    // The option buttons are locked (disabled) — you can't re-answer.
+    const chosenBtn = screen.getByText("Custom modal").closest("button")!;
+    const otherBtn = screen.getByText("Native").closest("button")!;
+    expect(chosenBtn).toBeDisabled();
+    expect(otherBtn).toBeDisabled();
+    // A stray key can't re-answer a locked picker either.
     fireEvent.keyDown(window, { key: "2" });
+    expect(onAnswer).not.toHaveBeenCalled();
+    fireEvent.click(otherBtn);
     expect(onAnswer).not.toHaveBeenCalled();
   });
 });
