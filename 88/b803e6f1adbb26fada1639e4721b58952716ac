@@ -1,0 +1,20 @@
+daemon/agent_session.py
+  h_7b65865080601f 178-180,736-742,747
+daemon/titles.py
+  h_7b65865080601f 39-42
+tests/test_agent_session.py
+  h_7b65865080601f 1492,1504,1510,1514-1515,1518-1519,1521
+tests/test_sessions.py
+  h_7b65865080601f 246
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "88b803e6f1adbb26fada1639e4721b58952716ac",
+  "prompts": {},
+  "humans": {
+    "h_7b65865080601f": {
+      "author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
