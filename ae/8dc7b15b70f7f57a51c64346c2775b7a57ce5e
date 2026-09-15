@@ -1,0 +1,16 @@
+web/src/ChatInput.test.tsx
+  h_7b65865080601f 307-335
+web/src/ChatInput.tsx
+  h_7b65865080601f 17-23,28-38,40-50,64-71,115,209-213,297
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ae8dc7b15b70f7f57a51c64346c2775b7a57ce5e",
+  "prompts": {},
+  "humans": {
+    "h_7b65865080601f": {
+      "author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
