@@ -178,23 +178,6 @@ def set_generated_title(session_id: str, title: str) -> bool:
         conn.close()
 
 
-def overwrite_title(session_id: str, title: str) -> None:
-    """Unconditionally replace a session's title (used by the periodic title refresh,
-    which always overwrites the previously generated title). Unlike set_generated_title
-    there is no title-state guard — there is no rename UI today, so no user-set title to
-    protect. Bumps updated_at."""
-    now = _now_iso()
-    conn = open_db()
-    try:
-        conn.execute(
-            "UPDATE session SET title = ?, updated_at = ? WHERE id = ?",
-            (title, now, session_id),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
 def set_user_title(session_id: str, title: str) -> bool:
     """Store a user-provided title override. Auto-titling keeps writing and refreshing
     `title` untouched; reads (via effective_title) prefer this override when present.
