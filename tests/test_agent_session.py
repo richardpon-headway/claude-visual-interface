@@ -1489,7 +1489,7 @@ async def test_chat_with_an_explicit_title_is_not_auto_titled(monkeypatch):
 
 class _RecordingTitleGen:
     """Returns a distinct title per call and records the input each call received,
-    so a test can assert both the cadence and what the refresh was fed."""
+    so a test can assert how many titling attempts ran and what they were fed."""
 
     def __init__(self):
         self.calls = 0
@@ -1501,64 +1501,26 @@ class _RecordingTitleGen:
         return titles.TitleResult(f"Title {self.calls}")
 
 
-async def test_title_refreshes_every_five_prompts_from_the_recent_window(monkeypatch):
-    chat = sessions.create_chat_session()
-    gen = _RecordingTitleGen()
-    monkeypatch.setattr(titles, "generator", gen)
-    reg = AgentSessionRegistry()
-    ws = FakeWS()
-    hub.register(chat, ws)
-    try:
-        # Prompt 1 → the initial title.
-        await reg.send(chat, "one")
-        await _wait_until(lambda: sessions.get_session(chat)["title"] == "Title 1")
-
-        # Prompts 2-4 → no regeneration (cadence not reached).
-        for text in ("two", "three", "four"):
-            await reg.send(chat, text)
-        await _wait_until(
-            lambda: FakeClient.instances[0].queried[:4] == ["one", "two", "three", "four"]
-        )
-        assert gen.calls == 1
-        assert sessions.get_session(chat)["title"] == "Title 1"
-
-        # Prompt 5 → refresh overwrites the title and broadcasts live.
-        await reg.send(chat, "five")
-        await _wait_until(lambda: sessions.get_session(chat)["title"] == "Title 2")
-    finally:
-        hub.unregister(chat, ws)
-
-    assert {"type": "title", "surface": chat, "payload": {"title": "Title 2"}} in ws.received
-    # The refresh is fed the recent-message window, newest-first.
-    assert gen.inputs[-1] == "five\nfour\nthree\ntwo\none"
-    await reg.shutdown_all()
-
-
-async def test_image_only_turn_does_not_advance_the_refresh_cadence(monkeypatch):
+async def test_title_is_frozen_after_the_first_success(monkeypatch):
     chat = sessions.create_chat_session()
     gen = _RecordingTitleGen()
     monkeypatch.setattr(titles, "generator", gen)
     reg = AgentSessionRegistry()
 
-    # Prompt 1 (text) → initial title.
+    # Prompt 1 → the initial title.
     await reg.send(chat, "one")
     await _wait_until(lambda: sessions.get_session(chat)["title"] == "Title 1")
 
-    # An image-only turn carries no text — it must not count toward the cadence.
-    await reg.send(chat, "", images=[agent_session.ImageInput(media_type="image/png", data="QUJD")])
-    for text in ("two", "three", "four"):
+    # Further prompts never regenerate the title — it is frozen on the first success.
+    for text in ("two", "three", "four", "five", "six"):
         await reg.send(chat, text)
     await _wait_until(
-        lambda: [q for q in FakeClient.instances[0].queried if isinstance(q, str)]
-        == ["one", "two", "three", "four"]
+        lambda: FakeClient.instances[0].queried[:6]
+        == ["one", "two", "three", "four", "five", "six"]
     )
-    # Only four *text* prompts so far (the image didn't count) → no refresh yet.
+
     assert gen.calls == 1
     assert sessions.get_session(chat)["title"] == "Title 1"
-
-    # The fifth text prompt reaches the cadence and refreshes.
-    await reg.send(chat, "five")
-    await _wait_until(lambda: sessions.get_session(chat)["title"] == "Title 2")
     await reg.shutdown_all()
 
 

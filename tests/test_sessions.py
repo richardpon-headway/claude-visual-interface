@@ -227,18 +227,6 @@ def test_set_generated_title_reports_missing_session():
     assert sessions.set_generated_title("ghost", "x") is False
 
 
-def test_overwrite_title_replaces_an_existing_title():
-    chat = sessions.create_chat_session()
-    assert sessions.set_generated_title(chat, "First title") is True
-    before = sessions.get_session(chat)["updated_at"]
-
-    # The refresh path overwrites unconditionally, unlike set_generated_title's guard.
-    sessions.overwrite_title(chat, "Refreshed title")
-    row = sessions.get_session(chat)
-    assert row["title"] == "Refreshed title"
-    assert row["updated_at"] >= before
-
-
 def test_set_user_title_overrides_the_displayed_title():
     chat = sessions.create_chat_session()
     assert sessions.set_generated_title(chat, "Auto title") is True
@@ -253,17 +241,9 @@ def test_set_user_title_reports_missing_session():
     assert sessions.set_user_title("ghost", "x") is False
 
 
-def test_user_title_survives_a_later_auto_refresh():
-    chat = sessions.create_chat_session()
-    assert sessions.set_user_title(chat, "Pinned name") is True
-    # The periodic refresh keeps rewriting the auto title, but the override still wins.
-    sessions.overwrite_title(chat, "Refreshed auto title")
-    assert sessions.get_session(chat)["title"] == "Pinned name"
-
-
 def test_effective_title_falls_back_to_auto_title_when_no_override():
     chat = sessions.create_chat_session()
-    sessions.overwrite_title(chat, "Auto title")
+    assert sessions.set_generated_title(chat, "Auto title") is True
     row = sessions.get_session(chat)
     assert row["user_title"] is None
     assert row["title"] == "Auto title"  # falls back to the auto title
