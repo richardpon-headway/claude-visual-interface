@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ImageAttachment, SendMessage, StopAgent } from "./useSurfaceSocket";
 
@@ -6,6 +6,95 @@ import type { ImageAttachment, SendMessage, StopAgent } from "./useSurfaceSocket
 // the daemon raises its frame limit to 64 MB to fit this batch. Mirrors the daemon's
 // own cap (_MAX_IMAGES_PER_TURN in daemon/main.py).
 const MAX_IMAGES = 32;
+
+// A plain-text paste past either bound gets lifted out of the textarea into a collapsed
+// chip instead of flooding the composer (mirrors how editors like Eddy handle a big
+// paste). The chip's content is stitched back into the message at send time, so the
+// agent still receives the full text — this is purely a composer-space affordance.
+const PASTE_MAX_LINES = 15;
+const PASTE_MAX_CHARS = 1000;
+
+// Soft upper cap: a paste longer than this many lines is truncated to the first
+// PASTE_CAP_LINES before it's chipped/sent, with the drop surfaced on the chip. This is
+// a guardrail against an accidental giant paste blowing the agent's context/cost — well
+// under the 64 MB WebSocket frame, which is the hard transport ceiling. Line-based only:
+// a pathological single very-long line still rides up to the frame limit.
+const PASTE_CAP_LINES = 50000;
+
+function isLargePaste(s: string): boolean {
+  return s.length > PASTE_MAX_CHARS || s.split("\n").length > PASTE_MAX_LINES;
+}
+
+// Truncate a paste to the line cap. Returns the kept text and how many lines were
+// dropped (0 when under the cap).
+function capPaste(s: string): { text: string; dropped: number } {
+  const lines = s.split("\n");
+  if (lines.length <= PASTE_CAP_LINES) return { text: s, dropped: 0 };
+  return {
+    text: lines.slice(0, PASTE_CAP_LINES).join("\n"),
+    dropped: lines.length - PASTE_CAP_LINES,
+  };
+}
+
+// A collapsed stand-in for one large pasted block. Collapsed by default (just a one-line
+// summary); Expand reveals a scrollable preview, ✕ drops it before send. When the paste
+// was truncated at the line cap, a warning notes how many lines were dropped.
+function PasteChip({
+  text,
+  dropped,
+  onRemove,
+}: {
+  text: string;
+  dropped: number;
+  onRemove: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = text.split("\n").length;
+  return (
+    <div className="rounded border border-zinc-700 bg-zinc-800/60 text-xs">
+      <div className="flex items-center gap-2 px-2 py-1.5">
+        <span aria-hidden>📄</span>
+        <span className="text-zinc-200">Pasted text</span>
+        <span className="text-zinc-500">
+          · {lines} {lines === 1 ? "line" : "lines"}
+        </span>
+        <span className="rounded bg-zinc-700 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-zinc-300">
+          Pasted
+        </span>
+        {dropped > 0 ? (
+          <span
+            title={`Truncated to the first ${PASTE_CAP_LINES.toLocaleString()} lines`}
+            className="rounded bg-amber-950 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-300"
+          >
+            ⚠ truncated · {dropped.toLocaleString()} dropped
+          </span>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          aria-label={expanded ? "Collapse pasted text" : "Expand pasted text"}
+          className="ml-auto rounded px-1.5 py-0.5 text-zinc-400 hover:text-zinc-100"
+        >
+          {expanded ? "Collapse ▲" : "Expand ▼"}
+        </button>
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label="Remove pasted text"
+          className="rounded px-1 text-zinc-400 hover:text-zinc-100"
+        >
+          ×
+        </button>
+      </div>
+      {expanded ? (
+        <pre className="max-h-64 overflow-auto whitespace-pre-wrap border-t border-zinc-700 px-2 py-1.5 font-mono text-[11px] text-zinc-300">
+          {text}
+        </pre>
+      ) : null}
+    </div>
+  );
+}
 
 // The chat box at the bottom of the right pane. Submitting sends a turn to the
 // surface's agent; the message echoes back into the transcript as a `user` entry.
@@ -23,7 +112,11 @@ export function ChatInput({
 }) {
   const [text, setText] = useState("");
   const [images, setImages] = useState<ImageAttachment[]>([]);
+  const [pastes, setPastes] = useState<{ id: number; text: string; dropped: number }[]>([]);
   const [dragging, setDragging] = useState(false);
+  // Monotonic key source for paste chips, so removing one never re-keys the others
+  // (index keys would let a child chip's expanded state bleed onto its neighbor).
+  const nextPasteId = useRef(0);
 
   // Shared by paste and drop: read an image File and append it as an attachment chip,
   // up to MAX_IMAGES. Existing attachments are kept (accumulate, not replace).
@@ -97,23 +190,42 @@ export function ChatInput({
   }, []);
 
   function handlePaste(e: React.ClipboardEvent) {
-    // Attach every image in the paste (a folder selection Cmd-C'd carries several).
+    // Images first (a folder selection Cmd-C'd carries several) — an image paste never
+    // also carries the kind of text we'd want to chip.
     const files = Array.from(e.clipboardData.items)
       .filter((it) => it.kind === "file" && it.type.startsWith("image/"))
       .map((it) => it.getAsFile())
       .filter((f): f is File => f !== null);
-    if (files.length === 0) return;
-    e.preventDefault();
-    for (const file of files) attachImageFile(file);
+    if (files.length > 0) {
+      e.preventDefault();
+      for (const file of files) attachImageFile(file);
+      return;
+    }
+    // A large plain-text paste becomes a collapsed chip instead of flooding the box.
+    // Smaller pastes fall through to the textarea's default behavior.
+    const pasted = e.clipboardData.getData("text/plain");
+    if (isLargePaste(pasted)) {
+      e.preventDefault();
+      const { text: capped, dropped } = capPaste(pasted);
+      setPastes((prev) => [
+        ...prev,
+        { id: nextPasteId.current++, text: capped, dropped },
+      ]);
+    }
   }
 
   function send() {
     if (busy) return;
-    const trimmed = text.trim();
-    if (!trimmed && images.length === 0) return;
-    onSend(trimmed, images.length ? images : undefined);
+    // Stitch the typed prompt and any chipped pastes back into one message body, in
+    // visual order (prompt first, then each paste), separated by blank lines.
+    const body = [text.trim(), ...pastes.map((p) => p.text)]
+      .filter((part) => part.length > 0)
+      .join("\n\n");
+    if (!body && images.length === 0) return;
+    onSend(body, images.length ? images : undefined);
     setText("");
     setImages([]);
+    setPastes([]);
   }
 
   function submit(e: React.FormEvent) {
@@ -176,6 +288,18 @@ export function ChatInput({
           ))}
         </div>
       ) : null}
+      {pastes.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          {pastes.map((p) => (
+            <PasteChip
+              key={p.id}
+              text={p.text}
+              dropped={p.dropped}
+              onRemove={() => setPastes((prev) => prev.filter((q) => q.id !== p.id))}
+            />
+          ))}
+        </div>
+      ) : null}
       <div className="relative">
         <textarea
           value={text}
@@ -199,7 +323,7 @@ export function ChatInput({
         ) : (
           <button
             type="submit"
-            disabled={!text.trim() && images.length === 0}
+            disabled={!text.trim() && images.length === 0 && pastes.length === 0}
             className="absolute bottom-2 right-2 rounded border border-zinc-700 px-3 py-1 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-40"
           >
             Send

@@ -521,6 +521,40 @@ function BackgroundTag() {
   );
 }
 
+// A large pasted block lands here as one long prompt. Rather than render a wall-height
+// bubble, collapse anything past either bound to a preview (first N lines, capped) with
+// a Show more / Show less toggle. Bounds mirror the composer's paste threshold so a
+// paste that got chipped on the way in also reads as collapsed on the way out.
+const BUBBLE_MAX_LINES = 15;
+const BUBBLE_MAX_CHARS = 1000;
+
+function UserBubble({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = text.split("\n");
+  const tooLong = lines.length > BUBBLE_MAX_LINES || text.length > BUBBLE_MAX_CHARS;
+  const shown =
+    expanded || !tooLong
+      ? text
+      : lines.slice(0, BUBBLE_MAX_LINES).join("\n").slice(0, BUBBLE_MAX_CHARS);
+  return (
+    <div className="flex max-w-[85%] flex-col items-end gap-1">
+      <div className="whitespace-pre-wrap rounded-2xl bg-zinc-800 px-4 py-3 text-sm text-zinc-100">
+        {shown}
+        {tooLong && !expanded ? <span className="text-zinc-500"> …</span> : null}
+      </div>
+      {tooLong ? (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="rounded px-2 py-0.5 text-xs text-sky-400/80 hover:text-sky-300"
+        >
+          {expanded ? "Show less" : `Show more (${lines.length} lines)`}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function ActivityRow({
   entry,
   promptId,
@@ -539,11 +573,7 @@ function ActivityRow({
     const images = entry.images ?? [];
     return (
       <li id={promptId} className={`${PROSE} flex flex-col items-end gap-2 scroll-mt-4`}>
-        {entry.text ? (
-          <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-zinc-800 px-4 py-3 text-sm text-zinc-100">
-            {entry.text}
-          </div>
-        ) : null}
+        {entry.text ? <UserBubble text={entry.text} /> : null}
         {images.length > 0 ? (
           <div className="flex max-w-[85%] flex-wrap justify-end gap-2">
             {images.map((name) => (
