@@ -304,6 +304,35 @@ describe("ChatInput", () => {
       fireEvent.click(screen.getByRole("button", { name: /collapse pasted text/i }));
       expect(screen.queryByText(/row 19/)).toBeNull();
     });
+
+    it("truncates a paste past the 50k-line cap and notes the drop", () => {
+      const onSend = vi.fn();
+      render(<ChatInput onSend={onSend} />);
+      const input = screen.getByRole("textbox", { name: /message the agent/i });
+
+      // 50,010 lines → 10 over the cap.
+      const blob = Array.from({ length: 50010 }, (_, i) => `n${i}`).join("\n");
+      pasteText(input, blob);
+
+      // The chip flags the drop with the exact count.
+      expect(screen.getByText(/truncated · 10 dropped/i)).toBeInTheDocument();
+
+      // Only the first 50,000 lines are sent.
+      fireEvent.click(screen.getByRole("button", { name: /send/i }));
+      const sent = onSend.mock.calls[0][0] as string;
+      expect(sent.split("\n")).toHaveLength(50000);
+      expect(sent.startsWith("n0\n")).toBe(true);
+      expect(sent.endsWith("\nn49999")).toBe(true);
+    });
+
+    it("does not flag a truncation for a paste under the cap", () => {
+      const onSend = vi.fn();
+      render(<ChatInput onSend={onSend} />);
+      const input = screen.getByRole("textbox", { name: /message the agent/i });
+
+      pasteText(input, Array.from({ length: 20 }, (_, i) => `line ${i}`).join("\n"));
+      expect(screen.queryByText(/truncated/i)).toBeNull();
+    });
   });
 
   describe("busy toggle", () => {

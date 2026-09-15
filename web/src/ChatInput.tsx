@@ -14,13 +14,40 @@ const MAX_IMAGES = 32;
 const PASTE_MAX_LINES = 15;
 const PASTE_MAX_CHARS = 1000;
 
+// Soft upper cap: a paste longer than this many lines is truncated to the first
+// PASTE_CAP_LINES before it's chipped/sent, with the drop surfaced on the chip. This is
+// a guardrail against an accidental giant paste blowing the agent's context/cost — well
+// under the 64 MB WebSocket frame, which is the hard transport ceiling. Line-based only:
+// a pathological single very-long line still rides up to the frame limit.
+const PASTE_CAP_LINES = 50000;
+
 function isLargePaste(s: string): boolean {
   return s.length > PASTE_MAX_CHARS || s.split("\n").length > PASTE_MAX_LINES;
 }
 
+// Truncate a paste to the line cap. Returns the kept text and how many lines were
+// dropped (0 when under the cap).
+function capPaste(s: string): { text: string; dropped: number } {
+  const lines = s.split("\n");
+  if (lines.length <= PASTE_CAP_LINES) return { text: s, dropped: 0 };
+  return {
+    text: lines.slice(0, PASTE_CAP_LINES).join("\n"),
+    dropped: lines.length - PASTE_CAP_LINES,
+  };
+}
+
 // A collapsed stand-in for one large pasted block. Collapsed by default (just a one-line
-// summary); Expand reveals a scrollable preview, ✕ drops it before send.
-function PasteChip({ text, onRemove }: { text: string; onRemove: () => void }) {
+// summary); Expand reveals a scrollable preview, ✕ drops it before send. When the paste
+// was truncated at the line cap, a warning notes how many lines were dropped.
+function PasteChip({
+  text,
+  dropped,
+  onRemove,
+}: {
+  text: string;
+  dropped: number;
+  onRemove: () => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const lines = text.split("\n").length;
   return (
@@ -34,6 +61,14 @@ function PasteChip({ text, onRemove }: { text: string; onRemove: () => void }) {
         <span className="rounded bg-zinc-700 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-zinc-300">
           Pasted
         </span>
+        {dropped > 0 ? (
+          <span
+            title={`Truncated to the first ${PASTE_CAP_LINES.toLocaleString()} lines`}
+            className="rounded bg-amber-950 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-300"
+          >
+            ⚠ truncated · {dropped.toLocaleString()} dropped
+          </span>
+        ) : null}
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
@@ -77,7 +112,7 @@ export function ChatInput({
 }) {
   const [text, setText] = useState("");
   const [images, setImages] = useState<ImageAttachment[]>([]);
-  const [pastes, setPastes] = useState<{ id: number; text: string }[]>([]);
+  const [pastes, setPastes] = useState<{ id: number; text: string; dropped: number }[]>([]);
   const [dragging, setDragging] = useState(false);
   // Monotonic key source for paste chips, so removing one never re-keys the others
   // (index keys would let a child chip's expanded state bleed onto its neighbor).
@@ -171,7 +206,11 @@ export function ChatInput({
     const pasted = e.clipboardData.getData("text/plain");
     if (isLargePaste(pasted)) {
       e.preventDefault();
-      setPastes((prev) => [...prev, { id: nextPasteId.current++, text: pasted }]);
+      const { text: capped, dropped } = capPaste(pasted);
+      setPastes((prev) => [
+        ...prev,
+        { id: nextPasteId.current++, text: capped, dropped },
+      ]);
     }
   }
 
@@ -255,6 +294,7 @@ export function ChatInput({
             <PasteChip
               key={p.id}
               text={p.text}
+              dropped={p.dropped}
               onRemove={() => setPastes((prev) => prev.filter((q) => q.id !== p.id))}
             />
           ))}
