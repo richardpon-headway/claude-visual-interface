@@ -263,7 +263,17 @@ _ASK_PICKER_GUIDANCE = (
     "Put an option's full detail in its preview and lead the preview with the option's "
     "label so the card's heading matches the choice. Do NOT also render the same options "
     "as a <cvi-artifact> page or repeat them as a text list — the picker is the single "
-    "place the options appear."
+    "place the options appear. "
+    "The user addresses each question one of three independent ways — picking an option, "
+    "writing a custom answer, or asking you a question about it — and may combine them "
+    "(e.g. lean toward an option AND ask a question). Their reply arrives as a turn with "
+    "one line per question, each tagged `[<n>. <header>] answer:` / `custom:` / `question:`. "
+    "Treat `answer:` and `custom:` as settled decisions. For every `question:`, answer it "
+    "in your reply; then RE-ISSUE a fresh AskUserQuestion card containing every question "
+    "that is still open — the ones they asked about that remain unresolved, plus any NEW "
+    "questions your answer surfaced — and OMIT anything already decided (those stay in "
+    "scrollback; do not repeat them). You may re-ask a question even when they gave a "
+    "custom answer, if it is insufficient. Keep re-asking until nothing is open."
 )
 
 # The framing for a conversational session — the system prompt every chat agent runs.

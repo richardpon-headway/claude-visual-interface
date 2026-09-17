@@ -203,14 +203,14 @@ describe("ActivityFeed", () => {
     const onAnswer = vi.fn();
     render(<ActivityFeed activity={[singleAsk]} onAnswer={onAnswer} />);
     fireEvent.click(screen.getByText("Custom modal"));
-    expect(onAnswer).toHaveBeenCalledWith("ask-1", "Approach: Custom modal");
+    expect(onAnswer).toHaveBeenCalledWith("ask-1", "[1. Approach] answer: Custom modal");
   });
 
   it("single-select: a number key selects and sends", () => {
     const onAnswer = vi.fn();
     render(<ActivityFeed activity={[singleAsk]} onAnswer={onAnswer} />);
     fireEvent.keyDown(window, { key: "2" });
-    expect(onAnswer).toHaveBeenCalledWith("ask-1", "Approach: Native");
+    expect(onAnswer).toHaveBeenCalledWith("ask-1", "[1. Approach] answer: Native");
   });
 
   it("multi-select: Space toggles and Enter submits the joined labels", () => {
@@ -221,25 +221,96 @@ describe("ActivityFeed", () => {
     fireEvent.keyDown(window, { key: " " }); // toggles B
     expect(onAnswer).not.toHaveBeenCalled();
     fireEvent.keyDown(window, { key: "Enter" });
-    expect(onAnswer).toHaveBeenCalledWith("ask-2", "Features: A, B");
+    expect(onAnswer).toHaveBeenCalledWith("ask-2", "[1. Features] answer: A, B");
   });
+
+  const twoQuestions: ActivityEntry = {
+    kind: "ask",
+    text: "AskUserQuestion",
+    ask_id: "ask-3",
+    questions: [
+      { question: "Q1", header: "One", options: [{ label: "a1" }, { label: "a2" }] },
+      { question: "Q2", header: "Two", options: [{ label: "b1" }, { label: "b2" }] },
+    ],
+  };
 
   it("does not send until every question in a multi-question call is answered", () => {
     const onAnswer = vi.fn();
-    const twoQuestions: ActivityEntry = {
-      kind: "ask",
-      text: "AskUserQuestion",
-      ask_id: "ask-3",
-      questions: [
-        { question: "Q1", header: "One", options: [{ label: "a1" }, { label: "a2" }] },
-        { question: "Q2", header: "Two", options: [{ label: "b1" }, { label: "b2" }] },
-      ],
-    };
     render(<ActivityFeed activity={[twoQuestions]} onAnswer={onAnswer} />);
     fireEvent.click(screen.getByText("a1"));
     expect(onAnswer).not.toHaveBeenCalled(); // Q2 still open
     fireEvent.click(screen.getByText("b2"));
-    expect(onAnswer).toHaveBeenCalledWith("ask-3", "One: a1\nTwo: b2");
+    expect(onAnswer).toHaveBeenCalledWith("ask-3", "[1. One] answer: a1\n[2. Two] answer: b2");
+  });
+
+  it("wraps the questions in one group container with a shared header", () => {
+    render(<ActivityFeed activity={[twoQuestions]} onAnswer={vi.fn()} />);
+    expect(screen.getByText(/2 questions/)).toBeInTheDocument();
+    expect(screen.getByText(/answer all to continue/)).toBeInTheDocument();
+  });
+
+  it("a custom answer alone addresses a question and is sent labeled", () => {
+    const onAnswer = vi.fn();
+    render(<ActivityFeed activity={[singleAsk]} onAnswer={onAnswer} />);
+    fireEvent.click(screen.getByText("+ custom answer"));
+    fireEvent.change(screen.getByLabelText("Custom answer for Approach"), {
+      target: { value: "a hybrid" },
+    });
+    fireEvent.click(screen.getByText(/Send group/));
+    expect(onAnswer).toHaveBeenCalledWith("ask-1", "[1. Approach] custom: a hybrid");
+  });
+
+  it("opening a text affordance suppresses single-select auto-submit; Send commits", () => {
+    const onAnswer = vi.fn();
+    render(<ActivityFeed activity={[singleAsk]} onAnswer={onAnswer} />);
+    fireEvent.click(screen.getByText("+ custom answer")); // opens an (empty) textarea
+    fireEvent.click(screen.getByText("Custom modal")); // pick — no longer auto-submits
+    expect(onAnswer).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText(/Send group/));
+    expect(onAnswer).toHaveBeenCalledWith("ask-1", "[1. Approach] answer: Custom modal");
+  });
+
+  it("a pick and a question about the same question coexist in the answer", () => {
+    const onAnswer = vi.fn();
+    render(<ActivityFeed activity={[singleAsk]} onAnswer={onAnswer} />);
+    fireEvent.click(screen.getByText("+ ask about this"));
+    fireEvent.change(screen.getByLabelText("Question about Approach"), {
+      target: { value: "which is faster?" },
+    });
+    fireEvent.click(screen.getByText("Custom modal"));
+    fireEvent.click(screen.getByText(/Send group/));
+    expect(onAnswer).toHaveBeenCalledWith(
+      "ask-1",
+      "[1. Approach] answer: Custom modal\n[1. Approach] question: which is faster?",
+    );
+  });
+
+  it("multi-select Send stays disabled until the question is addressed", () => {
+    render(<ActivityFeed activity={[multiAsk]} onAnswer={vi.fn()} />);
+    const send = screen.getByText(/Send group/).closest("button")!;
+    expect(send).toBeDisabled();
+    fireEvent.click(screen.getByText("A"));
+    expect(send).not.toBeDisabled();
+  });
+
+  it("locked reload shows custom-answer and question text from the persisted string", () => {
+    render(
+      <ActivityFeed
+        activity={[
+          {
+            ...singleAsk,
+            answer: "[1. Approach] custom: a hybrid\n[1. Approach] question: which is faster?",
+          },
+        ]}
+        onAnswer={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("a hybrid")).toBeInTheDocument();
+    expect(screen.getByText("which is faster?")).toBeInTheDocument();
+    expect(screen.getByText("Custom answer")).toBeInTheDocument();
+    expect(screen.getByText("Question")).toBeInTheDocument();
+    // No affordance chips in the locked state.
+    expect(screen.queryByText("+ custom answer")).toBeNull();
   });
 
   it("ignores keyboard while the composer is focused", () => {
@@ -289,14 +360,14 @@ describe("ActivityFeed", () => {
     // The label lives in the preview HTML (inside the iframe) and on the button's
     // aria-label; clicking Select still sends the clean label as the answer.
     fireEvent.click(screen.getByLabelText("Select Derive"));
-    expect(onAnswer).toHaveBeenCalledWith("ask-p", "Fix: Derive");
+    expect(onAnswer).toHaveBeenCalledWith("ask-p", "[1. Fix] answer: Derive");
   });
 
   it("renders a locked answered state from a persisted answer, keeping all options", () => {
     const onAnswer = vi.fn();
     render(
       <ActivityFeed
-        activity={[{ ...singleAsk, answer: "Approach: Custom modal" }]}
+        activity={[{ ...singleAsk, answer: "[1. Approach] answer: Custom modal" }]}
         onAnswer={onAnswer}
       />,
     );
