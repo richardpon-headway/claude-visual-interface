@@ -55,7 +55,9 @@ working_dir: {working_dir}
 #   carries a `remote` block. The daemon runs ONE shared `mcp-remote` auth keeper for it
 #   (command/args) so the OAuth browser sign-in happens once, and attaches every session
 #   directly to `url` over `transport` (http or sse) with the keeper's token injected —
-#   instead of each session spawning its own bridge:
+#   instead of each session spawning its own bridge. The keeper's OAuth token is cached
+#   under ~/.mcp-auth-cvi/<server>/ (one isolated dir per server), NOT the default
+#   ~/.mcp-auth used by a bare `npx mcp-remote`:
 #
 #   eddy:
 #     command: npx

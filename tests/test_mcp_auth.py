@@ -8,6 +8,7 @@ hermetic (no PATH / npx / network), mirroring the fake-SDK pattern in test_agent
 import asyncio
 import json
 import signal
+import time
 from pathlib import Path
 
 import pytest
@@ -173,6 +174,60 @@ async def test_keeper_keeps_serving_valid_token_across_a_refresh_restart(tmp_pat
         await asyncio.sleep(0.01)
     assert keeper.current_token() == "tok-valid"
     await keeper.aclose()
+
+
+async def test_keeper_stops_thrashing_when_refresh_restart_yields_no_new_token(
+    tmp_path, monkeypatch
+):
+    # The reported bug: mcp-remote reuses a still-valid token WITHOUT rewriting the file, so
+    # the mtime-derived expiry ESTIMATE stays "expired" forever. The keeper must attempt one
+    # refresh restart, see the same token come back, then STOP restarting and keep serving it
+    # — not kill a healthy proxy on every tick.
+    monkeypatch.setattr(mcp_auth, "_INITIAL_POLL_SECONDS", 0.01)
+    monkeypatch.setattr(mcp_auth, "_POLL_INTERVAL_SECONDS", 0.01)
+    monkeypatch.setattr(mcp_auth, "_MIN_POLL_SECONDS", 0.01)
+    monkeypatch.setattr(mcp_auth, "_BACKOFF_START_SECONDS", 0.01)
+    monkeypatch.setattr(mcp_auth, "_BACKOFF_MAX_SECONDS", 0.02)
+    monkeypatch.setattr(mcp_auth.shutil, "which", lambda cmd: "/usr/bin/" + cmd)
+    keeper = _keeper(tmp_path)
+    spawns: list[_FakeProc] = []
+
+    async def fake_spawn(command, args, env):
+        # Every relaunch reuses the SAME already-expired token — mcp-remote reusing a token
+        # it still considers valid and never rewriting the file.
+        _write_token(Path(env["MCP_REMOTE_CONFIG_DIR"]), "tok-stale", expires_in=-10)
+        proc = _FakeProc()
+        spawns.append(proc)
+        return proc
+
+    monkeypatch.setattr(mcp_auth, "_create_subprocess", fake_spawn)
+    keeper.start()
+    # Wait for the one refresh restart to happen (>=2 spawns) and the token to be served
+    # despite the "expired" estimate (the live proxy vouches for it).
+    for _ in range(300):
+        if keeper.current_token() == "tok-stale" and len(spawns) >= 2:
+            break
+        await asyncio.sleep(0.01)
+    assert keeper.current_token() == "tok-stale"
+    settled = len(spawns)
+    # Across many poll intervals the fixed keeper does NOT restart again (old code respawned
+    # every tick, so this count would keep climbing).
+    await asyncio.sleep(0.3)
+    assert len(spawns) == settled, f"kept thrashing: {settled} -> {len(spawns)} spawns"
+    assert len(spawns) <= 3  # one initial spawn + at most one refresh attempt, then it settles
+    await keeper.aclose()
+
+
+def test_current_token_trusts_live_proxy_past_estimated_expiry(tmp_path):
+    # A live, connected proxy vouches for its token even past our mtime-derived estimate; we
+    # only withhold on the estimate when no live process is backing the token.
+    keeper = _keeper(tmp_path)
+    keeper._token = "tok"
+    keeper._token_expiry = time.time() - 100  # estimate says expired
+    keeper._proxy_live = True
+    assert keeper.current_token() == "tok"
+    keeper._proxy_live = False
+    assert keeper.current_token() is None
 
 
 async def test_keeper_restarts_after_crash(tmp_path, monkeypatch):
