@@ -1,0 +1,31 @@
+web/src/ActivityFeed.tsx
+  s_7d12a9cb14cf28::t_adbbf9fab8634d 3,6,254-258,266-269,271-277,280,283-284,286-287,289-291,295-297,309,313-322,343,352,362,364-365,367-377,379-384,386,409,491-568,572-585
+web/src/askAnswer.ts
+  s_7d12a9cb14cf28::t_10538a96665032 1-117
+web/src/askAnswer.test.ts
+  s_bc1ec75f638b73::t_ae823d66020d51 1-101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b40cd12a86496919b8bf7be7497deb3e2b2677cc",
+  "prompts": {},
+  "sessions": {
+    "s_7d12a9cb14cf28": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c161a7c3-950b-4b79-8023-4eaf735013ea",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    },
+    "s_bc1ec75f638b73": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "720c05c1-e7ce-48cd-864a-cf46875e4ea1",
+        "model": "unknown"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
