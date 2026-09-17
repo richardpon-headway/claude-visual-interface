@@ -19,17 +19,19 @@ Two deliberate implementation choices:
   token file is the only one in that directory. The daemon reads the token by globbing
   that directory rather than recomputing `mcp-remote`'s cache-file name — that name is an
   md5 of `url|resource|headers` and is brittle across `mcp-remote` versions.
-- **Token freshness by polling, with an expiry-triggered restart as the fallback.** The
+- **Token freshness by polling, with a bounded refresh restart as the fallback.** The
   keeper re-reads its token file periodically and serves whatever is currently valid. If
   `mcp-remote` refreshes the token in place (holding its connection open), polling picks
-  the new one up with no restart at all. If instead the on-disk token actually reaches
-  expiry without being refreshed, the keeper restarts the process — which forces a refresh
-  via the cached refresh token — as a fallback. Crucially it keeps serving the last
-  still-valid token across that restart (it is only withheld once genuinely expired), so a
-  routine refresh doesn't blank a token that still works. Access-token lifetimes vary
-  widely (eddy ~15 min, glean ~24 h, linear ~7 days); a session that snapshots a token can
-  still see a one-off failure in the brief window at actual expiry, which self-heals on the
-  next session respawn.
+  the new one up with no restart at all. Our expiry is only an ESTIMATE (file mtime plus
+  `expires_in`); `mcp-remote` reuses a still-valid token WITHOUT rewriting the file, so
+  that estimate goes stale. When the estimate passes the keeper restarts once to force a
+  refresh via the cached refresh token — but if the relaunched process reuses the same
+  token, the keeper accepts that the token still works and keeps serving it via the live
+  connection instead of restarting again (which would hot-loop, worst for short-lived
+  tokens like eddy's ~15 min). Every restart is bounded-backed-off, and the last still-valid
+  token keeps being served across a restart, so a routine refresh never blanks a token that
+  still works. Access-token lifetimes vary widely (eddy ~15 min, glean ~24 h, linear ~7
+  days).
 """
 
 from __future__ import annotations
@@ -133,6 +135,13 @@ class RemoteMcpAuthKeeper:
         self._token: str | None = None
         self._token_expiry: float | None = None
         self._task: asyncio.Task[None] | None = None
+        # True while a spawned proxy has authenticated and is being supervised — a live,
+        # connected mcp-remote vouching that its token still works (see current_token).
+        self._proxy_live: bool = False
+        # The access token a refresh restart already failed to renew (mcp-remote relaunched
+        # and reused the same token). Suppresses further refresh restarts for that token so a
+        # stale expiry ESTIMATE can't thrash a healthy proxy; cleared when the token changes.
+        self._refresh_failed_sig: str | None = None
 
     @property
     def name(self) -> str:
@@ -147,12 +156,19 @@ class RemoteMcpAuthKeeper:
         return self._transport
 
     def current_token(self) -> str | None:
-        """The freshest still-valid access token, or None if we have none or the last one
-        we read has passed its expiry. Held across a process restart so a routine refresh
-        cycle never blanks a token that's still good."""
+        """The freshest access token, or None if we have none. While the proxy is live and
+        connected we serve the token even past our mtime-derived expiry ESTIMATE: a running
+        `mcp-remote` that keeps reusing the token proves it still works, and the estimate
+        goes stale because `mcp-remote` doesn't rewrite the file when it reuses a valid
+        token. We only withhold on estimated expiry when the proxy is NOT live — no
+        connected process is vouching for the token, and it may genuinely be dead."""
         if self._token is None:
             return None
-        if self._token_expiry is not None and self._token_expiry <= time.time():
+        if (
+            not self._proxy_live
+            and self._token_expiry is not None
+            and self._token_expiry <= time.time()
+        ):
             return None
         return self._token
 
@@ -174,6 +190,8 @@ class RemoteMcpAuthKeeper:
             self._task = None
         self._token = None
         self._token_expiry = None
+        self._proxy_live = False
+        self._refresh_failed_sig = None
 
     def _build_env(self) -> dict[str, str]:
         env = dict(os.environ)
@@ -222,19 +240,23 @@ class RemoteMcpAuthKeeper:
 
     async def _supervise(self, proc: asyncio.subprocess.Process) -> str:
         """Hold while the keeper runs; keep the in-memory token synced from disk so an
-        in-place refresh is picked up with no restart at all. Wakes near expiry so a
-        short-lived token is caught promptly. Returns the restart reason: 'exited' (the
-        process died — a crash) or 'refresh' (the token has actually expired and no newer
-        one appeared, so relaunching forces a refresh via the cached refresh token)."""
+        in-place refresh is picked up with no restart at all. Returns the restart reason:
+        'exited' (the process died) or 'refresh' (the token reached its estimated expiry and
+        a restart hasn't already proven futile for it). Our expiry is only an ESTIMATE (file
+        mtime plus `expires_in`); mcp-remote reuses a still-valid token without rewriting the
+        file, so once a refresh restart has shown it won't renew the current token
+        (`_refresh_failed_sig`), we stop cycling and just keep serving it."""
         while True:
             remaining = (
                 self._token_expiry - time.time() if self._token_expiry is not None else None
             )
-            delay = (
-                _POLL_INTERVAL_SECONDS
-                if remaining is None
-                else min(_POLL_INTERVAL_SECONDS, max(_MIN_POLL_SECONDS, remaining))
-            )
+            # Fast-wake toward expiry only while we'd still act on it. Once a restart has
+            # proven it can't renew the current token, poll at the steady interval rather
+            # than busy-polling an expiry we're deliberately ignoring.
+            if remaining is None or self._token == self._refresh_failed_sig:
+                delay = _POLL_INTERVAL_SECONDS
+            else:
+                delay = min(_POLL_INTERVAL_SECONDS, max(_MIN_POLL_SECONDS, remaining))
             await asyncio.sleep(delay)
             if proc.returncode is not None:
                 log.warning("MCP auth keeper exited; restarting", extra={"server": self._name})
@@ -242,9 +264,15 @@ class RemoteMcpAuthKeeper:
             tok = self._read_token_from_disk()
             if tok is not None:
                 self._token, self._token_expiry = tok
-            # Only cycle once the token has ACTUALLY expired: mcp-remote reuses a token
-            # that still works, so restarting earlier would thrash without refreshing.
-            if self._token_expiry is not None and self._token_expiry <= time.time():
+            # A genuine in-place refresh (the token on disk changed) clears any prior
+            # "a restart can't renew this token" mark left for the old token.
+            if self._refresh_failed_sig is not None and self._token != self._refresh_failed_sig:
+                self._refresh_failed_sig = None
+            if (
+                self._token_expiry is not None
+                and self._token_expiry <= time.time()
+                and self._token != self._refresh_failed_sig
+            ):
                 log.info(
                     "MCP auth keeper token expired; restarting to refresh",
                     extra={"server": self._name},
@@ -283,6 +311,9 @@ class RemoteMcpAuthKeeper:
             )
             return
         backoff = _BACKOFF_START_SECONDS
+        # The token a pending refresh restart is trying to renew, so the next spawn can tell
+        # whether the restart produced a new token or just reused the old one.
+        pending_refresh_from: str | None = None
         while True:
             proc: asyncio.subprocess.Process | None = None
             reason = "exited"
@@ -292,6 +323,28 @@ class RemoteMcpAuthKeeper:
                 _restrict_dir_perms(self._auth_dir)
                 proc = await _create_subprocess(self._command, self._args, self._build_env())
                 if await self._await_token(proc):
+                    self._proxy_live = True
+                    if pending_refresh_from is not None:
+                        token_still_expired = (
+                            self._token_expiry is not None
+                            and self._token_expiry <= time.time()
+                        )
+                        if self._token == pending_refresh_from or token_still_expired:
+                            # The refresh restart didn't yield a token that outlives our
+                            # estimate — mcp-remote reused the same token (it still considers
+                            # it valid) or handed back one already past the estimate. Either
+                            # way another restart won't help, so stop cycling and trust the
+                            # live proxy (current_token keeps serving it while connected). A
+                            # genuine in-place refresh later clears this mark (see _supervise).
+                            self._refresh_failed_sig = self._token
+                            log.info(
+                                "MCP auth keeper refresh restart did not renew the token; "
+                                "trusting the live proxy",
+                                extra={"server": self._name},
+                            )
+                        else:
+                            self._refresh_failed_sig = None
+                        pending_refresh_from = None
                     backoff = _BACKOFF_START_SECONDS
                     log.info("MCP auth keeper authenticated", extra={"server": self._name})
                     reason = await self._supervise(proc)
@@ -310,14 +363,14 @@ class RemoteMcpAuthKeeper:
                     "MCP auth keeper crashed", extra={"server": self._name}, exc_info=True
                 )
             finally:
+                self._proxy_live = False
                 await self._terminate(proc)
-            # A planned refresh restart is immediate — we want the new token fast; only a
-            # crash/exit backs off (so a routine refresh can't drift the delay toward the
-            # cap, and a dead upstream still backs off). The token is not blanked here:
-            # current_token() stops serving it once it actually expires, so it keeps being
-            # served (while valid) right through the restart.
+            # Every restart backs off (bounded) so nothing hot-loops — a crash, a dead
+            # upstream, or a refresh that yields no new token. A refresh remembers the token
+            # it's renewing so the next spawn can detect whether it worked; the token isn't
+            # blanked here (current_token keeps serving a still-valid token across a restart).
             if reason == "refresh":
-                continue
+                pending_refresh_from = self._token
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, _BACKOFF_MAX_SECONDS)
 
