@@ -1,0 +1,29 @@
+web/src/ActivityFeed.tsx
+  s_58ab27c5cc53af::t_9e5cc2d9e99e11 604
+web/src/ChatInput.tsx
+  s_2f6f0d9744107c::t_2762355e7fbb28 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4d140eb7611c2fecf840e08c9b1ecc93091d1d47",
+  "prompts": {},
+  "sessions": {
+    "s_2f6f0d9744107c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7e32750e-f056-4eb3-b6f9-125f21fbbf91",
+        "model": "unknown"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    },
+    "s_58ab27c5cc53af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d70bdca0-f82e-4fa9-a03b-797d2126e200",
+        "model": "unknown"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
