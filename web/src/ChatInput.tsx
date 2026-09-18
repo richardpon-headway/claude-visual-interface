@@ -306,7 +306,7 @@ export function ChatInput({
           onChange={(e) => setText(e.target.value)}
           onPaste={handlePaste}
           onKeyDown={handleKeyDown}
-          rows={4}
+          rows={5}
           placeholder="Ask the agent — paste a screenshot, or “review the diff”… (Shift+Enter for newline)"
           aria-label="Message the agent"
           className="block w-full min-w-0 resize-none rounded border border-zinc-800 bg-zinc-900 px-2 pt-1 pb-11 text-sm"
