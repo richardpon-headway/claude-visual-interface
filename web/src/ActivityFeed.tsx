@@ -601,7 +601,7 @@ function BackgroundTag() {
 // bubble, collapse anything past either bound to a preview (first N lines, capped) with
 // a Show more / Show less toggle. Bounds mirror the composer's paste threshold so a
 // paste that got chipped on the way in also reads as collapsed on the way out.
-const BUBBLE_MAX_LINES = 15;
+const BUBBLE_MAX_LINES = 5;
 const BUBBLE_MAX_CHARS = 1000;
 
 function UserBubble({ text }: { text: string }) {
