@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { formatGroupAnswer, isAddressed, parseGroupAnswer, type Pick } from "./askAnswer";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { Markdown } from "./Markdown";
-import type { ActivityEntry, AskQuestion } from "./viewState";
+import type { ActivityEntry } from "./viewState";
 
 // Prose, tool lines, and pickers stay in a readable centered column; artifacts
 // (model-rendered HTML) break out to the full transcript width instead.
@@ -233,24 +234,6 @@ function kindLabel(kind: string): string {
   }
 }
 
-// A pick per question: a single chosen option index (or null), or a sorted list of
-// indices for a multi-select question.
-type Pick = number | number[] | null;
-
-function formatAnswer(questions: AskQuestion[], picks: Pick[]): string {
-  // One readable line per question so the agent can map answers back to questions.
-  return questions
-    .map((q, qi) => {
-      const label = q.header || q.question;
-      const p = picks[qi];
-      const chosen = q.multiSelect
-        ? (p as number[]).map((i) => q.options[i].label).join(", ")
-        : q.options[p as number].label;
-      return `${label}: ${chosen}`;
-    })
-    .join("\n");
-}
-
 // An AskUserQuestion call, rendered as an interactive picker — one card per question.
 // Selecting sends the answer as the next message (the only feasible path with the
 // built-in tool). Falls back to a plain line when the structured payload isn't
@@ -268,6 +251,11 @@ function AskPicker({
   const [picks, setPicks] = useState<Pick[]>(() =>
     questions.map((q) => (q.multiSelect ? [] : null)),
   );
+  // Per-question free text: null = the affordance isn't opened; a string (incl. "") =
+  // opened. `customs` is a custom answer (an inline "Other"); `notes` is a question to
+  // the agent. Both are independent of the options and of each other.
+  const [customs, setCustoms] = useState<(string | null)[]>(() => questions.map(() => null));
+  const [notes, setNotes] = useState<(string | null)[]>(() => questions.map(() => null));
   const [cursor, setCursor] = useState(0);
   const [submitted, setSubmitted] = useState(false);
 
@@ -275,26 +263,38 @@ function AskPicker({
   const positions: { qi: number; oi: number }[] = [];
   questions.forEach((q, qi) => q.options.forEach((_, oi) => positions.push({ qi, oi })));
 
-  const answered = (p: Pick[], qi: number) =>
-    questions[qi].multiSelect ? (p[qi] as number[]).length > 0 : p[qi] !== null;
-  const allAnswered = (p: Pick[]) => questions.every((_, qi) => answered(p, qi));
+  // A question is "addressed" (satisfies the submit gate) by a pick, a custom answer,
+  // OR a question — any combination. The whole group still submits at once.
+  const allAddressed = (p: Pick[], c: (string | null)[], n: (string | null)[]) =>
+    questions.every((q, qi) => isAddressed(q, p[qi], c[qi], n[qi]));
   const hasMulti = questions.some((q) => q.multiSelect);
+  // Any free-text field opened → the group commits via the explicit Send button (a
+  // keystroke can't be "the last answer" while text is in flight). Once a field has been
+  // opened this session the button stays put even if it's later closed, so toggling a
+  // field off can't strand a picked group with no way to send.
+  const [everOpened, setEverOpened] = useState(false);
+  const anyTextOpen = customs.some((c) => c !== null) || notes.some((n) => n !== null);
+  const usesButton = hasMulti || anyTextOpen || everOpened;
 
   // The locked/answered value: the persisted answer (rides the snapshot on reload) or,
-  // optimistically, what we just submitted this session.
+  // optimistically, what we just submitted this session (re-derived from current state).
   const persistedAnswer =
     typeof entry.answer === "string" && entry.answer.length > 0 ? entry.answer : null;
-  const shownAnswer = persistedAnswer ?? (submitted ? formatAnswer(questions, picks) : null);
+  const shownAnswer =
+    persistedAnswer ?? (submitted ? formatGroupAnswer(questions, picks, customs, notes) : null);
   const locked = shownAnswer !== null;
+  // Per-question responses reconstructed from the answer string, for the locked render.
+  const answered = shownAnswer ? parseGroupAnswer(questions, shownAnswer) : null;
 
-  function submit(p: Pick[]) {
-    if (locked || !allAnswered(p) || !onAnswer || !entry.ask_id) return;
-    onAnswer(entry.ask_id, formatAnswer(questions, p));
+  function submit(p: Pick[], c: (string | null)[], n: (string | null)[]) {
+    if (locked || !allAddressed(p, c, n) || !onAnswer || !entry.ask_id) return;
+    onAnswer(entry.ask_id, formatGroupAnswer(questions, p, c, n));
     setSubmitted(true);
   }
 
-  // Single-select sends as soon as every question is answered; multi-select waits for
-  // an explicit Enter / Submit (so you can toggle several before committing).
+  // Single-select auto-sends once the group is fully addressed — but only on the pure
+  // pick-only fast path (no multi-select, no text field opened). Otherwise the explicit
+  // Send button commits.
   function selectAt(qi: number, oi: number) {
     if (locked) return;
     const np = [...picks];
@@ -306,8 +306,18 @@ function AskPicker({
     } else {
       np[qi] = oi;
       setPicks(np);
-      if (!hasMulti) submit(np);
+      if (!usesButton) submit(np, customs, notes);
     }
+  }
+
+  // Open a free-text affordance (null → "") or close it (→ null, discarding its text).
+  function toggleCustom(qi: number) {
+    setEverOpened(true);
+    setCustoms((c) => c.map((v, i) => (i === qi ? (v === null ? "" : null) : v)));
+  }
+  function toggleNote(qi: number) {
+    setEverOpened(true);
+    setNotes((n) => n.map((v, i) => (i === qi ? (v === null ? "" : null) : v)));
   }
 
   const active = isLatest && !locked && questions.length > 0;
@@ -330,7 +340,7 @@ function AskPicker({
         selectAt(pos.qi, pos.oi);
       } else if (e.key === "Enter") {
         e.preventDefault();
-        if (allAnswered(picks)) submit(picks);
+        if (allAddressed(picks, customs, notes)) submit(picks, customs, notes);
         else if (!questions[pos.qi].multiSelect) selectAt(pos.qi, pos.oi);
       } else if (/^[1-9]$/.test(e.key) && Number(e.key) <= questions[pos.qi].options.length) {
         e.preventDefault();
@@ -339,7 +349,7 @@ function AskPicker({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, cursor, picks]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [active, cursor, picks, customs, notes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (questions.length === 0) {
     return (
@@ -349,45 +359,31 @@ function AskPicker({
     );
   }
 
-  const selectedCount = picks.reduce<number>(
-    (n, p) => n + (Array.isArray(p) ? p.length : p !== null ? 1 : 0),
-    0,
-  );
+  const groupLabel = questions.length === 1 ? "1 question" : `${questions.length} questions`;
 
-  const answerLines = shownAnswer ? shownAnswer.split("\n") : [];
-
+  // All questions from one AskUserQuestion call live inside a single bordered group so
+  // they read as one connected decision that submits at once — not N separate cards.
   return (
-    <li className={`${PROSE} space-y-2`}>
+    <li className={PROSE}>
+      <div className="rounded-2xl border border-zinc-700 bg-zinc-950/40 px-4 py-4">
+        <div className="mb-3 flex items-baseline gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+            ◇ {groupLabel}
+          </span>
+          {!locked ? (
+            <span className="text-[11px] text-zinc-600">· answer all to continue</span>
+          ) : null}
+        </div>
+        <div className="space-y-3">
       {questions.map((q, qi) => {
-        // Which option indices are the committed answer for this question — from this
-        // session's exact picks when we just submitted, else reconstructed from the
-        // persisted answer line by matching option labels (survives reload, where the
-        // picks state is gone). Once locked we keep every option rendered and use this
-        // to highlight the chosen one(s), rather than collapsing to just the pick — so
-        // the other options (and their descriptions/previews) stay readable for context.
-        const chosenSet = ((): Set<number> => {
-          const p = picks[qi];
-          const hasLive = q.multiSelect ? (p as number[]).length > 0 : p !== null;
-          if (submitted && hasLive) {
-            return q.multiSelect ? new Set(p as number[]) : new Set([p as number]);
-          }
-          const prefix = `${q.header || q.question}: `;
-          const line = answerLines[qi] ?? "";
-          const text = line.startsWith(prefix) ? line.slice(prefix.length) : line;
-          const set = new Set<number>();
-          if (q.multiSelect) {
-            const parts = text.split(", ");
-            q.options.forEach((o, oi) => {
-              if (parts.includes(o.label)) set.add(oi);
-            });
-          } else {
-            const oi = q.options.findIndex((o) => o.label === text);
-            if (oi >= 0) set.add(oi);
-          }
-          return set;
-        })();
+        // Which option indices are the committed answer for this question — reconstructed
+        // from the answer string (which, once submitted, round-trips from the current
+        // picks, and after a reload is all that survives). Once locked we keep every
+        // option rendered and use this to highlight the chosen one(s) rather than
+        // collapsing to just the pick — so the alternatives stay readable for context.
+        const chosenSet = answered?.[qi]?.chosen ?? new Set<number>();
         return (
-        <div key={qi} className="rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3">
+        <div key={qi} className="rounded-lg border border-zinc-800/70 bg-zinc-950 px-4 py-3">
           {q.header ? (
             <span className="mb-2 inline-block rounded bg-amber-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
               {q.header}
@@ -410,7 +406,7 @@ function AskPicker({
               // Select button pinned to the card's bottom edge (items-end). The button —
               // trusted app chrome, outside the sandbox — owns the click; nothing
               // clickable lives inside the frame. The label is still what's sent as the
-              // answer (formatAnswer), so the preview should lead with it.
+              // answer (formatGroupAnswer), so the preview should lead with it.
               if (o.preview) {
                 return (
                   <div
@@ -492,21 +488,101 @@ function AskPicker({
               );
             })}
           </div>
+          {/* Free-text affordances — both always available, independent of the options
+              and of each other: a custom answer (an inline "Other") and a question to
+              the agent (defer this one for discussion). */}
+          {!locked ? (
+            <>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => toggleCustom(qi)}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] ${
+                    customs[qi] !== null
+                      ? "border-emerald-800 bg-emerald-950 text-emerald-300"
+                      : "border-dashed border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
+                  }`}
+                >
+                  {customs[qi] !== null ? "− custom answer" : "+ custom answer"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleNote(qi)}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] ${
+                    notes[qi] !== null
+                      ? "border-sky-800 bg-sky-950 text-sky-300"
+                      : "border-dashed border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
+                  }`}
+                >
+                  {notes[qi] !== null ? "− ask about this" : "+ ask about this"}
+                </button>
+              </div>
+              {customs[qi] !== null ? (
+                <textarea
+                  aria-label={`Custom answer for ${q.header || q.question}`}
+                  value={customs[qi] ?? ""}
+                  onChange={(e) =>
+                    setCustoms((c) => c.map((v, i) => (i === qi ? e.target.value : v)))
+                  }
+                  placeholder="Write your own answer…"
+                  className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-500 focus:outline-none"
+                  rows={2}
+                />
+              ) : null}
+              {notes[qi] !== null ? (
+                <textarea
+                  aria-label={`Question about ${q.header || q.question}`}
+                  value={notes[qi] ?? ""}
+                  onChange={(e) =>
+                    setNotes((n) => n.map((v, i) => (i === qi ? e.target.value : v)))
+                  }
+                  placeholder="Ask the agent about this instead of deciding now…"
+                  className="mt-2 w-full rounded-md border border-sky-900 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-sky-700 focus:outline-none"
+                  rows={2}
+                />
+              ) : null}
+            </>
+          ) : (
+            <>
+              {answered?.[qi]?.custom ? (
+                <div className="mt-2 rounded-md border border-emerald-900 bg-emerald-950/40 px-3 py-2">
+                  <span className="block text-[10px] font-semibold uppercase tracking-wide text-emerald-500">
+                    Custom answer
+                  </span>
+                  <span className="mt-0.5 block whitespace-pre-wrap text-sm text-zinc-200">
+                    {answered[qi].custom}
+                  </span>
+                </div>
+              ) : null}
+              {answered?.[qi]?.question ? (
+                <div className="mt-2 rounded-md border border-sky-900 bg-sky-950/40 px-3 py-2">
+                  <span className="block text-[10px] font-semibold uppercase tracking-wide text-sky-400">
+                    Question
+                  </span>
+                  <span className="mt-0.5 block whitespace-pre-wrap text-sm text-zinc-200">
+                    {answered[qi].question}
+                  </span>
+                </div>
+              ) : null}
+            </>
+          )}
         </div>
         );
       })}
-      {locked ? (
-        <div className="text-xs text-emerald-400">✓ answered</div>
-      ) : hasMulti ? (
-        <button
-          type="button"
-          disabled={!allAnswered(picks)}
-          onClick={() => submit(picks)}
-          className="rounded border border-amber-900 bg-amber-950 px-3 py-1 text-xs text-amber-300 hover:bg-amber-900 disabled:opacity-40"
-        >
-          Submit{selectedCount ? ` ${selectedCount}` : ""} ↵
-        </button>
-      ) : null}
+        </div>
+        {locked ? (
+          <div className="mt-3 text-xs text-emerald-400">✓ answered</div>
+        ) : usesButton ? (
+          <button
+            type="button"
+            disabled={!allAddressed(picks, customs, notes)}
+            onClick={() => submit(picks, customs, notes)}
+            className="mt-3 rounded border border-amber-900 bg-amber-950 px-3 py-1 text-xs text-amber-300 hover:bg-amber-900 disabled:opacity-40"
+          >
+            Send group ↵
+          </button>
+        ) : null}
+      </div>
     </li>
   );
 }
