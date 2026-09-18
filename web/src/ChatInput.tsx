@@ -11,7 +11,7 @@ const MAX_IMAGES = 32;
 // chip instead of flooding the composer (mirrors how editors like Eddy handle a big
 // paste). The chip's content is stitched back into the message at send time, so the
 // agent still receives the full text — this is purely a composer-space affordance.
-const PASTE_MAX_LINES = 15;
+const PASTE_MAX_LINES = 5;
 const PASTE_MAX_CHARS = 1000;
 
 // Soft upper cap: a paste longer than this many lines is truncated to the first
