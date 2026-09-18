@@ -1,0 +1,21 @@
+daemon/main.py
+  s_12158e62b850f7::t_2c874af6325f56 204-209
+web/src/ChatInput.tsx
+  s_12158e62b850f7::t_190f36a929a849 8-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "002f2d68872e05249ed1b0640cb9e68cb3f7f5d2",
+  "prompts": {},
+  "sessions": {
+    "s_12158e62b850f7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2ac3c77-4022-4301-891c-5ab76985b95b",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
