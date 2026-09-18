@@ -5,7 +5,13 @@ import type { ImageAttachment, SendMessage, StopAgent } from "./useSurfaceSocket
 // Cap on images per turn. Images ride inline as base64 (+~33%) on the WebSocket frame;
 // the daemon raises its frame limit to 64 MB to fit this batch. Mirrors the daemon's
 // own cap (_MAX_IMAGES_PER_TURN in daemon/main.py).
-const MAX_IMAGES = 32;
+//
+// Held at 20 so a turn's batch stays within the Anthropic API's "many-image request"
+// threshold: a request carrying more than 20 image blocks drops every image to a
+// stricter 2000x2000 px cap (larger ones are rejected), whereas <=20 keeps the full
+// 8000x8000 px ceiling. Keeping the per-turn batch at 20 avoids needlessly triggering
+// the strict cap on a single big paste.
+const MAX_IMAGES = 20;
 
 // A plain-text paste past either bound gets lifted out of the textarea into a collapsed
 // chip instead of flooding the composer (mirrors how editors like Eddy handle a big

@@ -107,14 +107,14 @@ describe("ChatInput", () => {
     expect(onSend.mock.calls[0][1]).toHaveLength(2);
   });
 
-  it("caps attachments at 32", async () => {
+  it("caps attachments at 20", async () => {
     const onSend = vi.fn();
     render(<ChatInput onSend={onSend} />);
     const input = screen.getByRole("textbox", { name: /message the agent/i });
 
     pasteImages(input, 40);
     await screen.findAllByRole("button", { name: /remove image/i });
-    expect(removeButtons()).toHaveLength(32);
+    expect(removeButtons()).toHaveLength(20);
   });
 
   it("sends an image-only message (no caption)", async () => {
