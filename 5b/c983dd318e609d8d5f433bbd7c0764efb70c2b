@@ -1,0 +1,19 @@
+web/src/ChatInput.tsx
+  s_d6c86eba0d2ca8::t_6ba7d0b69a2d9f 309
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5bc983dd318e609d8d5f433bbd7c0764efb70c2b",
+  "prompts": {},
+  "sessions": {
+    "s_d6c86eba0d2ca8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ebb3761f-9905-4f76-89a4-a03da869baed",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
