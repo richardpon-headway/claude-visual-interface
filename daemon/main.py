@@ -201,7 +201,12 @@ async def ws_surface(websocket: WebSocket, surface: str) -> None:
 # ws_max_size below) to fit this batch. It's a coarse proxy for bytes: a batch of large
 # full-res screenshots can still hit the frame limit before reaching this count.
 # Mirrors the front-end's cap (web/src/ChatInput.tsx MAX_IMAGES).
-_MAX_IMAGES_PER_TURN = 32
+#
+# Held at 20 so a turn's batch stays within the Anthropic API's "many-image request"
+# threshold: a request carrying more than 20 image blocks drops every image to a
+# stricter 2000x2000 px cap (larger ones are rejected), whereas <=20 keeps the full
+# 8000x8000 px ceiling.
+_MAX_IMAGES_PER_TURN = 20
 
 
 def _parse_image(raw: Any) -> ImageInput | None:
