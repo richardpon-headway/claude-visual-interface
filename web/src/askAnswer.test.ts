@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatGroupAnswer, isAddressed, parseGroupAnswer, type Pick } from "./askAnswer";
+import { formatGroupAnswer, isAddressed, parseGroupAnswer, pickSet, type Pick } from "./askAnswer";
 import type { AskQuestion } from "./viewState";
 
 const questions: AskQuestion[] = [
@@ -37,6 +37,17 @@ describe("askAnswer", () => {
     expect([...r[0].chosen]).toEqual([0]);
     expect(r[0].custom).toBeNull();
     expect(r[0].question).toBeNull();
+  });
+
+  it("pickSet reflects live picks so pre-submit selections render highlighted", () => {
+    // No pick yet → nothing highlighted.
+    expect([...pickSet(null)]).toEqual([]);
+    // Single-select → just that option.
+    expect([...pickSet(2)]).toEqual([2]);
+    // Multi-select → every chosen option, independent of the other questions' picks.
+    expect([...pickSet([0, 2])].sort()).toEqual([0, 2]);
+    // An empty multi-select list highlights nothing.
+    expect([...pickSet([])]).toEqual([]);
   });
 
   it("round-trips a multi-select pick as a set of indices", () => {
