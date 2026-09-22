@@ -14,6 +14,14 @@ import type { AskQuestion } from "./viewState";
 // indices for a multi-select question.
 export type Pick = number | number[] | null;
 
+// The set of option indices a live pick represents — a single index, a multi-select
+// list, or nothing. Used to render the picker's highlight from live state before the
+// group is submitted (once submitted, the committed answer string drives the highlight).
+export function pickSet(pick: Pick): Set<number> {
+  if (pick === null) return new Set();
+  return new Set(Array.isArray(pick) ? pick : [pick]);
+}
+
 // What one question resolved to, recovered from the answer string.
 export type QuestionResponse = {
   chosen: Set<number>; // option indices the user picked

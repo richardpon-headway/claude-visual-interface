@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { formatGroupAnswer, isAddressed, parseGroupAnswer, type Pick } from "./askAnswer";
+import { formatGroupAnswer, isAddressed, parseGroupAnswer, pickSet, type Pick } from "./askAnswer";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { Markdown } from "./Markdown";
 import type { ActivityEntry } from "./viewState";
@@ -381,7 +381,11 @@ function AskPicker({
         // picks, and after a reload is all that survives). Once locked we keep every
         // option rendered and use this to highlight the chosen one(s) rather than
         // collapsing to just the pick — so the alternatives stay readable for context.
-        const chosenSet = answered?.[qi]?.chosen ?? new Set<number>();
+        // Before submit, reflect the live picks so selections show immediately; once
+        // locked, use the parsed committed answer (which is all that survives a reload).
+        const chosenSet = locked
+          ? (answered?.[qi]?.chosen ?? new Set<number>())
+          : pickSet(picks[qi]);
         return (
         <div key={qi} className="rounded-lg border border-zinc-800/70 bg-zinc-950 px-4 py-3">
           {q.header ? (
