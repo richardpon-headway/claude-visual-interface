@@ -248,6 +248,22 @@ def _parse_images(raw: Any) -> list[ImageInput]:
     return images
 
 
+def _parse_pastes(raw: Any) -> list[str]:
+    """Validate a list of large pasted text blocks from a `message` frame — untrusted
+    external input. Returns [] when absent; otherwise keeps each non-empty string in
+    order, dropping anything malformed (fail closed per element). A single warning fires
+    when anything is dropped."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        log.warning("ignoring pastes payload: not a list")
+        return []
+    pastes = [p for p in raw if isinstance(p, str) and p]
+    if len(pastes) < len(raw):
+        log.warning("dropped %d malformed paste(s) from payload", len(raw) - len(pastes))
+    return pastes
+
+
 async def _stop_surface(surface: str) -> None:
     """Stop whatever the agent is doing on this surface by interrupting the live
     chat turn. A no-op when idle, so a stray Stop is harmless."""
@@ -286,8 +302,9 @@ async def _handle_inbound(surface: str, raw: str) -> None:
         else:
             legacy = _parse_image(payload.get("image"))
             images = [legacy] if legacy is not None else []
-        if text or images:
-            await agents.send(surface, text, images=images)
+        pastes = _parse_pastes(payload.get("pastes"))
+        if text or images or pastes:
+            await agents.send(surface, text, images=images, pastes=pastes)
     elif msg_type == "answer":
         ask_id = payload.get("id")
         answer = payload.get("answer")

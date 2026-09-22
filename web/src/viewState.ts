@@ -28,6 +28,7 @@ export type ActivityEntry = {
   questions?: AskQuestion[] | null; // for an "ask" entry: the picker's questions
   answer?: string | null; // for an "ask" entry: the chosen value, once answered
   images?: string[] | null; // for a "user" entry: screenshot filenames (GET /screenshots/<name>)
+  pastes?: string[] | null; // for a "user" entry: large pasted text blocks, each its own chip
 };
 
 // Transient view state — mirrors daemon ViewState (store.snapshot): the conversation

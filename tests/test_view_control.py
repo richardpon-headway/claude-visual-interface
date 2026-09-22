@@ -156,6 +156,21 @@ async def test_hydrate_preserves_a_user_turns_images():
     assert store.snapshot(surface)["activity"][0]["images"] == ["3f2a.webp", "9c4d.webp"]
 
 
+async def test_hydrate_preserves_a_user_turns_pastes():
+    # A user turn's large pasted blocks must reload so the transcript re-renders each as
+    # its own chip after a daemon restart, and they must ride the connect snapshot.
+    surface = "vc-hydrate-pastes"
+    await record_activity(surface, "user", "look at these", pastes=["first blob", "second blob"])
+
+    store._surfaces.pop(surface, None)
+    store._hydrated.discard(surface)
+    await hydrate_surface(surface)
+
+    entry = store.get_or_create(surface).activity[0]
+    assert entry.pastes == ["first blob", "second blob"]
+    assert store.snapshot(surface)["activity"][0]["pastes"] == ["first blob", "second blob"]
+
+
 async def test_hydrate_is_idempotent_and_does_not_clobber_live_entries():
     surface = "vc-hydrate-reconnect"
     messages.append_message(surface, "user", "first")

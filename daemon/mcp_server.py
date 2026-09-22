@@ -69,6 +69,15 @@ def _entry_from_row(row: dict[str, Any]) -> ActivityEntry:
             parsed = None
         if isinstance(parsed, list):
             images = parsed
+    pastes: list[str] | None = None
+    raw_pastes = row.get("pastes")
+    if raw_pastes:
+        try:
+            parsed_pastes = json.loads(raw_pastes)
+        except (ValueError, TypeError):
+            parsed_pastes = None
+        if isinstance(parsed_pastes, list):
+            pastes = parsed_pastes
     return ActivityEntry(
         kind=row["kind"],
         text=row["text"],
@@ -80,6 +89,7 @@ def _entry_from_row(row: dict[str, Any]) -> ActivityEntry:
         questions=questions,
         answer=row.get("answer"),
         images=images,
+        pastes=pastes,
     )
 
 
@@ -109,15 +119,18 @@ async def record_activity(
     questions: list | None = None,
     background: bool = False,
     images: list[str] | None = None,
+    pastes: list[str] | None = None,
 ):
     """Append a conversation segment on a surface and push it to subscribers; return
     the stored entry (callers that need to enrich it later — e.g. a prompt's summary —
     hold the reference). `html` carries an artifact's page; `ask_id`/`questions` carry an
     AskUserQuestion picker's payload; `background` marks a segment that belongs to an
     agent-initiated (background-task) turn; `images` carries a user turn's screenshot
-    filenames (already written to disk); each is omitted from the broadcast otherwise."""
+    filenames (already written to disk); `pastes` carries a user turn's large pasted text
+    blocks (each renders as its own collapsible chip); each is omitted from the broadcast
+    otherwise."""
     entry = store.append_activity(
-        surface, kind, text, html, ask_id, questions, background, images
+        surface, kind, text, html, ask_id, questions, background, images, pastes
     )
     # Write the segment through to SQLite so the transcript survives a daemon restart;
     # hold the row id on the entry so a later summary (or a picker answer) can target it.
@@ -131,8 +144,17 @@ async def record_activity(
         else None
     )
     images_json = json.dumps(images) if images else None
+    pastes_json = json.dumps(pastes) if pastes else None
     entry.message_id = await asyncio.to_thread(
-        messages.append_message, surface, kind, text, html, data, images_json, background
+        messages.append_message,
+        surface,
+        kind,
+        text,
+        html,
+        data,
+        images_json,
+        pastes_json,
+        background,
     )
     payload: dict[str, Any] = {"kind": kind, "text": text}
     if html is not None:
@@ -145,6 +167,8 @@ async def record_activity(
         payload["background"] = True
     if images:
         payload["images"] = images
+    if pastes:
+        payload["pastes"] = pastes
     await hub.broadcast(
         surface,
         {"type": "activity", "surface": surface, "payload": payload},

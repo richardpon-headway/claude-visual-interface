@@ -24,6 +24,7 @@ _COLUMNS = (
     "data",
     "answer",
     "images",
+    "pastes",
     "background",
     "created_at",
 )
@@ -40,14 +41,17 @@ def append_message(
     html: str | None = None,
     data: str | None = None,
     images: str | None = None,
+    pastes: str | None = None,
     background: bool = False,
 ) -> int:
     """Append one transcript segment for a surface; return its new row id (used to
     fill in a prompt's summary later). `html` carries an artifact's page; `data` carries
     a picker's structured payload as a JSON string ({ask_id, questions}); `images` carries
     a user turn's screenshot filenames as a JSON array of "<uuid>.webp" strings (the bytes
-    live on disk under the app-support `screenshots/` dir, not here); `background` marks a
-    segment from an agent-initiated (background) turn so its dimming + tag survive a reload.
+    live on disk under the app-support `screenshots/` dir, not here); `pastes` carries a
+    user turn's large pasted text blocks as a JSON array of strings, so each replays as its
+    own collapsible chip; `background` marks a segment from an agent-initiated (background)
+    turn so its dimming + tag survive a reload.
 
     A user prompt (`kind == "user"`) resurfaces the session if it had been
     auto-archived — chatting in a chat should bring it back to the list. This fires on
@@ -55,9 +59,10 @@ def append_message(
     conn = open_db()
     try:
         cursor = conn.execute(
-            "INSERT INTO message (surface, kind, text, html, data, images, background, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (surface, kind, text, html, data, images, int(background), _now_iso()),
+            "INSERT INTO message "
+            "(surface, kind, text, html, data, images, pastes, background, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (surface, kind, text, html, data, images, pastes, int(background), _now_iso()),
         )
         conn.commit()
         message_id = int(cursor.lastrowid)

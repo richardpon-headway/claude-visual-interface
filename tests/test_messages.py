@@ -41,6 +41,20 @@ def test_append_defaults_images_to_null():
     assert messages.list_messages("s")[0]["images"] is None
 
 
+def test_append_carries_pastes_json():
+    mid = messages.append_message(
+        "s", "user", "look at these", pastes='["first blob", "second blob"]'
+    )
+    row = messages.list_messages("s")[0]
+    assert row["id"] == mid
+    assert row["pastes"] == '["first blob", "second blob"]'
+
+
+def test_append_defaults_pastes_to_null():
+    messages.append_message("s", "user", "no paste here")
+    assert messages.list_messages("s")[0]["pastes"] is None
+
+
 def test_set_message_summary_updates_the_row():
     mid = messages.append_message("s", "user", "fix the parser please")
     assert messages.set_message_summary(mid, "fix the parser") is True

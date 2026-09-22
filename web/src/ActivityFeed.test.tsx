@@ -169,6 +169,42 @@ describe("ActivityFeed", () => {
     expect(container.querySelector("div.bg-zinc-800")).not.toBeInTheDocument();
   });
 
+  it("shows long typed text in full — never collapsed", () => {
+    const long = Array.from({ length: 40 }, (_, i) => `typed line ${i}`).join("\n");
+    render(<ActivityFeed activity={[{ kind: "user", text: long }]} />);
+    // Every line is present and there's no Show more affordance.
+    expect(screen.getByText(/typed line 0/)).toBeInTheDocument();
+    expect(screen.getByText(/typed line 39/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /show more/i })).toBeNull();
+  });
+
+  it("renders each pasted block as its own collapsed chip below the typed text", () => {
+    render(
+      <ActivityFeed
+        activity={[
+          { kind: "user", text: "look at these", pastes: ["first blob", "second blob"] },
+        ]}
+      />,
+    );
+    expect(screen.getByText("look at these")).toBeInTheDocument();
+    // One chip per paste; collapsed by default (content hidden until expanded).
+    const expanders = screen.getAllByRole("button", { name: /expand pasted text/i });
+    expect(expanders).toHaveLength(2);
+    expect(screen.queryByText("first blob")).toBeNull();
+    fireEvent.click(expanders[0]);
+    expect(screen.getByText("first blob")).toBeInTheDocument();
+    // Transcript chips are read-only — no remove (✕) button.
+    expect(screen.queryByRole("button", { name: /remove pasted text/i })).toBeNull();
+  });
+
+  it("renders a paste-only user turn as chips with no empty text bubble", () => {
+    const { container } = render(
+      <ActivityFeed activity={[{ kind: "user", text: "", pastes: ["solo blob"] }]} />,
+    );
+    expect(screen.getByRole("button", { name: /expand pasted text/i })).toBeInTheDocument();
+    expect(container.querySelector("div.bg-zinc-800")).not.toBeInTheDocument();
+  });
+
   it("renders an ask entry as a question card with its options", () => {
     render(
       <ActivityFeed

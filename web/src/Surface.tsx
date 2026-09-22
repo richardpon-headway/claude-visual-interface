@@ -173,9 +173,9 @@ export function Surface({ surface }: { surface: string }) {
 
   // Submitting your own prompt re-anchors to the bottom — you initiated it — and, via
   // jumpToBottom, re-engages following so the prompt + streaming reply are pinned in view.
-  const handleSend: SendMessage = (text, images) => {
+  const handleSend: SendMessage = (text, images, pastes) => {
     jumpToBottom();
-    sendMessage(text, images);
+    sendMessage(text, images, pastes);
   };
 
   // One observer keeps the view pinned to the bottom whenever we're sticking. It fires on

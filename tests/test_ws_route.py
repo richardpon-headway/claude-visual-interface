@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from daemon import agent_session
 from daemon.agent_session import ImageInput
 from daemon.hub import hub
-from daemon.main import _handle_inbound, _parse_image, _parse_images, app
+from daemon.main import _handle_inbound, _parse_image, _parse_images, _parse_pastes, app
 
 
 @pytest.fixture(autouse=True)
@@ -40,7 +40,7 @@ async def test_inbound_message_frame_routes_to_the_agent_registry(monkeypatch):
     surface = "ws-msg"
     sent: list[tuple[str, str, object]] = []
 
-    async def fake_send(s, text, images=None):
+    async def fake_send(s, text, images=None, pastes=None):
         sent.append((s, text, images))
 
     monkeypatch.setattr(agent_session.agents, "send", fake_send)
@@ -56,7 +56,7 @@ async def test_inbound_message_frame_routes_pasted_images(monkeypatch):
     surface = "ws-img"
     sent: list[tuple[str, str, object]] = []
 
-    async def fake_send(s, text, images=None):
+    async def fake_send(s, text, images=None, pastes=None):
         sent.append((s, text, images))
 
     monkeypatch.setattr(agent_session.agents, "send", fake_send)
@@ -82,6 +82,38 @@ async def test_inbound_message_frame_routes_pasted_images(monkeypatch):
         (surface, "y", []),
         (surface, "legacy", [ImageInput("image/png", "QUJD")]),
     ]
+
+
+async def test_inbound_message_frame_routes_pasted_text(monkeypatch):
+    surface = "ws-paste"
+    sent: list[tuple[str, str, object]] = []
+
+    async def fake_send(s, text, images=None, pastes=None):
+        sent.append((s, text, pastes))
+
+    monkeypatch.setattr(agent_session.agents, "send", fake_send)
+
+    async def message(payload):
+        await _handle_inbound(surface, json.dumps({"type": "message", "payload": payload}))
+
+    await message({"text": "check", "pastes": ["blob one", "blob two"]})  # both kept, in order
+    await message({"text": "", "pastes": ["solo"]})  # paste-only turn still routes
+    await message({"text": "x", "pastes": ["ok", 5, ""]})  # non-str / empty dropped
+    await message({"text": "y", "pastes": []})  # empty list + text → text-only
+
+    assert sent == [
+        (surface, "check", ["blob one", "blob two"]),
+        (surface, "", ["solo"]),
+        (surface, "x", ["ok"]),
+        (surface, "y", []),
+    ]
+
+
+def test_parse_pastes_validates_a_list_and_drops_malformed():
+    assert _parse_pastes(None) == []  # absent
+    assert _parse_pastes("nope") == []  # not a list
+    assert _parse_pastes(["a", "b"]) == ["a", "b"]  # kept in order
+    assert _parse_pastes(["a", 5, "", "b"]) == ["a", "b"]  # non-str / empty dropped
 
 
 async def test_inbound_answer_frame_routes_to_the_agent_registry(monkeypatch):
