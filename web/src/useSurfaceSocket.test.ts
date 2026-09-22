@@ -97,6 +97,24 @@ describe("useSurfaceSocket", () => {
     ]);
   });
 
+  it("includes the pastes array in the frame when present, and omits it otherwise", () => {
+    const { result } = renderHook(() => useSurfaceSocket("s1"));
+    act(() => FakeWebSocket.last!.open());
+    act(() => result.current[1]("check this", undefined, ["block one", "block two"]));
+    // No pastes → the key is omitted entirely.
+    act(() => result.current[1]("text only"));
+    act(() => result.current[1]("empty list", undefined, []));
+
+    expect(FakeWebSocket.last?.sent).toEqual([
+      JSON.stringify({
+        type: "message",
+        payload: { text: "check this", pastes: ["block one", "block two"] },
+      }),
+      MSG("text only"),
+      MSG("empty list"),
+    ]);
+  });
+
   it("stop sends a stop frame over an open socket", () => {
     const { result } = renderHook(() => useSurfaceSocket("s1"));
     act(() => FakeWebSocket.last!.open());

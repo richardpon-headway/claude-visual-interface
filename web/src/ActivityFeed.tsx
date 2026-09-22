@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { formatGroupAnswer, isAddressed, parseGroupAnswer, pickSet, type Pick } from "./askAnswer";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { Markdown } from "./Markdown";
+import { PasteChip } from "./PasteChip";
 import type { ActivityEntry } from "./viewState";
 
 // Prose, tool lines, and pickers stay in a readable centered column; artifacts
@@ -601,36 +602,15 @@ function BackgroundTag() {
   );
 }
 
-// A large pasted block lands here as one long prompt. Rather than render a wall-height
-// bubble, collapse anything past either bound to a preview (first N lines, capped) with
-// a Show more / Show less toggle. Bounds mirror the composer's paste threshold so a
-// paste that got chipped on the way in also reads as collapsed on the way out.
-const BUBBLE_MAX_LINES = 5;
-const BUBBLE_MAX_CHARS = 1000;
-
+// The user's typed prompt, right-aligned. Always shown in full — never collapsed. A
+// large paste rides separately (entry.pastes) and renders as its own collapsible chip
+// below, so the typed prompt itself never needs truncating.
 function UserBubble({ text }: { text: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const lines = text.split("\n");
-  const tooLong = lines.length > BUBBLE_MAX_LINES || text.length > BUBBLE_MAX_CHARS;
-  const shown =
-    expanded || !tooLong
-      ? text
-      : lines.slice(0, BUBBLE_MAX_LINES).join("\n").slice(0, BUBBLE_MAX_CHARS);
   return (
     <div className="flex max-w-[85%] flex-col items-end gap-1">
       <div className="whitespace-pre-wrap rounded-2xl bg-zinc-800 px-4 py-3 text-sm text-zinc-100">
-        {shown}
-        {tooLong && !expanded ? <span className="text-zinc-500"> …</span> : null}
+        {text}
       </div>
-      {tooLong ? (
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="rounded px-2 py-0.5 text-xs text-sky-400/80 hover:text-sky-300"
-        >
-          {expanded ? "Show less" : `Show more (${lines.length} lines)`}
-        </button>
-      ) : null}
     </div>
   );
 }
@@ -647,13 +627,22 @@ function ActivityRow({
   isLatestAsk?: boolean;
 }) {
   // Your prompts read as right-aligned bubbles; each carries a stable anchor id so
-  // the outline rail can scroll to it. Any attached screenshots render as thumbnails
-  // below the text; an image-only turn shows just the thumbnails (no empty bubble).
+  // the outline rail can scroll to it. A large paste renders as its own collapsible chip
+  // below the typed text; attached screenshots render as thumbnails below that. A turn
+  // with only pastes / only images shows just those (no empty text bubble).
   if (entry.kind === "user") {
     const images = entry.images ?? [];
+    const pastes = entry.pastes ?? [];
     return (
       <li id={promptId} className={`${PROSE} flex flex-col items-end gap-2 scroll-mt-4`}>
         {entry.text ? <UserBubble text={entry.text} /> : null}
+        {pastes.length > 0 ? (
+          <div className="flex w-full max-w-[85%] flex-col gap-2">
+            {pastes.map((p, i) => (
+              <PasteChip key={i} text={p} />
+            ))}
+          </div>
+        ) : null}
         {images.length > 0 ? (
           <div className="flex max-w-[85%] flex-wrap justify-end gap-2">
             {images.map((name) => (

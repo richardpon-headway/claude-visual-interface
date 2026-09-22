@@ -95,12 +95,22 @@ class ImageInput:
 
 @dataclass
 class ChatTurn:
-    # One user turn: text plus zero or more pasted/dropped images. `record_user` is
-    # False for a picker answer, whose choice is already shown on the picker entry — so
-    # the turn feeds the agent without recording a duplicate user bubble.
+    # One user turn: text plus zero or more pasted/dropped images and zero or more large
+    # pasted text blocks. `record_user` is False for a picker answer, whose choice is
+    # already shown on the picker entry — so the turn feeds the agent without recording a
+    # duplicate user bubble.
     text: str
     images: list[ImageInput] = field(default_factory=list)
+    pastes: list[str] = field(default_factory=list)
     record_user: bool = True
+
+    @property
+    def combined_prompt(self) -> str:
+        """The full text handed to the model: the typed prompt followed by each pasted
+        block, blank-line separated. Byte-identical to the single string the composer
+        used to send before pastes became a distinct field — so carrying them separately
+        for the UI leaves the model's input unchanged."""
+        return "\n\n".join(part for part in [self.text, *self.pastes] if part)
 
 
 async def _user_message_stream(turn: ChatTurn) -> AsyncIterator[dict[str, Any]]:
@@ -109,8 +119,9 @@ async def _user_message_stream(turn: ChatTurn) -> AsyncIterator[dict[str, Any]]:
     what the SDK builds for a string prompt — carries parent_tool_use_id; the SDK
     fills in session_id. One image block per attached image, in order, after the text."""
     blocks: list[dict[str, Any]] = []
-    if turn.text:
-        blocks.append({"type": "text", "text": turn.text})
+    prompt = turn.combined_prompt
+    if prompt:
+        blocks.append({"type": "text", "text": prompt})
     for image in turn.images:
         blocks.append(
             {
@@ -544,7 +555,11 @@ class AgentSession:
             # back to the marker so the turn still leaves a textual trace.
             text = turn.text if image_names else _turn_marker(turn)
             entry = await record_activity(
-                self._surface, "user", text, images=image_names or None
+                self._surface,
+                "user",
+                text,
+                images=image_names or None,
+                pastes=turn.pastes or None,
             )
             # Generate this prompt's one-line outline-rail summary in the background.
             index = self._prompt_count
@@ -601,7 +616,9 @@ class AgentSession:
         True once any assistant message has streamed, marking the point past which a
         retry would duplicate output."""
         if not turn.images:
-            await client.query(turn.text)  # text-only: the plain-string fast path
+            # No images: the plain-string fast path. The combined prompt folds in any
+            # pasted blocks, so a pastes-only turn still reaches the model here.
+            await client.query(turn.combined_prompt)
         else:
             await client.query(_user_message_stream(turn))
         relayed_content = False
@@ -841,6 +858,7 @@ class AgentSessionRegistry:
         surface: str,
         text: str,
         images: list[ImageInput] | None = None,
+        pastes: list[str] | None = None,
         record_user: bool = True,
     ) -> None:
         """Route a user message (text plus zero or more pasted/dropped images) to the
@@ -879,7 +897,12 @@ class AgentSessionRegistry:
         # here, so a message queued behind an in-flight turn can't appear above that
         # turn's answer.
         self._sessions[surface].enqueue(
-            ChatTurn(text=text, images=images or [], record_user=record_user)
+            ChatTurn(
+                text=text,
+                images=images or [],
+                pastes=pastes or [],
+                record_user=record_user,
+            )
         )
 
     async def answer(self, surface: str, ask_id: str, answer: str) -> None:

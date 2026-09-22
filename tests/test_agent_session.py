@@ -429,6 +429,67 @@ async def test_image_only_turn_marks_the_feed_and_sends_just_the_image():
     await reg.shutdown_all()
 
 
+async def test_paste_turn_combines_text_and_pastes_for_the_model():
+    # A turn with typed text + pasted blocks (no images) takes the plain-string fast
+    # path, and the model receives the typed text and each paste joined with blank lines
+    # — byte-identical to the old single flattened prompt.
+    _seed_session("paste", session_type="chat")
+    store.get_or_create("paste").activity.clear()
+    reg = AgentSessionRegistry()
+
+    await reg.send("paste", "what's wrong here?", pastes=["blob one", "blob two"])
+    await _wait_until(
+        lambda: any(e.kind == "result" for e in store.get_or_create("paste").activity)
+    )
+
+    assert FakeClient.instances[0].queried == ["what's wrong here?\n\nblob one\n\nblob two"]
+
+    # The recorded user bubble keeps only the typed text; the pastes ride separately so
+    # each replays as its own chip.
+    user = next(e for e in store.get_or_create("paste").activity if e.kind == "user")
+    assert user.text == "what's wrong here?"
+    assert user.pastes == ["blob one", "blob two"]
+    await reg.shutdown_all()
+
+
+async def test_pastes_only_turn_sends_combined_and_records_chip():
+    # A turn that is only pasted blocks (no typed text, no images) still reaches the
+    # model via the fast path, and records an empty-text user entry carrying the pastes.
+    _seed_session("paste2", session_type="chat")
+    store.get_or_create("paste2").activity.clear()
+    reg = AgentSessionRegistry()
+
+    await reg.send("paste2", "", pastes=["solo blob"])
+    await _wait_until(
+        lambda: any(e.kind == "result" for e in store.get_or_create("paste2").activity)
+    )
+
+    assert FakeClient.instances[0].queried == ["solo blob"]
+    user = next(e for e in store.get_or_create("paste2").activity if e.kind == "user")
+    assert user.text == ""
+    assert user.pastes == ["solo blob"]
+    await reg.shutdown_all()
+
+
+async def test_image_and_paste_turn_folds_pastes_into_the_text_block():
+    # When a turn also has images (the multimodal path), the pasted blocks are folded
+    # into the single text block alongside the typed prompt.
+    _seed_session("imgpaste", session_type="chat")
+    store.get_or_create("imgpaste").activity.clear()
+    reg = AgentSessionRegistry()
+
+    image = agent_session.ImageInput(media_type="image/png", data="QUJD")
+    await reg.send("imgpaste", "see this", images=[image], pastes=["pasted detail"])
+    await _wait_until(
+        lambda: any(e.kind == "result" for e in store.get_or_create("imgpaste").activity)
+    )
+
+    blocks = FakeClient.instances[0].queried[0]["message"]["content"]
+    assert {"type": "text", "text": "see this\n\npasted detail"} in blocks
+    assert any(b["type"] == "image" for b in blocks)
+    await reg.shutdown_all()
+
+
 async def test_unknown_surface_records_a_notice_and_starts_nothing():
     # No session row at all — the one thing that genuinely can't chat.
     store.get_or_create("ghost").activity.clear()

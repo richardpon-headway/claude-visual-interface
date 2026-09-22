@@ -55,6 +55,7 @@ def test_append_activity_accumulates_and_rides_the_snapshot():
             "questions": None,
             "answer": None,
             "images": None,
+            "pastes": None,
         },
         {
             "kind": "tool",
@@ -66,6 +67,7 @@ def test_append_activity_accumulates_and_rides_the_snapshot():
             "questions": None,
             "answer": None,
             "images": None,
+            "pastes": None,
         },
     ]
 
@@ -116,6 +118,7 @@ def test_load_activity_replaces_the_transcript_and_rides_the_snapshot():
             "questions": None,
             "answer": None,
             "images": None,
+            "pastes": None,
         }
     ]
 

@@ -12,7 +12,7 @@ describe("ChatInput", () => {
     fireEvent.change(input, { target: { value: "  review the diff  " } });
     fireEvent.click(screen.getByRole("button", { name: /send/i }));
 
-    expect(onSend).toHaveBeenCalledWith("review the diff", undefined);
+    expect(onSend).toHaveBeenCalledWith("review the diff", undefined, undefined);
     expect((input as HTMLInputElement).value).toBe("");
   });
 
@@ -28,7 +28,7 @@ describe("ChatInput", () => {
 
     // Plain Enter submits the trimmed text and clears the box.
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(onSend).toHaveBeenCalledWith("line one", undefined);
+    expect(onSend).toHaveBeenCalledWith("line one", undefined, undefined);
     expect((input as HTMLTextAreaElement).value).toBe("");
   });
 
@@ -255,7 +255,7 @@ describe("ChatInput", () => {
       expect(pasteChip()).toBeNull();
     });
 
-    it("stitches the typed prompt and the chipped paste into one message body", () => {
+    it("sends the typed prompt and the chipped paste as separate fields", () => {
       const onSend = vi.fn();
       render(<ChatInput onSend={onSend} />);
       const input = screen.getByRole("textbox", { name: /message the agent/i });
@@ -265,7 +265,22 @@ describe("ChatInput", () => {
       fireEvent.change(input, { target: { value: "what's wrong here?" } });
       fireEvent.click(screen.getByRole("button", { name: /send/i }));
 
-      expect(onSend).toHaveBeenCalledWith(`what's wrong here?\n\n${blob}`, undefined);
+      // Typed text stays whole; the paste rides as its own block (not stitched in).
+      expect(onSend).toHaveBeenCalledWith("what's wrong here?", undefined, [blob]);
+    });
+
+    it("sends multiple pasted blocks as separate entries, in order", () => {
+      const onSend = vi.fn();
+      render(<ChatInput onSend={onSend} />);
+      const input = screen.getByRole("textbox", { name: /message the agent/i });
+
+      const first = Array.from({ length: 20 }, (_, i) => `A${i}`).join("\n");
+      const second = Array.from({ length: 20 }, (_, i) => `B${i}`).join("\n");
+      pasteText(input, first);
+      pasteText(input, second);
+      fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+      expect(onSend).toHaveBeenCalledWith("", undefined, [first, second]);
     });
 
     it("can send a chipped paste with no typed prompt", () => {
@@ -277,7 +292,7 @@ describe("ChatInput", () => {
       pasteText(input, blob);
       fireEvent.click(screen.getByRole("button", { name: /send/i }));
 
-      expect(onSend).toHaveBeenCalledWith(blob, undefined);
+      expect(onSend).toHaveBeenCalledWith("", undefined, [blob]);
     });
 
     it("removes a paste chip before send", () => {
@@ -317,9 +332,11 @@ describe("ChatInput", () => {
       // The chip flags the drop with the exact count.
       expect(screen.getByText(/truncated · 10 dropped/i)).toBeInTheDocument();
 
-      // Only the first 50,000 lines are sent.
+      // Only the first 50,000 lines are sent — as the paste block, not the typed text.
       fireEvent.click(screen.getByRole("button", { name: /send/i }));
-      const sent = onSend.mock.calls[0][0] as string;
+      const [text, , pastes] = onSend.mock.calls[0];
+      expect(text).toBe("");
+      const sent = pastes[0] as string;
       expect(sent.split("\n")).toHaveLength(50000);
       expect(sent.startsWith("n0\n")).toBe(true);
       expect(sent.endsWith("\nn49999")).toBe(true);

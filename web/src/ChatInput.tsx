@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { PasteChip } from "./PasteChip";
 import type { ImageAttachment, SendMessage, StopAgent } from "./useSurfaceSocket";
 
 // Cap on images per turn. Images ride inline as base64 (+~33%) on the WebSocket frame;
@@ -40,66 +41,6 @@ function capPaste(s: string): { text: string; dropped: number } {
     text: lines.slice(0, PASTE_CAP_LINES).join("\n"),
     dropped: lines.length - PASTE_CAP_LINES,
   };
-}
-
-// A collapsed stand-in for one large pasted block. Collapsed by default (just a one-line
-// summary); Expand reveals a scrollable preview, ✕ drops it before send. When the paste
-// was truncated at the line cap, a warning notes how many lines were dropped.
-function PasteChip({
-  text,
-  dropped,
-  onRemove,
-}: {
-  text: string;
-  dropped: number;
-  onRemove: () => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const lines = text.split("\n").length;
-  return (
-    <div className="rounded border border-zinc-700 bg-zinc-800/60 text-xs">
-      <div className="flex items-center gap-2 px-2 py-1.5">
-        <span aria-hidden>📄</span>
-        <span className="text-zinc-200">Pasted text</span>
-        <span className="text-zinc-500">
-          · {lines} {lines === 1 ? "line" : "lines"}
-        </span>
-        <span className="rounded bg-zinc-700 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-zinc-300">
-          Pasted
-        </span>
-        {dropped > 0 ? (
-          <span
-            title={`Truncated to the first ${PASTE_CAP_LINES.toLocaleString()} lines`}
-            className="rounded bg-amber-950 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-300"
-          >
-            ⚠ truncated · {dropped.toLocaleString()} dropped
-          </span>
-        ) : null}
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
-          aria-label={expanded ? "Collapse pasted text" : "Expand pasted text"}
-          className="ml-auto rounded px-1.5 py-0.5 text-zinc-400 hover:text-zinc-100"
-        >
-          {expanded ? "Collapse ▲" : "Expand ▼"}
-        </button>
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label="Remove pasted text"
-          className="rounded px-1 text-zinc-400 hover:text-zinc-100"
-        >
-          ×
-        </button>
-      </div>
-      {expanded ? (
-        <pre className="max-h-64 overflow-auto whitespace-pre-wrap border-t border-zinc-700 px-2 py-1.5 font-mono text-[11px] text-zinc-300">
-          {text}
-        </pre>
-      ) : null}
-    </div>
-  );
 }
 
 // The chat box at the bottom of the right pane. Submitting sends a turn to the
@@ -222,13 +163,17 @@ export function ChatInput({
 
   function send() {
     if (busy) return;
-    // Stitch the typed prompt and any chipped pastes back into one message body, in
-    // visual order (prompt first, then each paste), separated by blank lines.
-    const body = [text.trim(), ...pastes.map((p) => p.text)]
-      .filter((part) => part.length > 0)
-      .join("\n\n");
-    if (!body && images.length === 0) return;
-    onSend(body, images.length ? images : undefined);
+    // Send the typed prompt and any chipped pastes as distinct fields — the typed text
+    // stays whole (never collapsed in the transcript), and each paste rides as its own
+    // block so it replays as its own collapsible chip. The daemon recombines them into
+    // one prompt for the model, so what the agent sees is unchanged.
+    const trimmed = text.trim();
+    if (!trimmed && images.length === 0 && pastes.length === 0) return;
+    onSend(
+      trimmed,
+      images.length ? images : undefined,
+      pastes.length ? pastes.map((p) => p.text) : undefined,
+    );
     setText("");
     setImages([]);
     setPastes([]);
@@ -301,6 +246,7 @@ export function ChatInput({
               key={p.id}
               text={p.text}
               dropped={p.dropped}
+              capLines={PASTE_CAP_LINES}
               onRemove={() => setPastes((prev) => prev.filter((q) => q.id !== p.id))}
             />
           ))}
