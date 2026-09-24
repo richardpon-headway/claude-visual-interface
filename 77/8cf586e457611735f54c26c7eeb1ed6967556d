@@ -1,0 +1,20 @@
+web/src/ActivityFeed.test.tsx
+  h_7b65865080601f 415-417
+web/src/ActivityFeed.tsx
+  h_7b65865080601f 3-10,296-297,600-608
+web/src/askAnswer.test.ts
+  h_7b65865080601f 3-10,110-125
+web/src/askAnswer.ts
+  h_7b65865080601f 126-151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "778cf586e457611735f54c26c7eeb1ed6967556d",
+  "prompts": {},
+  "humans": {
+    "h_7b65865080601f": {
+      "author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
