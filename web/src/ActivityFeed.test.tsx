@@ -412,6 +412,9 @@ describe("ActivityFeed", () => {
     expect(screen.getByText("Custom modal")).toBeInTheDocument();
     expect(screen.getByText("Native")).toBeInTheDocument(); // unchosen option still shown
     expect(screen.getByText(/answered/)).toBeInTheDocument();
+    // The submitted answer echoes as a right-aligned bubble — the visual break that
+    // marks the new turn (answering a picker creates no "user" entry on its own).
+    expect(screen.getByText("Approach: Custom modal")).toBeInTheDocument();
     // The option buttons are locked (disabled) — you can't re-answer.
     const chosenBtn = screen.getByText("Custom modal").closest("button")!;
     const otherBtn = screen.getByText("Native").closest("button")!;
