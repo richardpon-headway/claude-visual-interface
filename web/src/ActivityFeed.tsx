@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { formatGroupAnswer, isAddressed, parseGroupAnswer, pickSet, type Pick } from "./askAnswer";
+import {
+  formatGroupAnswer,
+  isAddressed,
+  parseGroupAnswer,
+  pickSet,
+  summarizeGroupAnswer,
+  type Pick,
+} from "./askAnswer";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { Markdown } from "./Markdown";
 import { PasteChip } from "./PasteChip";
@@ -286,6 +293,8 @@ function AskPicker({
   const locked = shownAnswer !== null;
   // Per-question responses reconstructed from the answer string, for the locked render.
   const answered = shownAnswer ? parseGroupAnswer(questions, shownAnswer) : null;
+  // Compact one-line-per-question summary for the right-aligned answer bubble.
+  const answerSummary = shownAnswer ? summarizeGroupAnswer(questions, shownAnswer) : "";
 
   function submit(p: Pick[], c: (string | null)[], n: (string | null)[]) {
     if (locked || !allAddressed(p, c, n) || !onAnswer || !entry.ask_id) return;
@@ -588,6 +597,15 @@ function AskPicker({
           </button>
         ) : null}
       </div>
+      {/* Echo the submitted answer as a right-aligned bubble — the same visual break a
+          typed prompt gets. Answering a picker creates no "user" entry, so without this
+          the agent's next reply would butt straight up against the picker with nothing
+          marking the new turn. Skipped when the summary is empty. */}
+      {answerSummary ? (
+        <div className="mt-3 flex flex-col items-end">
+          <UserBubble text={answerSummary} />
+        </div>
+      ) : null}
     </li>
   );
 }

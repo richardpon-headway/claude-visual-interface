@@ -123,3 +123,29 @@ export function parseGroupAnswer(questions: AskQuestion[], answer: string): Ques
     };
   });
 }
+
+// A compact, human-readable summary of a submitted group answer — one line per
+// question that got a response — for the right-aligned "your answer" bubble that marks
+// the turn boundary after a picker is answered (the same visual break a typed prompt
+// gets). Each line is `<header>: <picked labels>[ · "<custom>"][ · asked: <question>]`.
+// Returns "" when nothing was addressed, so the caller can skip an empty bubble.
+export function summarizeGroupAnswer(questions: AskQuestion[], answer: string): string {
+  const responses = parseGroupAnswer(questions, answer);
+  const lines: string[] = [];
+  questions.forEach((q, qi) => {
+    const r = responses[qi];
+    const parts: string[] = [];
+    if (r.chosen.size) {
+      parts.push(
+        [...r.chosen]
+          .map((oi) => q.options[oi]?.label)
+          .filter((l): l is string => !!l)
+          .join(", "),
+      );
+    }
+    if (r.custom) parts.push(`"${r.custom}"`);
+    if (r.question) parts.push(`asked: ${r.question}`);
+    if (parts.length) lines.push(`${labelFor(q)}: ${parts.join(" · ")}`);
+  });
+  return lines.join("\n");
+}

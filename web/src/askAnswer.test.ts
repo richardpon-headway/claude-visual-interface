@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { formatGroupAnswer, isAddressed, parseGroupAnswer, pickSet, type Pick } from "./askAnswer";
+import {
+  formatGroupAnswer,
+  isAddressed,
+  parseGroupAnswer,
+  pickSet,
+  summarizeGroupAnswer,
+  type Pick,
+} from "./askAnswer";
 import type { AskQuestion } from "./viewState";
 
 const questions: AskQuestion[] = [
@@ -98,6 +105,22 @@ describe("askAnswer", () => {
     const r = parseGroupAnswer(dupes, answer);
     expect([...r[0].chosen]).toEqual([0]); // a1, not mirrored onto Q1
     expect([...r[1].chosen]).toEqual([1]); // b2
+  });
+
+  it("summarizes a submitted answer, one line per addressed question", () => {
+    const answer = formatGroupAnswer(
+      questions,
+      [0, null, [0, 2]],
+      [null, "typed, id only", null],
+      [null, null, "which matter?"],
+    );
+    expect(summarizeGroupAnswer(questions, answer)).toBe(
+      'Predicate: COB\nShape: "typed, id only"\nFeatures: A, C · asked: which matter?',
+    );
+  });
+
+  it("summarizes to an empty string when nothing was addressed", () => {
+    expect(summarizeGroupAnswer(questions, "")).toBe("");
   });
 
   it("treats tag-like free text that isn't an exact valid tag as content", () => {
