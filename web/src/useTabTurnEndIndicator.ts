@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 
-// Track whether a turn ended without the tab being looked at since, so the caller can
-// reflect it in the browser-tab title. "Turn ended" is the falling edge of `thinking`
-// (true -> false); "looked at" is the tab becoming visible or the window regaining
-// focus. It flags on every turn-end regardless of focus, so a turn that finishes while
-// you're watching stays flagged until the tab next loses and regains focus.
+import { setTurnEndFavicon } from "./favicon";
+
+// Track whether a turn ended without the tab being looked at since. On turn-end it
+// puts a dot on the tab favicon and returns the flag so the caller can also reflect it
+// in the title; both clear when the tab is looked at again. "Turn ended" is the falling
+// edge of `thinking` (true -> false); "looked at" is the tab becoming visible or the
+// window regaining focus. It flags on every turn-end regardless of focus, so a turn
+// that finishes while you're watching stays flagged until the tab next loses and
+// regains focus.
 export function useTabTurnEndIndicator(surface: string, thinking: boolean): boolean {
   const [unseen, setUnseen] = useState(false);
   // Seeded with the first observed value so joining mid-turn (the connect snapshot
@@ -36,9 +40,17 @@ export function useTabTurnEndIndicator(surface: string, thinking: boolean): bool
     };
   }, []);
 
-  // Reset when switching sessions so a stale flag never carries into another surface.
+  useEffect(() => {
+    setTurnEndFavicon(unseen);
+  }, [unseen]);
+
+  // Reset when switching sessions (and revert the favicon on unmount) so a stale flag
+  // never carries into another surface.
   useEffect(() => {
     setUnseen(false);
+    return () => {
+      setTurnEndFavicon(false);
+    };
   }, [surface]);
 
   return unseen;
