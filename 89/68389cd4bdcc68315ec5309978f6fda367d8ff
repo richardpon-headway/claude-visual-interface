@@ -1,0 +1,22 @@
+web/src/useTabTurnEndIndicator.ts
+  s_2e1c8c9c80a1ab::t_85631375656683 1-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8968389cd4bdcc68315ec5309978f6fda367d8ff",
+  "prompts": {},
+  "sessions": {
+    "s_2e1c8c9c80a1ab": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ba07326a-2769-4e8e-a55e-1c91d32a6a41",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
