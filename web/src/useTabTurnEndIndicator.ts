@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 
-import { setFaviconBadge } from "./favicon";
+import { setTurnEndFavicon } from "./favicon";
 
-// Badge the browser-tab favicon when a turn ends, and clear it once the tab is
-// looked at again. "Turn ended" is the falling edge of `thinking` (true -> false);
-// "looked at" is the tab becoming visible or the window regaining focus. The badge
-// fires on every turn-end regardless of focus, so a turn that finishes while you're
-// watching still badges until the tab next loses and regains focus.
+// Swap the browser-tab favicon to a waving hand when a turn ends, and revert it once
+// the tab is looked at again. "Turn ended" is the falling edge of `thinking`
+// (true -> false); "looked at" is the tab becoming visible or the window regaining
+// focus. It fires on every turn-end regardless of focus, so a turn that finishes
+// while you're watching keeps waving until the tab next loses and regains focus.
 export function useTabTurnEndIndicator(surface: string, thinking: boolean): void {
   const [unseen, setUnseen] = useState(false);
   // Seeded with the first observed value so joining mid-turn (the connect snapshot
@@ -19,7 +19,7 @@ export function useTabTurnEndIndicator(surface: string, thinking: boolean): void
     if (prev && !thinking) {
       setUnseen(true); // turn just ended
     } else if (!prev && thinking) {
-      setUnseen(false); // a new turn started — drop any stale badge
+      setUnseen(false); // a new turn started — drop any stale indicator
     }
   }, [thinking]);
 
@@ -39,14 +39,14 @@ export function useTabTurnEndIndicator(surface: string, thinking: boolean): void
   }, []);
 
   useEffect(() => {
-    setFaviconBadge(unseen);
+    setTurnEndFavicon(unseen);
   }, [unseen]);
 
-  // Clear the badge when leaving this surface (or unmounting) so navigation never
-  // strands it on the tab.
+  // Revert the icon when leaving this surface (or unmounting) so navigation never
+  // strands a waving hand on the tab.
   useEffect(() => {
     return () => {
-      setFaviconBadge(false);
+      setTurnEndFavicon(false);
     };
   }, [surface]);
 }
