@@ -108,12 +108,12 @@ export function Surface({ surface }: { surface: string }) {
     }
   }
 
-  // Mirror the inferred session title into the browser tab, prefixing a waving hand
+  // Mirror the inferred session title into the browser tab, prefixing waving hands
   // when a turn ended while the tab wasn't looked at. Falls back to the surface id
   // until a title is inferred, and restores the default on unmount.
   useEffect(() => {
     const base = title ?? surface;
-    document.title = turnEndUnseen ? `\u{1F44B} ${base}` : base;
+    document.title = turnEndUnseen ? `\u{1F44B}\u{1F44B}\u{1F44B} ${base}` : base;
     return () => {
       document.title = "Claude Visual Interface";
     };
