@@ -91,8 +91,8 @@ export function Surface({ surface }: { surface: string }) {
   const busy = view.thinking;
   const prompts = promptLandmarks(view.activity);
 
-  // Badge the browser tab's favicon when a turn ends; clear it when the tab is selected.
-  useTabTurnEndIndicator(surface, view.thinking);
+  // Flags when a turn ended while this tab wasn't looked at; cleared when it's selected.
+  const turnEndUnseen = useTabTurnEndIndicator(surface, view.thinking);
 
   // Toggle the star optimistically, then persist; revert the local flip on failure.
   // No live broadcast in v1 — the home list reconciles on its next load.
@@ -108,14 +108,16 @@ export function Surface({ surface }: { surface: string }) {
     }
   }
 
-  // Mirror the inferred session title into the browser tab. Falls back to the
-  // surface id until a title is inferred, and restores the default on unmount.
+  // Mirror the inferred session title into the browser tab, prefixing a waving hand
+  // when a turn ended while the tab wasn't looked at. Falls back to the surface id
+  // until a title is inferred, and restores the default on unmount.
   useEffect(() => {
-    document.title = title ?? surface;
+    const base = title ?? surface;
+    document.title = turnEndUnseen ? `\u{1F44B} ${base}` : base;
     return () => {
       document.title = "Claude Visual Interface";
     };
-  }, [title, surface]);
+  }, [title, surface, turnEndUnseen]);
 
   // Hidden by default so the conversation gets full width (useful when running
   // several narrow CVI windows side by side). The ☰ button in the header shows it.

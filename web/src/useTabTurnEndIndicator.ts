@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 
-import { setTurnEndFavicon } from "./favicon";
-
-// Swap the browser-tab favicon to a waving hand when a turn ends, and revert it once
-// the tab is looked at again. "Turn ended" is the falling edge of `thinking`
+// Track whether a turn ended without the tab being looked at since, so the caller can
+// reflect it in the browser-tab title. "Turn ended" is the falling edge of `thinking`
 // (true -> false); "looked at" is the tab becoming visible or the window regaining
-// focus. It fires on every turn-end regardless of focus, so a turn that finishes
-// while you're watching keeps waving until the tab next loses and regains focus.
-export function useTabTurnEndIndicator(surface: string, thinking: boolean): void {
+// focus. It flags on every turn-end regardless of focus, so a turn that finishes while
+// you're watching stays flagged until the tab next loses and regains focus.
+export function useTabTurnEndIndicator(surface: string, thinking: boolean): boolean {
   const [unseen, setUnseen] = useState(false);
   // Seeded with the first observed value so joining mid-turn (the connect snapshot
   // can arrive with `thinking` already true) is not mistaken for a fresh edge.
@@ -19,7 +17,7 @@ export function useTabTurnEndIndicator(surface: string, thinking: boolean): void
     if (prev && !thinking) {
       setUnseen(true); // turn just ended
     } else if (!prev && thinking) {
-      setUnseen(false); // a new turn started — drop any stale indicator
+      setUnseen(false); // a new turn started — drop any stale flag
     }
   }, [thinking]);
 
@@ -38,15 +36,10 @@ export function useTabTurnEndIndicator(surface: string, thinking: boolean): void
     };
   }, []);
 
+  // Reset when switching sessions so a stale flag never carries into another surface.
   useEffect(() => {
-    setTurnEndFavicon(unseen);
-  }, [unseen]);
-
-  // Revert the icon when leaving this surface (or unmounting) so navigation never
-  // strands a waving hand on the tab.
-  useEffect(() => {
-    return () => {
-      setTurnEndFavicon(false);
-    };
+    setUnseen(false);
   }, [surface]);
+
+  return unseen;
 }
