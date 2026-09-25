@@ -1,0 +1,37 @@
+web/src/Surface.tsx
+  s_3c14b9442db19e::t_81839f129a786d 94-95,111-113,115-116,120
+web/src/useTabTurnEndIndicator.ts
+  s_3c14b9442db19e::t_97afe985f72503 3-4,6-8,20,39,41,43-44
+web/src/useTabTurnEndIndicator.test.ts
+  s_02f253433d1a9a::t_fcc124423117ab 17,19,24-25,27,29,32-34,36,39-40,42,44,47-48,50,52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bc10ddd46d7ade6d79ad3bd25a8bc2e8b342a048",
+  "prompts": {},
+  "sessions": {
+    "s_02f253433d1a9a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a6922d8adf9dc5f5c",
+        "model": "unknown"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    },
+    "s_3c14b9442db19e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "12beabab-4756-452a-b0ea-c24d51ba3593",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
