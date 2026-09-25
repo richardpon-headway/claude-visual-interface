@@ -8,6 +8,7 @@ import { activePromptId, promptLandmarks } from "./rail";
 import { BOTTOM_SLACK_PX, isNearBottom } from "./scroll";
 import { useSurfaceSocket } from "./useSurfaceSocket";
 import type { SendMessage } from "./useSurfaceSocket";
+import { useTabTurnEndIndicator } from "./useTabTurnEndIndicator";
 
 // Click-to-edit session title in the header. The committed name is sent to the
 // daemon's rename endpoint; the new title flows back over the "title" websocket
@@ -89,6 +90,9 @@ export function Surface({ surface }: { surface: string }) {
   ] = useSurfaceSocket(surface);
   const busy = view.thinking;
   const prompts = promptLandmarks(view.activity);
+
+  // Badge the browser tab's favicon when a turn ends; clear it when the tab is selected.
+  useTabTurnEndIndicator(surface, view.thinking);
 
   // Toggle the star optimistically, then persist; revert the local flip on failure.
   // No live broadcast in v1 — the home list reconciles on its next load.
