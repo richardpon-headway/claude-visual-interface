@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { setFaviconBadge } from "./favicon";
+import { setTurnEndFavicon } from "./favicon";
+
+const WAVE = "\u{1F44B}";
 
 function iconLinks(): HTMLLinkElement[] {
   return Array.from(document.head.querySelectorAll<HTMLLinkElement>('link[rel="icon"]'));
@@ -10,25 +12,25 @@ afterEach(() => {
   iconLinks().forEach((l) => l.remove());
 });
 
-describe("setFaviconBadge", () => {
-  it("shows a badged svg data uri when active", () => {
-    setFaviconBadge(true);
+describe("setTurnEndFavicon", () => {
+  it("shows a waving-hand svg data uri when waving", () => {
+    setTurnEndFavicon(true);
     const links = iconLinks();
     expect(links).toHaveLength(1);
     const href = decodeURIComponent(links[0].href);
     expect(href.startsWith("data:image/svg+xml,")).toBe(true);
-    expect(href).toContain("<circle"); // badge overlay present
+    expect(href).toContain(WAVE); // waving hand present
     expect(links[0].type).toBe("image/svg+xml");
   });
 
-  it("restores the plain icon (no badge) when inactive, reusing one link element", () => {
-    setFaviconBadge(true);
-    setFaviconBadge(false);
+  it("restores the normal icon (no wave) when inactive, reusing one link element", () => {
+    setTurnEndFavicon(true);
+    setTurnEndFavicon(false);
     const links = iconLinks();
     expect(links).toHaveLength(1); // idempotent: mutates the single link, never stacks
     const href = decodeURIComponent(links[0].href);
-    expect(href).toContain("#12ab66"); // base icon field
-    expect(href).not.toContain("<circle");
+    expect(href).toContain("#eafaf2"); // base icon sparkle
+    expect(href).not.toContain(WAVE);
   });
 
   it("reuses an existing link[rel=icon] rather than creating a second", () => {
@@ -37,7 +39,7 @@ describe("setFaviconBadge", () => {
     existing.href = "/favicon.svg";
     document.head.appendChild(existing);
 
-    setFaviconBadge(true);
+    setTurnEndFavicon(true);
 
     const links = iconLinks();
     expect(links).toHaveLength(1);

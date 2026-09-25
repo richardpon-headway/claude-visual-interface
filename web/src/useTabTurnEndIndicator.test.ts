@@ -3,12 +3,12 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { useTabTurnEndIndicator } from "./useTabTurnEndIndicator";
 
-// The badge is asserted through the real favicon link the hook drives, so this
+// The indicator is asserted through the real favicon link the hook drives, so this
 // exercises the hook + favicon integration together.
 function badged(): boolean {
   const link = document.head.querySelector<HTMLLinkElement>('link[rel="icon"]');
   if (!link) return false;
-  return decodeURIComponent(link.href).includes("<circle");
+  return decodeURIComponent(link.href).includes("\u{1F44B}");
 }
 
 function setVisibility(state: "visible" | "hidden") {
