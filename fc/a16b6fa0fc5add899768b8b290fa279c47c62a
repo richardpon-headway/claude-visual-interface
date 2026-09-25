@@ -1,0 +1,30 @@
+web/src/Surface.tsx
+  s_2053ab998ab042::t_e393c7939dfc0f 111,116
+web/src/favicon.test.ts
+  s_2053ab998ab042::t_c515939af52eb5 1-46
+web/src/favicon.ts
+  s_2053ab998ab042::t_dab3e8c9d75c21 1-36
+web/src/useTabTurnEndIndicator.test.ts
+  s_2053ab998ab042::t_7622fda6a42bf8 6-12,22,32,36,39,49,53,56,66-73
+web/src/useTabTurnEndIndicator.ts
+  s_2053ab998ab042::t_aa735dc5b1021d 3-11,43-48,51-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fca16b6fa0fc5add899768b8b290fa279c47c62a",
+  "prompts": {},
+  "sessions": {
+    "s_2053ab998ab042": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "570f5f57-d4d0-45da-aa84-aaa46164b6c5",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
