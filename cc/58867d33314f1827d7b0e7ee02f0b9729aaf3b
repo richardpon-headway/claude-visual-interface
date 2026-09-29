@@ -1,0 +1,89 @@
+tests/test_agent_session.py
+  s_f3014cbbdeaff9::t_e856df5046dfc6 1127-1213
+web/src/ThinkingIndicator.test.tsx
+  s_f3014cbbdeaff9::t_7d18327f45d6d8 27-39
+web/src/viewState.ts
+  s_86615ac25e03fe::t_5c838b8be7224a 40,59,69,81,120-121
+daemon/mcp_server.py
+  s_d2729f7463b97f::t_8a54e55c781331 245-256
+daemon/view_state.py
+  s_375e1f87e9c308::t_26fe6cb8a06073 55-59,86-88
+web/src/Surface.tsx
+  s_642505a239e589::t_3cbaed1aaa8c82 316-320
+web/src/ThinkingIndicator.tsx
+  s_173e71801eaa8a::t_61859e5428591a 12-14,30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cc58867d33314f1827d7b0e7ee02f0b9729aaf3b",
+  "prompts": {},
+  "sessions": {
+    "s_173e71801eaa8a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a7379dd9a6b7f2827",
+        "model": "unknown"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    },
+    "s_375e1f87e9c308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fa12bc4d-e7b0-44b2-8708-0f91b235dab8",
+        "model": "unknown"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    },
+    "s_642505a239e589": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a53466a-d843-4f54-b3f5-dca8d9668ee4",
+        "model": "unknown"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    },
+    "s_86615ac25e03fe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8fe76887-70ae-429a-aaa1-c9b976490256",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    },
+    "s_d2729f7463b97f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af822ca11aabfee65",
+        "model": "unknown"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    },
+    "s_f3014cbbdeaff9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "24486fba-a8cd-4354-9cdb-cca36705973c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
