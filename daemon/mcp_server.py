@@ -242,6 +242,18 @@ async def broadcast_thinking(surface: str, active: bool) -> None:
     )
 
 
+async def broadcast_background_working(surface: str, active: bool) -> None:
+    """Flip the surface's 'a background task is outstanding' flag and push it to
+    subscribers so the chat shows/hides its "working in background" indicator. Like
+    'thinking' it has no DB home, so it's stored on the ViewState to ride the connect
+    snapshot (a browser reloading mid-task still sees it)."""
+    store.set_background_working(surface, active)
+    await hub.broadcast(
+        surface,
+        {"type": "background_working", "surface": surface, "payload": {"active": active}},
+    )
+
+
 # The render contract: visuals render inline in the conversation as self-contained
 # no-script pages. Kept as one constant so the chat prompt's rule can't drift.
 _RENDER_HTML_GUIDANCE = (

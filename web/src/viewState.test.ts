@@ -11,6 +11,9 @@ describe("parseMessage", () => {
     expect(parseMessage(JSON.stringify({ type: "thinking", surface: "s", payload: {} }))?.type).toBe(
       "thinking",
     );
+    expect(
+      parseMessage(JSON.stringify({ type: "background_working", surface: "s", payload: {} }))?.type,
+    ).toBe("background_working");
     expect(parseMessage(JSON.stringify({ type: "title", surface: "s", payload: {} }))?.type).toBe(
       "title",
     );
@@ -31,6 +34,7 @@ describe("applyMessage", () => {
       surface: "s",
       activity: [],
       thinking: false,
+      background_working: false,
       session_output_tokens: 0,
       session_input_tokens: 0,
     });
@@ -41,6 +45,7 @@ describe("applyMessage", () => {
       surface: "s",
       activity: [{ kind: "text", text: "buffered" }],
       thinking: true,
+      background_working: true,
       session_output_tokens: 0,
       session_input_tokens: 0,
     };
@@ -48,6 +53,7 @@ describe("applyMessage", () => {
     state = applyMessage(state, { type: "snapshot", surface: "s", payload: incoming });
     expect(state.view.activity).toEqual([{ kind: "text", text: "buffered" }]);
     expect(state.view.thinking).toBe(true);
+    expect(state.view.background_working).toBe(true);
   });
 
   it("appends activity entries in arrival order", () => {
@@ -65,6 +71,18 @@ describe("applyMessage", () => {
     expect(state.view.thinking).toBe(true);
     state = applyMessage(state, { type: "thinking", surface: "s", payload: { active: false } });
     expect(state.view.thinking).toBe(false);
+  });
+
+  it("flips the background_working flag independently of thinking", () => {
+    let state = applyMessage(emptySurface("s"), {
+      type: "background_working",
+      surface: "s",
+      payload: { active: true },
+    });
+    expect(state.view.background_working).toBe(true);
+    expect(state.view.thinking).toBe(false);
+    state = applyMessage(state, { type: "background_working", surface: "s", payload: { active: false } });
+    expect(state.view.background_working).toBe(false);
   });
 
   it("sets the title", () => {

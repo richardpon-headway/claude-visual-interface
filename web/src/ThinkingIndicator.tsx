@@ -9,7 +9,9 @@ const TICK_MS = 120;
 // matching the Claude CLI's cadence.
 const WORD_INTERVAL_MS = 4000;
 
-export function ThinkingIndicator({ active }: { active: boolean }) {
+// `label`, when given, shows a fixed word instead of the cycling whimsical set — used
+// for the "working in background" state so it reads distinctly from a normal in-flight turn.
+export function ThinkingIndicator({ active, label }: { active: boolean; label?: string }) {
   // Elapsed ms since `active` flipped true; a single interval drives the spinner,
   // the word cycle, and the seconds counter. Reset and cleared whenever inactive.
   const [elapsed, setElapsed] = useState(0);
@@ -25,7 +27,7 @@ export function ThinkingIndicator({ active }: { active: boolean }) {
   if (!active) return null;
 
   const frame = FRAMES[Math.floor(elapsed / TICK_MS) % FRAMES.length];
-  const word = WORDS[Math.floor(elapsed / WORD_INTERVAL_MS) % WORDS.length];
+  const word = label ?? WORDS[Math.floor(elapsed / WORD_INTERVAL_MS) % WORDS.length];
   const seconds = Math.floor(elapsed / 1000);
 
   // Inline content only — the parent (Surface) provides the status row above
