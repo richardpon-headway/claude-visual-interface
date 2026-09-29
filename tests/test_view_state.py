@@ -7,6 +7,7 @@ def test_snapshot_is_json_shaped_and_starts_empty():
         "surface": "fresh",
         "activity": [],
         "thinking": False,
+        "background_working": False,
         "session_output_tokens": 0,
         "session_input_tokens": 0,
     }
@@ -128,7 +129,8 @@ def test_set_answer_records_the_choice_on_the_matching_ask_entry():
     store.append_activity(
         "s", "ask", "pick", ask_id="a1", questions=[{"question": "Q", "options": []}]
     )
-    # Returns the matched entry so the caller can persist by its message_id.
+    # Returns the matched entry (once) so the caller can persist by its message_id and
+    # append the answer bubble exactly once.
     matched = store.set_answer("s", "a1", "Chosen")
     assert matched is not None
     assert matched.answer == "Chosen"
@@ -137,6 +139,30 @@ def test_set_answer_records_the_choice_on_the_matching_ask_entry():
     assert store.snapshot("s")["activity"][-1]["answer"] == "Chosen"
     # An unknown ask id is a no-op.
     assert store.set_answer("s", "missing", "x") is None
+
+
+def test_set_answer_is_idempotent_for_an_already_answered_picker():
+    store = ViewStore()
+    store.append_activity("s", "ask", "pick", ask_id="a1", questions=[])
+    assert store.set_answer("s", "a1", "Chosen") is not None
+    # A duplicate answer for an already-answered picker returns None so the caller can't
+    # stack a second answer bubble; the recorded value is unchanged.
+    assert store.set_answer("s", "a1", "Chosen again") is None
+    assert store.get_or_create("s").activity[0].answer == "Chosen"
+
+
+def test_set_answer_only_matches_the_ask_entry_not_the_answer_bubble():
+    store = ViewStore()
+    # An answer-bubble entry shares the picker's ask_id; set_answer must skip it and land
+    # on the "ask" entry (so a re-broadcast of the answer keeps targeting the picker).
+    store.append_activity("s", "ask", "pick", ask_id="a1", questions=[])
+    store.append_activity("s", "ask_answer", "raw answer", ask_id="a1")
+    matched = store.set_answer("s", "a1", "Chosen")
+    assert matched is not None
+    assert matched.kind == "ask"
+    assert store.get_or_create("s").activity[0].answer == "Chosen"
+    # The bubble entry never gets an answer set on it.
+    assert store.get_or_create("s").activity[1].answer is None
 
 
 def test_hydration_flag_tracks_per_surface():
