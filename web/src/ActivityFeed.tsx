@@ -293,8 +293,6 @@ function AskPicker({
   const locked = shownAnswer !== null;
   // Per-question responses reconstructed from the answer string, for the locked render.
   const answered = shownAnswer ? parseGroupAnswer(questions, shownAnswer) : null;
-  // Compact one-line-per-question summary for the right-aligned answer bubble.
-  const answerSummary = shownAnswer ? summarizeGroupAnswer(questions, shownAnswer) : "";
 
   function submit(p: Pick[], c: (string | null)[], n: (string | null)[]) {
     if (locked || !allAddressed(p, c, n) || !onAnswer || !entry.ask_id) return;
@@ -597,15 +595,10 @@ function AskPicker({
           </button>
         ) : null}
       </div>
-      {/* Echo the submitted answer as a right-aligned bubble — the same visual break a
-          typed prompt gets. Answering a picker creates no "user" entry, so without this
-          the agent's next reply would butt straight up against the picker with nothing
-          marking the new turn. Skipped when the summary is empty. */}
-      {answerSummary ? (
-        <div className="mt-3 flex flex-col items-end">
-          <UserBubble text={answerSummary} />
-        </div>
-      ) : null}
+      {/* The submitted answer's right-aligned bubble is NOT rendered here — it's its own
+          `ask_answer` transcript entry (appended by the daemon at answer time), so it
+          lands below any same-turn prose the model wrote under the card and reads like the
+          user's next prompt. See the ask_answer branch in ActivityRow. */}
     </li>
   );
 }
@@ -638,11 +631,13 @@ function ActivityRow({
   promptId,
   onAnswer,
   isLatestAsk,
+  askAnswerSummary,
 }: {
   entry: ActivityEntry;
   promptId?: string;
   onAnswer?: (askId: string, answer: string) => void;
   isLatestAsk?: boolean;
+  askAnswerSummary?: string;
 }) {
   // Your prompts read as right-aligned bubbles; each carries a stable anchor id so
   // the outline rail can scroll to it. A large paste renders as its own collapsible chip
@@ -685,6 +680,19 @@ function ActivityRow({
   // An AskUserQuestion picker.
   if (entry.kind === "ask") {
     return <AskPicker entry={entry} onAnswer={onAnswer} isLatest={isLatestAsk ?? false} />;
+  }
+  // The submitted-answer bubble for a picker — its own transcript entry so it lands below
+  // any same-turn prose under the card and reads like the user's next prompt. Its summary
+  // is derived by ActivityFeed from the referenced card; entry.text (the raw answer) is a
+  // degrade-mode fallback if the card can't be resolved. Nothing to show → render nothing.
+  if (entry.kind === "ask_answer") {
+    const text = askAnswerSummary || entry.text;
+    if (!text) return null;
+    return (
+      <li className={`${PROSE} flex flex-col items-end`}>
+        <UserBubble text={text} />
+      </li>
+    );
   }
   // A model-rendered HTML page, inline in the flow. Full-width row so the frame can
   // align to the chat column and widen rightward; ArtifactBlock owns its own width.
@@ -778,6 +786,15 @@ export function ActivityFeed({
     if (e.kind === "ask" && !e.answer) lastAsk = i;
   });
 
+  // Answered pickers, keyed by ask_id, so an `ask_answer` bubble entry can derive its
+  // compact summary from the card it references (the card carries the questions + the
+  // chosen answer). Built once per render; the bubble derives rather than storing the
+  // summary so it always tracks the card's current answer/format.
+  const askById = new Map<string, ActivityEntry>();
+  shown.forEach((e) => {
+    if (e.kind === "ask" && e.ask_id) askById.set(e.ask_id, e);
+  });
+
   // Group tool calls by turn (a user prompt starts a turn). All of a turn's tool calls
   // collapse into one bar, rendered at the position of the turn's first tool call; the
   // rest are suppressed. The bar is "in progress" only for the active (last) turn while
@@ -822,6 +839,14 @@ export function ActivityFeed({
           );
         }
         const promptId = entry.kind === "user" ? `prompt-${userCount++}` : undefined;
+        // For an answer bubble, resolve its picker (by ask_id) and derive the summary.
+        let askAnswerSummary: string | undefined;
+        if (entry.kind === "ask_answer") {
+          const card = entry.ask_id ? askById.get(entry.ask_id) : undefined;
+          if (card?.answer) {
+            askAnswerSummary = summarizeGroupAnswer(card.questions ?? [], card.answer);
+          }
+        }
         return (
           <ActivityRow
             key={i}
@@ -829,6 +854,7 @@ export function ActivityFeed({
             promptId={promptId}
             onAnswer={onAnswer}
             isLatestAsk={i === lastAsk}
+            askAnswerSummary={askAnswerSummary}
           />
         );
       })}

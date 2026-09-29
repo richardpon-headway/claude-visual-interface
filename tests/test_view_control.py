@@ -212,16 +212,47 @@ async def test_broadcast_answer_records_the_choice_and_broadcasts():
     ws = FakeWS()
     hub.register(surface, ws)
     try:
-        await broadcast_answer(surface, "a1", "Chosen")
+        newly_answered = await broadcast_answer(surface, "a1", "Chosen")
     finally:
         hub.unregister(surface, ws)
 
+    # Reports the picker was newly answered so the caller appends the bubble exactly once.
+    assert newly_answered is True
     assert store.get_or_create(surface).activity[-1].answer == "Chosen"
     assert {
         "type": "answer",
         "surface": surface,
         "payload": {"id": "a1", "answer": "Chosen"},
     } in ws.received
+
+
+async def test_broadcast_answer_is_a_noop_for_a_duplicate_or_missing_picker():
+    surface = "vc-answer-dup"
+    await record_activity(surface, "ask", "pick", ask_id="a1", questions=[])
+    assert await broadcast_answer(surface, "a1", "Chosen") is True
+    # A duplicate answer for the same picker, or an answer for a picker that isn't there,
+    # returns False — so the caller won't stack a second answer bubble.
+    assert await broadcast_answer(surface, "a1", "Chosen again") is False
+    assert await broadcast_answer(surface, "missing", "x") is False
+    assert store.get_or_create(surface).activity[-1].answer == "Chosen"
+
+
+async def test_ask_answer_bubble_entry_persists_its_ask_id_and_rides_hydration():
+    # The answer bubble is its own transcript entry referencing its picker by ask_id; it
+    # must persist and reload in order so the bubble lands after the card's trailing prose.
+    surface = "vc-ask-answer-roundtrip"
+    await record_activity(surface, "ask_answer", "raw answer", ask_id="a1")
+
+    row = messages.list_messages(surface)[-1]
+    assert row["kind"] == "ask_answer"
+    assert json.loads(row["data"]) == {"ask_id": "a1", "questions": None}
+
+    # Reload from the DB (record_activity doesn't mark the surface hydrated) and confirm
+    # the bubble entry rebuilds with its ask_id intact.
+    await hydrate_surface(surface)
+    entry = store.get_or_create(surface).activity[-1]
+    assert entry.kind == "ask_answer"
+    assert entry.ask_id == "a1"
 
 
 async def test_record_activity_persists_the_ask_payload():

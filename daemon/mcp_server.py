@@ -46,9 +46,11 @@ async def render_html_on_surface(
 def _entry_from_row(row: dict[str, Any]) -> ActivityEntry:
     """Rebuild an ActivityEntry from a persisted `message` row. A picker row carries
     its structured payload ({ask_id, questions}) as JSON in `data` and its chosen value
-    in `answer`, so a reloaded picker re-renders rich and, if answered, locked. The
-    `background` flag (0/1) is restored so an agent-initiated segment reloads dimmed +
-    tagged rather than as a foreground reply."""
+    in `answer`, so a reloaded picker re-renders rich and, if answered, locked. An
+    answer-bubble row (kind="ask_answer") carries just the answered picker's ask_id in
+    `data`, so it reloads in transcript order and the browser re-derives its summary from
+    that card. The `background` flag (0/1) is restored so an agent-initiated segment
+    reloads dimmed + tagged rather than as a foreground reply."""
     ask_id: str | None = None
     questions: list | None = None
     raw = row.get("data")
@@ -201,18 +203,23 @@ async def broadcast_title(surface: str, title: str) -> None:
     )
 
 
-async def broadcast_answer(surface: str, ask_id: str, answer: str) -> None:
+async def broadcast_answer(surface: str, ask_id: str, answer: str) -> bool:
     """Record a picker's chosen value on its `ask` entry and push it to subscribers so
     the picker locks to the answered state live. Held on the ViewState (so it rides the
     connect snapshot for a browser that reloads) and written through to the picker's
-    message row (so an answered picker re-renders locked after a daemon restart)."""
+    message row (so an answered picker re-renders locked after a daemon restart). Returns
+    True only when this call newly records the answer, so the caller appends the answer
+    bubble exactly once; a duplicate answer (or one for a missing picker) is a no-op."""
     entry = store.set_answer(surface, ask_id, answer)
-    if entry is not None and entry.message_id is not None:
+    if entry is None:
+        return False
+    if entry.message_id is not None:
         await asyncio.to_thread(messages.set_message_answer, entry.message_id, answer)
     await hub.broadcast(
         surface,
         {"type": "answer", "surface": surface, "payload": {"id": ask_id, "answer": answer}},
     )
+    return True
 
 
 async def broadcast_tokens(surface: str, output_tokens: int, input_tokens: int) -> None:

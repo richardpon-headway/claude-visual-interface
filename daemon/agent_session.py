@@ -919,9 +919,19 @@ class AgentSessionRegistry:
 
     async def answer(self, surface: str, ask_id: str, answer: str) -> None:
         """Apply a picker selection: record the choice on the picker entry (pushed live
-        so a reconnecting browser sees the answered state) and feed it to the agent as a
-        non-recording turn — no duplicate user bubble, since the picker shows the choice."""
-        await broadcast_answer(surface, ask_id, answer)
+        so a reconnecting browser sees the answered state), append a right-aligned answer
+        bubble as its own transcript entry so it lands below any same-turn prose the model
+        wrote under the card (reading like the user's next prompt), then feed the choice to
+        the agent as a non-recording turn — no duplicate user bubble, since the bubble
+        entry marks the turn. The bubble is appended only when the picker was newly
+        answered, so a duplicate answer can't stack a second bubble."""
+        newly_answered = await broadcast_answer(surface, ask_id, answer)
+        if newly_answered:
+            # The bubble entry references its picker by ask_id; the browser derives the
+            # compact summary from that card. Appended at the current transcript end (the
+            # ask turn has settled), so it orders after the card's trailing prose and
+            # before the agent's reply that self.send kicks off next.
+            await record_activity(surface, "ask_answer", answer, ask_id=ask_id)
         await self.send(surface, answer, record_user=False)
 
     async def interrupt(self, surface: str) -> None:

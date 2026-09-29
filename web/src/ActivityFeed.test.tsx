@@ -412,9 +412,10 @@ describe("ActivityFeed", () => {
     expect(screen.getByText("Custom modal")).toBeInTheDocument();
     expect(screen.getByText("Native")).toBeInTheDocument(); // unchosen option still shown
     expect(screen.getByText(/answered/)).toBeInTheDocument();
-    // The submitted answer echoes as a right-aligned bubble — the visual break that
-    // marks the new turn (answering a picker creates no "user" entry on its own).
-    expect(screen.getByText("Approach: Custom modal")).toBeInTheDocument();
+    // The card itself no longer renders the answer bubble — that's a separate `ask_answer`
+    // transcript entry now (see the ask_answer tests below), so it can land below any
+    // same-turn prose the model wrote under the card.
+    expect(screen.queryByText("Approach: Custom modal")).toBeNull();
     // The option buttons are locked (disabled) — you can't re-answer.
     const chosenBtn = screen.getByText("Custom modal").closest("button")!;
     const otherBtn = screen.getByText("Native").closest("button")!;
@@ -425,5 +426,47 @@ describe("ActivityFeed", () => {
     expect(onAnswer).not.toHaveBeenCalled();
     fireEvent.click(otherBtn);
     expect(onAnswer).not.toHaveBeenCalled();
+  });
+
+  it("renders an ask_answer entry as a bubble below same-turn prose, in transcript order", () => {
+    const { container } = render(
+      <ActivityFeed
+        activity={[
+          { ...singleAsk, answer: "[1. Approach] answer: Custom modal" },
+          { kind: "text", text: "trailing prose under the card" },
+          { kind: "ask_answer", text: "[1. Approach] answer: Custom modal", ask_id: "ask-1" },
+        ]}
+      />,
+    );
+    // The bubble's summary is derived from the referenced card (by ask_id), not from the
+    // raw answer string stored on the entry.
+    const bubble = screen.getByText("Approach: Custom modal");
+    expect(bubble).toBeInTheDocument();
+    // Ordering: the answer bubble comes AFTER the trailing prose in the DOM, so it reads
+    // like the user's next prompt rather than wedging above the card's trailing text.
+    const prose = screen.getByText("trailing prose under the card");
+    expect(prose.compareDocumentPosition(bubble) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Right-aligned, like a typed prompt bubble.
+    expect(bubble.closest("li")!.className).toContain("items-end");
+    expect(container).toBeTruthy();
+  });
+
+  it("falls back to the raw answer text when the referenced card is missing", () => {
+    render(
+      <ActivityFeed
+        activity={[{ kind: "ask_answer", text: "my raw answer", ask_id: "gone" }]}
+      />,
+    );
+    // No card resolves for the ask_id, so the entry degrades to its stored text rather
+    // than vanishing.
+    expect(screen.getByText("my raw answer")).toBeInTheDocument();
+  });
+
+  it("renders nothing for an ask_answer entry with neither a summary nor text", () => {
+    const { container } = render(
+      <ActivityFeed activity={[{ kind: "ask_answer", text: "", ask_id: "gone" }]} />,
+    );
+    // Empty summary + empty fallback text → no bubble at all.
+    expect(container.querySelectorAll("li").length).toBe(0);
   });
 });

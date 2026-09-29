@@ -18,7 +18,7 @@ class ActivityEntry:
     # call, a run result, an inline artifact (kind="artifact": `html` is the page,
     # `text` its title), or an AskUserQuestion picker (kind="ask"). `summary` is a user
     # prompt's generated outline-rail label.
-    kind: str  # "user" | "text" | "tool" | "result" | "artifact" | "ask"
+    kind: str  # "user" | "text" | "tool" | "result" | "artifact" | "ask" | "ask_answer"
     text: str
     html: str | None = None
     summary: str | None = None
@@ -102,10 +102,15 @@ class ViewStore:
 
     def set_answer(self, surface: str, ask_id: str, answer: str) -> ActivityEntry | None:
         """Record the chosen value on the matching `ask` entry so it rides the connect
-        snapshot (the picker re-renders answered after a reload). Returns the matched
-        entry (so the caller can persist by its message_id), or None if not found."""
+        snapshot (the picker re-renders answered after a reload). Returns the entry only
+        when this call newly records the answer, so the caller appends the answer bubble
+        exactly once; returns None when no unanswered `ask` entry matches (not found, or a
+        duplicate answer for an already-answered picker — an idempotent no-op). Gated on
+        kind == "ask" because the answer bubble entry shares the same ask_id."""
         for entry in self.get_or_create(surface).activity:
-            if entry.ask_id == ask_id:
+            if entry.kind == "ask" and entry.ask_id == ask_id:
+                if entry.answer is not None:
+                    return None
                 entry.answer = answer
                 return entry
         return None
