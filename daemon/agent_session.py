@@ -37,6 +37,7 @@ from daemon.config import get_working_dir
 from daemon.mcp_server import (
     CVI_CHAT_SYSTEM_PROMPT,
     broadcast_answer,
+    broadcast_background_working,
     broadcast_prompt_summary,
     broadcast_thinking,
     broadcast_title,
@@ -284,17 +285,21 @@ class AgentSession:
         finally:
             # A session that ends (stream close, error, or shutdown) while it still
             # believes a background task is running means a completion notification was
-            # never observed. It's invisible to the user (no indicator), but this warning
-            # makes a leaked/zombie session detectable at daemon shutdown/restart — pair
-            # with `ps aux | grep '[c]laude'` for a live count. (A *pure* zombie never
-            # reaches here, since an outstanding task suppresses idle-close; catching it
-            # in real time would need a bounded-idle timer, deferred by design.)
+            # never observed. Clear the "working in background" indicator so a browser that
+            # reconnects to this surface isn't handed a phantom spinner by the connect
+            # snapshot (the flag lives on the process-global store, outliving the session),
+            # and log a warning so the leaked/zombie session stays detectable at daemon
+            # shutdown/restart — pair with `ps aux | grep '[c]laude'` for a live count. (A
+            # *pure* zombie never reaches here, since an outstanding task suppresses
+            # idle-close; catching it in real time would need a bounded-idle timer, deferred
+            # by design.)
             if self._tasks:
                 log.warning(
                     "agent session ending with %d background task(s) still outstanding",
                     len(self._tasks),
                     extra={"surface": self._surface, "outstanding": len(self._tasks)},
                 )
+                await broadcast_background_working(self._surface, False)
             self._registry._discard(self._surface, self)
 
     async def _serve(self, resume: str | None) -> object:
@@ -458,23 +463,30 @@ class AgentSession:
         """If ``message`` is a background-task lifecycle notification, update the internal
         running set and report True so callers skip relaying it to the transcript.
         task_started adds; task_notification (completed/failed/stopped) removes;
-        task_progress just keeps the entry present. The set isn't surfaced to the browser
-        — it exists only to keep the session alive while a task is outstanding (see
-        ``_await_work``'s idle-suppression). Returns False for any other message."""
+        task_progress just keeps the entry present. Keeps the session alive while a task is
+        outstanding (see ``_await_work``'s idle-suppression), and — on an empty↔non-empty
+        transition — drives the browser's "working in background" indicator. This is the
+        single chokepoint every relay path funnels task lifecycle through (foreground turn,
+        idle listener, background relay), so emitting the transition here covers them all.
+        Returns False for any other message."""
+        was_active = bool(self._tasks)
         if isinstance(message, TaskStartedMessage):
             self._tasks[message.task_id] = message.description
             # Stamp the launching prompt's epoch so a later reaction can tell whether it's
             # continuing the current prompt (foreground) or a prompt the user moved past.
             self._latest_task_epoch = self._prompt_epoch
-            return True
-        if isinstance(message, TaskProgressMessage):
+        elif isinstance(message, TaskProgressMessage):
             # No set change; ensure it's tracked in case task_started was missed.
             self._tasks.setdefault(message.task_id, message.description)
-            return True
-        if isinstance(message, TaskNotificationMessage):
+        elif isinstance(message, TaskNotificationMessage):
             self._tasks.pop(message.task_id, None)
-            return True
-        return False
+        else:
+            return False
+        # Emit only when the outstanding-set crosses empty↔non-empty, so a second
+        # concurrent task or a progress ping doesn't re-fire the indicator.
+        if bool(self._tasks) != was_active:
+            await broadcast_background_working(self._surface, bool(self._tasks))
+        return True
 
     async def _run_background_turn(
         self, client: ClaudeSDKClient, first: Any, *, background: bool = True

@@ -313,7 +313,11 @@ export function Surface({ surface }: { surface: string }) {
       <div className="shrink-0 border-t border-zinc-800">
         <div className="mx-auto max-w-3xl">
           <div className="flex items-center gap-3 px-2 py-1.5 text-xs text-zinc-400">
-            {busy ? <ThinkingIndicator active={view.thinking} /> : null}
+            {busy ? (
+              <ThinkingIndicator active={view.thinking} />
+            ) : view.background_working ? (
+              <ThinkingIndicator active label="working in background" />
+            ) : null}
             {connection !== "open" ? (
               <span className="flex items-center gap-1.5 text-amber-400/90">
                 <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-500" />

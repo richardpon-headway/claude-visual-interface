@@ -1124,6 +1124,93 @@ async def test_background_tasks_are_tracked_internally_and_not_relayed(monkeypat
     await reg.shutdown_all()
 
 
+async def test_outstanding_task_drives_the_background_working_indicator(monkeypatch):
+    # An outstanding background task surfaces to the browser as a persistent "working in
+    # background" state: it flips on when the first task starts, stays on while any task
+    # remains, and clears when the last finishes — and the WS event fires only on the
+    # empty↔non-empty transition (not once per task or per progress ping).
+    chat = sessions.create_chat_session()
+    store.get_or_create(chat).background_working = False
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: SharedIdleClient(options)
+    )
+    reg = AgentSessionRegistry()
+    ws = FakeWS()
+    hub.register(chat, ws)
+
+    def bg_state():
+        return store.get_or_create(chat).background_working
+
+    def bg_events():
+        return [m for m in ws.received if m["type"] == "background_working"]
+
+    try:
+        await reg.send(chat, "kick off a build")
+        await _wait_until(
+            lambda: bool(FakeClient.instances)
+            and FakeClient.instances[0].queried == ["kick off a build"]
+        )
+        client = FakeClient.instances[0]
+
+        # First task starts → indicator on, one broadcast.
+        client.push(_started("t1", "pnpm install"))
+        await _wait_until(lambda: bg_state() is True)
+        assert bg_events() == [
+            {"type": "background_working", "surface": chat, "payload": {"active": True}}
+        ]
+
+        # A second concurrent task keeps it on without re-firing (no new transition).
+        client.push(_started("t2", "vitest"))
+        await _wait_until(
+            lambda: reg._sessions[chat]._tasks == {"t1": "pnpm install", "t2": "vitest"}
+        )
+        assert bg_state() is True
+        assert len(bg_events()) == 1
+
+        # First of two finishing keeps it on (one still outstanding, no transition).
+        client.push(_finished("t1"))
+        await _wait_until(lambda: reg._sessions[chat]._tasks == {"t2": "vitest"})
+        assert bg_state() is True
+        assert len(bg_events()) == 1
+
+        # Last task finishing clears it → indicator off, one more broadcast.
+        client.push(_finished("t2"))
+        await _wait_until(lambda: bg_state() is False)
+        assert bg_events() == [
+            {"type": "background_working", "surface": chat, "payload": {"active": True}},
+            {"type": "background_working", "surface": chat, "payload": {"active": False}},
+        ]
+    finally:
+        hub.unregister(chat, ws)
+    await reg.shutdown_all()
+
+
+async def test_session_teardown_with_outstanding_task_clears_the_indicator(monkeypatch):
+    # If a session ends (shutdown / stream close / error) while a task is still outstanding,
+    # the "working in background" flag must be cleared from the process-global store —
+    # otherwise a browser reconnecting to the surface would inherit a phantom indicator from
+    # the connect snapshot (the store outlives the session).
+    chat = sessions.create_chat_session()
+    store.get_or_create(chat).background_working = False
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: SharedIdleClient(options)
+    )
+    reg = AgentSessionRegistry()
+
+    await reg.send(chat, "kick off a build")
+    await _wait_until(
+        lambda: bool(FakeClient.instances)
+        and FakeClient.instances[0].queried == ["kick off a build"]
+    )
+    FakeClient.instances[0].push(_started("t1", "pnpm install"))
+    await _wait_until(lambda: store.get_or_create(chat).background_working is True)
+
+    # Torn down with the task still outstanding — aclose awaits the run loop, so the
+    # teardown's clear has completed by the time shutdown_all returns.
+    await reg.shutdown_all()
+    assert store.get_or_create(chat).background_working is False
+
+
 async def test_outstanding_task_keeps_the_session_alive_past_idle(monkeypatch):
     # While a background task is running the idle timeout is suppressed — the session
     # stays open to observe the task's completion, then reaps once it's gone.

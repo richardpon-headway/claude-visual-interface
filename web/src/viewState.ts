@@ -37,6 +37,7 @@ export type ViewState = {
   surface: string;
   activity: ActivityEntry[]; // the conversation, oldest-first
   thinking: boolean; // an agent turn is in flight (drives the thinking indicator)
+  background_working: boolean; // ≥1 background task outstanding (drives the "working in background" indicator)
   session_output_tokens: number; // running session token totals across every LLM call
   session_input_tokens: number;
 };
@@ -55,6 +56,7 @@ export type WsMessage =
   | { type: "snapshot"; surface: string; payload: ViewState }
   | { type: "activity"; surface: string; payload: ActivityEntry }
   | { type: "thinking"; surface: string; payload: { active: boolean } }
+  | { type: "background_working"; surface: string; payload: { active: boolean } }
   | { type: "title"; surface: string; payload: { title: string } }
   | { type: "prompt_summary"; surface: string; payload: { index: number; text: string } }
   | { type: "tokens"; surface: string; payload: { output: number; input: number } }
@@ -64,6 +66,7 @@ const MESSAGE_TYPES = [
   "snapshot",
   "activity",
   "thinking",
+  "background_working",
   "title",
   "prompt_summary",
   "tokens",
@@ -75,6 +78,7 @@ export function emptyViewState(surface: string): ViewState {
     surface,
     activity: [],
     thinking: false,
+    background_working: false,
     session_output_tokens: 0,
     session_input_tokens: 0,
   };
@@ -113,6 +117,8 @@ export function applyMessage(state: SurfaceState, msg: WsMessage): SurfaceState 
       return { ...state, view: { ...state.view, activity: [...state.view.activity, msg.payload] } };
     case "thinking":
       return { ...state, view: { ...state.view, thinking: msg.payload.active } };
+    case "background_working":
+      return { ...state, view: { ...state.view, background_working: msg.payload.active } };
     case "title":
       return { ...state, title: msg.payload.title };
     case "tokens":

@@ -24,4 +24,17 @@ describe("ThinkingIndicator", () => {
     });
     expect(container.textContent).toMatch(/\(3s\)/);
   });
+
+  it("shows a fixed label instead of a cycling word when given one", () => {
+    const { container } = render(<ThinkingIndicator active={true} label="working in background" />);
+    expect(container.textContent).toContain("working in background");
+    expect(container.textContent).toMatch(/\(0s\)/);
+
+    // The label stays fixed even after the whimsical-word cycle interval (4s) elapses.
+    act(() => {
+      vi.advanceTimersByTime(6000);
+    });
+    expect(container.textContent).toContain("working in background");
+    expect(container.textContent).toMatch(/\(6s\)/);
+  });
 });

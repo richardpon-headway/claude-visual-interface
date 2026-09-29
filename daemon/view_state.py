@@ -52,6 +52,11 @@ class ViewState:
     # Whether an agent turn is currently in flight (drives the thinking indicator);
     # snapshot-carried so a browser connecting mid-turn sees it.
     thinking: bool = False
+    # Whether ≥1 background task is outstanding (drives the "working in background"
+    # indicator). Separate from `thinking`: the launching turn ends before the task
+    # finishes, so `thinking` is False during this window. Snapshot-carried so a browser
+    # that reloads mid-task still shows it.
+    background_working: bool = False
     # Running session token totals across every LLM call (turn + title + summary).
     # Seeded from the persisted token_usage rows on hydration (so they survive a daemon
     # restart) and accumulated live; snapshot-carried so a refresh keeps the count.
@@ -77,6 +82,9 @@ class ViewStore:
 
     def set_thinking(self, surface: str, active: bool) -> None:
         self.get_or_create(surface).thinking = active
+
+    def set_background_working(self, surface: str, active: bool) -> None:
+        self.get_or_create(surface).background_working = active
 
     def add_tokens(self, surface: str, output_tokens: int, input_tokens: int) -> tuple[int, int]:
         """Add one call's tokens to the running session totals; return the new totals."""
