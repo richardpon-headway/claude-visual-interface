@@ -1,0 +1,22 @@
+daemon/view_state.py
+  s_ce65a3a783dcf8::t_ef05c5353dda89 21,105-109,111-113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "57d2a45d79a3b895324a668cda94e4184b1f17e8",
+  "prompts": {},
+  "sessions": {
+    "s_ce65a3a783dcf8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "656723c8-5eac-4efc-b7dc-54d48c2318d1",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
