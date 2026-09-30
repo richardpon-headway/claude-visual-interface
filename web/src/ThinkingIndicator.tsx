@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 
+import { BRAILLE_FRAMES, SPINNER_TICK_MS } from "./braille";
+
 // A braille spinner + a cycling word + an elapsed-seconds counter, shown while an
 // agent turn is in flight — echoing the Claude CLI's "thinking" feel.
-const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const WORDS = ["Thinking", "Pondering", "Cogitating", "Noodling", "Mulling", "Ruminating"];
-const TICK_MS = 120;
 // The whimsical word changes only every few seconds (the spinner still ticks fast),
 // matching the Claude CLI's cadence.
 const WORD_INTERVAL_MS = 4000;
@@ -20,13 +20,13 @@ export function ThinkingIndicator({ active, label }: { active: boolean; label?: 
     if (!active) return;
     const start = Date.now();
     setElapsed(0);
-    const id = setInterval(() => setElapsed(Date.now() - start), TICK_MS);
+    const id = setInterval(() => setElapsed(Date.now() - start), SPINNER_TICK_MS);
     return () => clearInterval(id);
   }, [active]);
 
   if (!active) return null;
 
-  const frame = FRAMES[Math.floor(elapsed / TICK_MS) % FRAMES.length];
+  const frame = BRAILLE_FRAMES[Math.floor(elapsed / SPINNER_TICK_MS) % BRAILLE_FRAMES.length];
   const word = label ?? WORDS[Math.floor(elapsed / WORD_INTERVAL_MS) % WORDS.length];
   const seconds = Math.floor(elapsed / 1000);
 

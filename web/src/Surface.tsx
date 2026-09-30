@@ -8,6 +8,7 @@ import { activePromptId, promptLandmarks } from "./rail";
 import { BOTTOM_SLACK_PX, isNearBottom } from "./scroll";
 import { useSurfaceSocket } from "./useSurfaceSocket";
 import type { SendMessage } from "./useSurfaceSocket";
+import { useAnimatedTitle } from "./useAnimatedTitle";
 import { useTabTurnEndIndicator } from "./useTabTurnEndIndicator";
 
 // Click-to-edit session title in the header. The committed name is sent to the
@@ -108,16 +109,15 @@ export function Surface({ surface }: { surface: string }) {
     }
   }
 
-  // Mirror the inferred session title into the browser tab, prefixing waving hands
-  // when a turn ended while the tab wasn't looked at. Falls back to the surface id
-  // until a title is inferred, and restores the default on unmount.
-  useEffect(() => {
-    const base = title ?? surface;
-    document.title = turnEndUnseen ? `\u{1F44B}\u{1F44B}\u{1F44B} ${base}` : base;
-    return () => {
-      document.title = "Claude Visual Interface";
-    };
-  }, [title, surface, turnEndUnseen]);
+  // Mirror the inferred session title into the browser tab: a braille spinner while the
+  // session is working (foreground turn or a background task), the turn-end waving hands
+  // once it's idle-but-unseen, else the plain title. Falls back to the surface id until a
+  // title is inferred.
+  useAnimatedTitle(
+    title ?? surface,
+    view.thinking || view.background_working,
+    turnEndUnseen,
+  );
 
   // Hidden by default so the conversation gets full width (useful when running
   // several narrow CVI windows side by side). The ☰ button in the header shows it.
