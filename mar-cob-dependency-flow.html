@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MAR / COB — dependency flow</title>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#1a2130; --panel2:#151b28; --border:#2b3547;
+    --text:#e6ebf2; --muted:#93a1b5; --accent:#7aa2ff; --epic:#a48be0;
+    --done:#6fd7a8; --done-bg:rgba(47,158,107,.14); --done-bd:rgba(111,215,168,.35);
+    --prog:#f0c26b; --prog-bg:rgba(217,154,43,.15); --prog-bd:rgba(240,194,107,.4);
+    --back:#9aa7b8; --back-bg:rgba(255,255,255,.05); --back-bd:rgba(255,255,255,.14);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    padding:28px 30px 60px;}
+  h1{font-size:20px;margin:0 0 2px;letter-spacing:.2px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:20px}
+  .sub b{color:var(--text)}
+
+  .legend{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin:0 0 22px;font-size:12px;color:var(--muted)}
+  .legend .chip{margin-right:5px}
+
+  .chip{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid transparent;white-space:nowrap}
+  .chip.done{color:var(--done);background:var(--done-bg);border-color:var(--done-bd)}
+  .chip.prog{color:var(--prog);background:var(--prog-bg);border-color:var(--prog-bd)}
+  .chip.back{color:var(--back);background:var(--back-bg);border-color:var(--back-bd)}
+  .prio{display:inline-block;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:600;margin-left:4px}
+  .prio.med{color:#ffb4a6;background:rgba(229,90,70,.16);border:1px solid rgba(255,180,166,.35)}
+  .prio.low{color:#9aa7b8;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12)}
+
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:11px 13px;position:relative}
+  .card .top{display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap}
+  .id{font-weight:700;font-size:12.5px;color:var(--accent);font-variant-numeric:tabular-nums}
+  .pr{font-size:10.5px;font-weight:700;color:#0f1420;background:var(--accent);padding:1px 6px;border-radius:5px}
+  .ttl{font-weight:600;font-size:13px;margin:0 0 4px;line-height:1.35}
+  .desc{color:var(--muted);font-size:12px;line-height:1.5;margin:0}
+  .card.done{border-color:var(--done-bd)}
+  .card.prog{border-color:var(--prog-bd);box-shadow:0 0 0 1px rgba(240,194,107,.15)}
+
+  .epic{border:1px solid rgba(164,139,224,.5);background:linear-gradient(180deg,#20223a,#191d2c);
+    border-radius:14px;padding:14px 16px;margin-bottom:26px}
+  .epic .id{color:var(--epic)}
+  .epic .tag{font-size:10.5px;font-weight:700;color:#0f1420;background:var(--epic);padding:1px 7px;border-radius:5px}
+  .epic .ttl{font-size:15px}
+
+  .grid{display:grid;grid-template-columns:minmax(0,380px) 34px minmax(0,1fr);
+    row-gap:34px;column-gap:0;align-items:start}
+  .spine{grid-column:1;position:relative}
+  .spine:not(.last)::after{content:"";position:absolute;left:50%;bottom:-30px;transform:translateX(-50%);
+    width:2px;height:22px;background:linear-gradient(var(--border),var(--border))}
+  .spine:not(.last)::before{content:"\25BC";position:absolute;left:50%;bottom:-34px;transform:translateX(-50%);
+    color:var(--border);font-size:11px;line-height:1}
+  .rail{grid-column:3;position:relative;padding-left:14px}
+  .rail::before{content:"";position:absolute;left:-34px;top:22px;width:48px;height:2px;background:var(--border)}
+  .rail::after{content:"\25C0";position:absolute;left:-8px;top:15px;color:var(--border);font-size:11px}
+  .from{display:inline-block;font-size:10.5px;color:var(--muted);border:1px dashed var(--border);
+    border-radius:6px;padding:1px 7px;margin-bottom:7px}
+
+  .section-h{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);
+    margin:34px 0 14px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+
+  .band{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:760px){.band{grid-template-columns:1fr}.grid{grid-template-columns:1fr;row-gap:16px}
+    .spine:not(.last)::after,.spine:not(.last)::before,.rail::before,.rail::after{display:none}
+    .rail{grid-column:1;padding-left:0}}
+  .ext{display:flex;align-items:center;gap:10px;margin-top:10px;color:var(--muted);font-size:12px}
+  .ext .arrow{color:var(--border)}
+  .ext .extbox{border:1px dashed var(--border);border-radius:8px;padding:6px 10px;background:var(--panel2)}
+  .note{color:var(--muted);font-size:11.5px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+  <h1>MAR / COB — corrections recovery stream &middot; dependency flow</h1>
+  <div class="sub">Project <b>MAR / COB</b> (P-COR-1117) &middot; epic <b>COR-380</b> &middot; 20 issues &middot; 6 done, 3 in progress, 11 backlog</div>
+
+  <div class="legend">
+    <span><span class="chip done">Done</span></span>
+    <span><span class="chip prog">In progress</span></span>
+    <span><span class="chip back">Backlog</span></span>
+    <span>&#9474;</span>
+    <span>&#9660; stacked dependency</span>
+    <span>&#9664; branches from</span>
+  </div>
+
+  <div class="epic">
+    <div class="top"><span class="tag">EPIC</span><span class="id">COR-380</span><span class="chip back">Backlog</span></div>
+    <div class="ttl">COB corrections recovery stream (MAR/COB v1)</div>
+    <p class="desc">Event-driven Temporal workflow that replaces the manual weekly Foundry + Atlas COB ops loop with a per-claim, per-coverage stream (mirrors PCI/PENF). Triggers only on the <b>COORDINATION_OF_BENEFITS</b> subtype; ships flag-off + dry-run. First delivery of Foundry Deprecation Q3'26.</p>
+  </div>
+
+  <div class="section-h">Core delivery — stacked PR chain (PR1 &rarr; PR12)</div>
+  <div class="grid">
+
+    <div class="card done spine" style="grid-row:1">
+      <div class="top"><span class="pr">PR1</span><span class="id">COR-383</span><span class="chip done">Done</span></div>
+      <div class="ttl">Constants: stream, flags, decision tuple</div>
+      <p class="desc">The shared constants every later PR imports — the stream enum value, feature flags, and the decision tuple.</p>
+    </div>
+
+    <div class="card done spine" style="grid-row:2">
+      <div class="top"><span class="pr">PR2</span><span class="id">COR-384</span><span class="chip done">Done</span></div>
+      <div class="ttl">WITS channels + review-reason enum</div>
+      <p class="desc">WITS channel routing for the COB stream plus the review-reason enum surfaced on the queue cards.</p>
+    </div>
+
+    <div class="card done spine" style="grid-row:3">
+      <div class="top"><span class="pr">PR3</span><span class="id">COR-385</span><span class="chip done">Done</span></div>
+      <div class="ttl">Workflow scaffold + registration</div>
+      <p class="desc">The workflow package skeleton and all Temporal / HITL registration wiring.</p>
+    </div>
+
+    <div class="card done spine" style="grid-row:4">
+      <div class="top"><span class="pr">PR4</span><span class="id">COR-386</span><span class="chip done">Done</span></div>
+      <div class="ttl">Dispatch trigger (subtype-gated)</div>
+      <p class="desc">The subtype-gated dispatch that starts the workflow only for COB-classified claims.</p>
+    </div>
+
+    <div class="card done spine" style="grid-row:5">
+      <div class="top"><span class="pr">PR5</span><span class="id">COR-387</span><span class="chip done">Done</span></div>
+      <div class="ttl">Loop-guard lookup (secondary-FEC / COB history)</div>
+      <p class="desc">The loop-guard repository lookup — a shared primitive with no COB coupling.</p>
+    </div>
+
+    <div class="card done spine" style="grid-row:6">
+      <div class="top"><span class="pr">PR6</span><span class="id">COR-388</span><span class="chip done">Done</span></div>
+      <div class="ttl">Swap+refile remediation primitive</div>
+      <p class="desc">A new stream-agnostic swap+refile remediation primitive (flips primary&harr;secondary, refreshes eligibility, refiles).</p>
+    </div>
+
+    <div class="card prog spine" style="grid-row:7">
+      <div class="top"><span class="pr">PR7</span><span class="id">COR-389</span><span class="chip prog">In progress</span></div>
+      <div class="ttl">Core initial-action + loop guard &#9733; keystone</div>
+      <p class="desc">The core initial-action decision + loop guard for <b>CobRecoveryWorkflow</b> — the branch point most follow-ons build on.</p>
+    </div>
+
+    <div class="card back spine" style="grid-row:8">
+      <div class="top"><span class="pr">PR8</span><span class="id">COR-390</span><span class="chip back">Backlog</span></div>
+      <div class="ttl">30-day cure wait</div>
+      <p class="desc">The 30-day cure wait and its exit paths (upload &rarr; auto-refile, freeze lifted, new denials fan in, else recoup).</p>
+    </div>
+
+    <div class="card back spine" style="grid-row:9">
+      <div class="top"><span class="pr">PR9</span><span class="id">COR-391</span><span class="chip back">Backlog</span></div>
+      <div class="ttl">Recoup + deploy gate</div>
+      <p class="desc">The recoup path plus the Deploy-UI human-release gate.</p>
+    </div>
+
+    <div class="card back spine" style="grid-row:10">
+      <div class="top"><span class="pr">PR10</span><span class="id">COR-392</span><span class="chip back">Backlog</span></div>
+      <div class="ttl">Retag decision + auto-unfreeze</div>
+      <p class="desc">The retag manual-review decision plus auto-unfreeze when a claim is retagged out of COB.</p>
+    </div>
+
+    <div class="card back spine" style="grid-row:11">
+      <div class="top"><span class="pr">PR11</span><span class="id">COR-393</span><span class="chip back">Backlog</span></div>
+      <div class="ttl">CWQ surfacing (review reasons)</div>
+      <p class="desc">CWQ surfacing — the review reason + reviewer decision rendered on each queue card.</p>
+    </div>
+
+    <div class="card back spine last" style="grid-row:12">
+      <div class="top"><span class="pr">PR12</span><span class="id">COR-394</span><span class="chip back">Backlog</span></div>
+      <div class="ttl">Corrections sim + tests</div>
+      <p class="desc">The corrections sim workflow plus full scenario / integration test coverage.</p>
+    </div>
+
+    <div class="rail" style="grid-row:6">
+      <span class="from">&#8627; follow-up on PR6 &middot; COR-388</span>
+      <div class="card back">
+        <div class="top"><span class="id">COR-589</span><span class="chip back">Backlog</span><span class="prio med">Medium &middot; bug</span></div>
+        <div class="ttl">Swap+refile can't distinguish a blocked swap from a refile-guard block</div>
+        <p class="desc">The primitive returns a flat <b>(0,0,N)</b> for both a blocked swap and a swap-succeeded-but-refile-guard-blocked case, so the second is mislabeled <b>SWAP_FAILED</b> and wrongly sent to review. Add a marker so the caller can tell the stages apart.</p>
+      </div>
+    </div>
+
+    <div class="rail" style="grid-row:7">
+      <span class="from">&#8627; blocked by PR7 &middot; COR-389</span>
+      <div class="card prog">
+        <div class="top"><span class="id">COR-592</span><span class="chip prog">In progress</span></div>
+        <div class="ttl">Primary payer-brand exclusion gate &rarr; manual review</div>
+        <p class="desc">LaunchDarkly-gated exclusion: when the current-primary carrier is an excluded payer brand (Aetna first), skip auto swap/refile and route to <b>cob-manual-review</b> with reason <b>PRIMARY_PAYER_BRAND_EXCLUDED</b>. Holds Aetna out of automation during the COB spike.</p>
+      </div>
+    </div>
+
+    <div class="rail" style="grid-row:8">
+      <span class="from">&#8627; blocked by PR7 &middot; COR-389</span>
+      <div class="card back">
+        <div class="top"><span class="id">COR-593</span><span class="chip back">Backlog</span></div>
+        <div class="ttl">2h fan-in hold + already-in-desired-state refile-only</div>
+        <p class="desc">Hold a new case open ~2h to fan in a patient's trickling COB claims before acting, and add a "refile-only" initial action for a late claim whose coverage an earlier batch already put in the right order (instead of sending it to manual review).</p>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="section-h">Enhancements — business-hours gating (enhance the stream &middot; COR-380)</div>
+  <div class="band">
+    <div class="card back">
+      <div class="top"><span class="id">COR-596</span><span class="chip back">Backlog</span></div>
+      <div class="ttl">Gate COB recovery workflow actions to business hours</div>
+      <p class="desc">If a case starts outside business hours, sleep on a durable Temporal timer until the next window before performing any action (freeze, swap+refile), so member-facing communication doesn't fire at 2am.</p>
+    </div>
+    <div class="card back">
+      <div class="top"><span class="id">COR-597</span><span class="chip back">Backlog</span></div>
+      <div class="ttl">Gate patient/provider communications to business hours</div>
+      <p class="desc">The comms-focused slice of the same concern: defer the <b>AWAITING_COB_USER_ACTION</b> freeze emails until business hours. Overlaps COR-596 — likely reconciled into one gate.</p>
+    </div>
+  </div>
+  <div class="note">Both relate to the stream (COR-380) rather than blocking any PR; COR-597 is the communications-only scope of COR-596.</div>
+
+  <div class="section-h">Independent</div>
+  <div class="band">
+    <div class="card prog" style="max-width:520px">
+      <div class="top"><span class="id">COR-573</span><span class="chip prog">In progress</span><span class="prio low">Low</span></div>
+      <div class="ttl">CorrectionCase-closing task-runner supports COB</div>
+      <p class="desc">Give the case-closing task-runner a real close path for the <b>cob_recovery</b> stream — today COB is in the tool's out-of-scope list and returns NOT_IN_SCOPE. Low priority; confirm real demand first.</p>
+      <div class="ext"><span>real dependency:</span><span class="arrow">&#9472;&#9472;&#9654;</span><span class="extbox">COR-440 &middot; bulk external-resolution tool (outside this project)</span></div>
+    </div>
+  </div>
+
+</body>
+</html>
