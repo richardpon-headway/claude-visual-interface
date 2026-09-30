@@ -1,0 +1,50 @@
+web/src/ThinkingIndicator.tsx
+  s_475bde632e4720::t_409c4ac11004f9 3-4,23,29
+web/src/title.ts
+  s_24d3c4b471b577::t_2cb4011da40d7c 1-14
+web/src/useAnimatedTitle.ts
+  s_475bde632e4720::t_2477b0573e6285 1-36
+web/src/braille.ts
+  s_ba8272e2e6b752::t_1acf3bf7d40f02 1-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eac646e9aa7c0cd76e00699ad1ca468237c6d16d",
+  "prompts": {},
+  "sessions": {
+    "s_24d3c4b471b577": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8ac158ee-4b0d-4af2-8092-362d95603d92",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    },
+    "s_475bde632e4720": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5cd4a6f-73a5-4c1b-a7ab-42e82b72db6d",
+        "model": "unknown"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    },
+    "s_ba8272e2e6b752": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "caba5667-c1e4-4255-9dd7-e77b53e4ed17",
+        "model": "unknown"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
