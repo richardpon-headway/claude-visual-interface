@@ -1,0 +1,24 @@
+web/src/tabSpinner.test.ts
+  s_7ee37998505250::t_702e0077f0172f 3,5-17,19-23,27-30,34-35,38-40
+web/src/tabSpinner.ts
+  s_7ee37998505250::t_514c01cf8fd671 1-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "38163695e63155f5874402432dc2da4fb2af3fc4",
+  "prompts": {},
+  "sessions": {
+    "s_7ee37998505250": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bb10cdb1-4c5a-4510-aba2-ff34e56de94b",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
