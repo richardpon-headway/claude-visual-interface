@@ -2,20 +2,20 @@ import { useEffect, useState } from "react";
 
 import { SPINNER_TICK_MS } from "./braille";
 import { composeTitle } from "./title";
-import { TWINKLE_CYCLE, tabSpinnerFrame } from "./tabSpinner";
+import { SPINNER_CYCLE, tabSpinnerFrame } from "./tabSpinner";
 
 // Drive the browser-tab title: while the session is working, prefix a three-cell braille
-// twinkle; otherwise defer to composeTitle (turn-end waves, or the plain
+// comet; otherwise defer to composeTitle (turn-end waves, or the plain
 // base). Owns the single document.title write and the spinner interval, and restores the
 // default on unmount. The interval only runs while working, mirroring ThinkingIndicator.
 export function useAnimatedTitle(base: string, working: boolean, wavesUnseen: boolean): void {
   const [frameIndex, setFrameIndex] = useState(0);
 
-  // Advance the equalizer only while working; no timer runs when idle.
+  // Advance the comet only while working; no timer runs when idle.
   useEffect(() => {
     if (!working) return;
     setFrameIndex(0);
-    const id = setInterval(() => setFrameIndex((i) => (i + 1) % TWINKLE_CYCLE), SPINNER_TICK_MS);
+    const id = setInterval(() => setFrameIndex((i) => (i + 1) % SPINNER_CYCLE), SPINNER_TICK_MS);
     return () => clearInterval(id);
   }, [working]);
 
