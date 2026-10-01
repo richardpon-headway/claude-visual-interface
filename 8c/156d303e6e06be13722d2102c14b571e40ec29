@@ -1,0 +1,20 @@
+web/src/braille.ts
+  h_7b65865080601f 1-4
+web/src/tabEqualizer.test.ts
+  h_7b65865080601f 1-33
+web/src/tabEqualizer.ts
+  h_7b65865080601f 1-26
+web/src/useAnimatedTitle.ts
+  h_7b65865080601f 3,5,7-10,14,18,24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8c156d303e6e06be13722d2102c14b571e40ec29",
+  "prompts": {},
+  "humans": {
+    "h_7b65865080601f": {
+      "author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
