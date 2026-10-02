@@ -316,7 +316,7 @@ export function Surface({ surface }: { surface: string }) {
             {busy ? (
               <ThinkingIndicator active={view.thinking} />
             ) : view.background_working ? (
-              <ThinkingIndicator active label="working in background" />
+              <ThinkingIndicator active={view.background_working} label="working in background" />
             ) : null}
             {connection !== "open" ? (
               <span className="flex items-center gap-1.5 text-amber-400/90">

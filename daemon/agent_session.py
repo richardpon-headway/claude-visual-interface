@@ -45,7 +45,7 @@ from daemon.mcp_server import (
     build_agent_options,
     record_activity,
 )
-from daemon.view_state import ActivityEntry
+from daemon.view_state import ActivityEntry, store
 
 log = logging.getLogger(__name__)
 
@@ -70,13 +70,29 @@ _RETRY_MAX_DELAY = 30.0
 # permanently stuck one.
 _INTERRUPT_DRAIN_SECONDS = 5.0
 
+# While a background task is outstanding the session doesn't idle-close — it's waiting on
+# the task's progress/completion on the stream. But a completion notification can be
+# silently lost (a dropped frame, a task killed mid-flight), which would otherwise leave
+# the "working in background" indicator stuck on forever. So the wait is bounded in two
+# stages, each measured from the last stream activity (any task message resets the clock):
+#   1. after this much total silence, clear the visible indicator but keep the session and
+#      task alive — non-destructive, so if activity resumes the indicator re-arms;
+#   2. once dimmed, a further AGENT_IDLE_SECONDS of silence reaps the apparently-dead
+#      session through the normal idle-close path.
+# The clock resets on any activity, so only a genuinely silent task trips stage 1.
+_TASK_SPINNER_STALL_SECONDS = 180.0
+
 # Outcomes of an idle wait (see AgentSession._await_work), distinct from a ChatTurn.
-# _IDLE_TIMEOUT: nothing happened within the idle window (and no task is running) —
-# close the session. _HANDLED: an agent-initiated (background) message was consumed
-# this pass — loop again without running a user turn. Sentinel objects (not None,
-# which _recv_one uses for a closed stream).
+# _IDLE_TIMEOUT: nothing happened within the idle window (and no task is running, or a
+# dimmed task has now gone silent long enough to reap) — close the session. _HANDLED: an
+# agent-initiated (background) message was consumed this pass — loop again without running
+# a user turn. _STALLED: a task is outstanding but the stream went silent past the
+# spinner-stall window; the visible indicator was just cleared — loop again (like _HANDLED)
+# and keep waiting for the longer reap window. Sentinel objects (not None, which _recv_one
+# uses for a closed stream).
 _IDLE_TIMEOUT = object()
 _HANDLED = object()
+_STALLED = object()
 # _recv_one returns this when the SDK message stream has ended (client disconnected).
 _STREAM_END = object()
 # _RECONNECT: a reconnect was requested — _serve returns this so _run reopens the client
@@ -210,10 +226,18 @@ class AgentSession:
         self._reconnect_pending = False
         # Background tasks the CLI has told us are running (task_id -> description). A
         # launched `run_in_background` shell lands here on its task_started notification
-        # and is removed on task_notification (completed/failed/stopped). Not surfaced to
-        # the browser; tracked only to keep the session alive (idle-suppression) while any
-        # is outstanding, so a still-running task isn't killed by an idle-close.
+        # and is removed on task_notification (completed/failed/stopped). Drives the
+        # browser's "working in background" indicator (see `_set_indicator`) and keeps the
+        # session alive (idle-suppression) while any is outstanding, so a still-running
+        # task isn't killed by an idle-close.
         self._tasks: dict[str, str] = {}
+        # Last-broadcast state of the "working in background" indicator, so `_set_indicator`
+        # only emits on a real change.
+        self._indicator_on = False
+        # Set once the stream has gone silent past the spinner-stall window with a task
+        # still outstanding: the visible indicator is cleared but the task and session live
+        # on (see `_await_work`). Reset to False by any fresh task activity.
+        self._tasks_stalled = False
         # Prompt "epoch": a monotonic counter bumped on each real user prompt (not picker
         # answers). Together with `_latest_task_epoch` (the epoch of the most recently
         # launched background task) it tells a continuation from truly-detached activity:
@@ -240,6 +264,13 @@ class AgentSession:
         """True while the owner task is still consuming the queue. False once it has
         exited (idle timeout / error), so the registry won't enqueue onto a dead queue."""
         return not self._task.done()
+
+    @property
+    def background_indicator_active(self) -> bool:
+        """Whether the "working in background" indicator should currently show for this
+        session — the authoritative value the connect snapshot uses instead of the sticky
+        process-global store flag."""
+        return self._indicator_on
 
     def _options(self, resume: str | None) -> object:
         return build_agent_options(
@@ -270,12 +301,19 @@ class AgentSession:
                     await record_activity(
                         self._surface, "result", "could not resume prior session; starting fresh"
                     )
+                    # The old stream is gone; any outstanding task's completion can't arrive
+                    # on the fresh (unrelated) session, so reconcile now.
+                    await self._abandon_outstanding_tasks("session resume failed; starting fresh")
                     outcome = await self._serve(None)
                 if outcome is not _RECONNECT:
                     return
-                # Reconnect: reopen the client resuming the live conversation (or the
-                # original resume id if no turn has landed one yet), picking up
-                # freshly-read config + MCP tokens.
+                # Reconnect: the stream that would deliver outstanding tasks' completion
+                # notifications is being torn down, and a resumed session replays
+                # conversation state — not in-flight task lifecycle — so reconcile now rather
+                # than wait out the stall watchdog.
+                await self._abandon_outstanding_tasks("reconnecting; prior stream closed")
+                # Reopen the client resuming the live conversation (or the original resume id
+                # if no turn has landed one yet), picking up freshly-read config + MCP tokens.
                 resume = self._sdk_session_id or self._resume
         except asyncio.CancelledError:
             raise
@@ -283,23 +321,21 @@ class AgentSession:
             log.warning("agent session failed (surface=%s)", self._surface, exc_info=True)
             await record_activity(self._surface, "result", "session error")
         finally:
-            # A session that ends (stream close, error, or shutdown) while it still
-            # believes a background task is running means a completion notification was
-            # never observed. Clear the "working in background" indicator so a browser that
-            # reconnects to this surface isn't handed a phantom spinner by the connect
-            # snapshot (the flag lives on the process-global store, outliving the session),
-            # and log a warning so the leaked/zombie session stays detectable at daemon
-            # shutdown/restart — pair with `ps aux | grep '[c]laude'` for a live count. (A
-            # *pure* zombie never reaches here, since an outstanding task suppresses
-            # idle-close; catching it in real time would need a bounded-idle timer, deferred
-            # by design.)
+            # A session that ends (stream close, error, or shutdown) always clears the
+            # "working in background" indicator — the flag lives on the process-global store
+            # (outliving the session), so a reconnecting browser must never be handed a
+            # phantom spinner by the connect snapshot. If it ends while a task is still
+            # outstanding, a completion notification was never observed; log it so the
+            # leaked/zombie session stays detectable at daemon shutdown/restart — pair with
+            # `ps aux | grep '[c]laude'` for a live count. The stall watchdog in _await_work
+            # ensures a pure zombie now reaches here rather than suppressing idle-close forever.
             if self._tasks:
                 log.warning(
                     "agent session ending with %d background task(s) still outstanding",
                     len(self._tasks),
                     extra={"surface": self._surface, "outstanding": len(self._tasks)},
                 )
-                await broadcast_background_working(self._surface, False)
+            await self._set_indicator(False)
             self._registry._discard(self._surface, self)
 
     async def _serve(self, resume: str | None) -> object:
@@ -323,9 +359,11 @@ class AgentSession:
                     if work is _IDLE_TIMEOUT:
                         log.info("agent session idle, closing (surface=%s)", self._surface)
                         return None
-                    if work is _HANDLED or work is _RECONNECT:
-                        # _RECONNECT here is the wake marker that unblocked an idle wait; the
-                        # reconnect itself fires on the next loop via _reconnect_pending.
+                    if work is _HANDLED or work is _STALLED or work is _RECONNECT:
+                        # _STALLED: the spinner was just dimmed on a silent task — keep
+                        # waiting (for the reap window). _RECONNECT here is the wake marker
+                        # that unblocked an idle wait; the reconnect itself fires on the next
+                        # loop via _reconnect_pending.
                         continue
                     await self._run_turn(client, work)
             finally:
@@ -354,13 +392,28 @@ class AgentSession:
             return _HANDLED
         get_task = asyncio.create_task(self._queue.get())
         recv_task = asyncio.create_task(self._recv_one(client))
-        timeout = None if self._tasks else AGENT_IDLE_SECONDS
+        # No task outstanding → ordinary idle window. A task outstanding and not yet stalled
+        # → the short spinner-stall window. Already stalled (indicator cleared) → the longer
+        # reap window before the session idle-closes.
+        timeout = (
+            _TASK_SPINNER_STALL_SECONDS
+            if self._tasks and not self._tasks_stalled
+            else AGENT_IDLE_SECONDS
+        )
         done, _ = await asyncio.wait(
             {get_task, recv_task}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
         )
-        if not done:  # idle window elapsed with no task running → close the session
+        if not done:
             await self._cancel(get_task, recv_task)
-            return _IDLE_TIMEOUT
+            # A task is outstanding but the stream has gone silent. The first such window just
+            # dims the visible indicator — non-destructive: the task and session live on, and
+            # fresh activity re-arms it. A second, longer silent window then reaps the
+            # apparently-dead session via the normal idle-close path.
+            if self._tasks and not self._tasks_stalled:
+                self._tasks_stalled = True
+                await self._set_indicator(False)
+                return _STALLED
+            return _IDLE_TIMEOUT  # idle window elapsed (no task, or a dimmed task went quiet)
         if recv_task in done:
             # A stream message arrived. If a user turn also came off the queue in the
             # same wait, keep it for the next loop (the background turn goes first, which
@@ -459,33 +512,59 @@ class AgentSession:
             out, inp = token_usage.usage_tokens(message.usage)
             await self._record_usage("background", out, inp)
 
+    async def _set_indicator(self, on: bool) -> None:
+        """Broadcast the "working in background" indicator, but only when it actually
+        changes — so a second concurrent task, a progress ping, or a repeated clear doesn't
+        re-fire it. The single place the indicator is emitted."""
+        if on != self._indicator_on:
+            self._indicator_on = on
+            await broadcast_background_working(self._surface, on)
+
+    async def _abandon_outstanding_tasks(self, reason: str) -> None:
+        """Drop the outstanding-task set and clear the indicator at a point where those
+        tasks' completion notifications can no longer arrive — an interrupt whose drain we
+        gave up on, or a torn-down stream across a reconnect. Without this the tasks would
+        linger, suppressing idle-close and stranding the indicator on. No-op when nothing is
+        outstanding. (If such a task is in fact still alive, its next progress message
+        re-adds it via `_track_task_message` and the indicator re-arms.)"""
+        if not self._tasks:
+            return
+        log.warning(
+            "clearing %d outstanding background task(s): %s",
+            len(self._tasks),
+            reason,
+            extra={"surface": self._surface, "outstanding": len(self._tasks)},
+        )
+        self._tasks.clear()
+        self._tasks_stalled = False
+        await self._set_indicator(False)
+
     async def _track_task_message(self, message: Any) -> bool:
         """If ``message`` is a background-task lifecycle notification, update the internal
         running set and report True so callers skip relaying it to the transcript.
         task_started adds; task_notification (completed/failed/stopped) removes;
         task_progress just keeps the entry present. Keeps the session alive while a task is
-        outstanding (see ``_await_work``'s idle-suppression), and — on an empty↔non-empty
-        transition — drives the browser's "working in background" indicator. This is the
-        single chokepoint every relay path funnels task lifecycle through (foreground turn,
-        idle listener, background relay), so emitting the transition here covers them all.
-        Returns False for any other message."""
-        was_active = bool(self._tasks)
+        outstanding (see ``_await_work``'s idle-suppression) and drives the browser's
+        "working in background" indicator (via ``_set_indicator``). Any task activity also
+        ends a stall, re-arming a dimmed indicator. This is the single chokepoint every
+        relay path funnels task lifecycle through (foreground turn, idle listener, background
+        relay), so updating the indicator here covers them all. Returns False for any other
+        message."""
         if isinstance(message, TaskStartedMessage):
             self._tasks[message.task_id] = message.description
+            self._tasks_stalled = False  # fresh activity re-arms a dimmed indicator
             # Stamp the launching prompt's epoch so a later reaction can tell whether it's
             # continuing the current prompt (foreground) or a prompt the user moved past.
             self._latest_task_epoch = self._prompt_epoch
         elif isinstance(message, TaskProgressMessage):
             # No set change; ensure it's tracked in case task_started was missed.
             self._tasks.setdefault(message.task_id, message.description)
+            self._tasks_stalled = False  # fresh activity re-arms a dimmed indicator
         elif isinstance(message, TaskNotificationMessage):
             self._tasks.pop(message.task_id, None)
         else:
             return False
-        # Emit only when the outstanding-set crosses empty↔non-empty, so a second
-        # concurrent task or a progress ping doesn't re-fire the indicator.
-        if bool(self._tasks) != was_active:
-            await broadcast_background_working(self._surface, bool(self._tasks))
+        await self._set_indicator(bool(self._tasks) and not self._tasks_stalled)
         return True
 
     async def _run_background_turn(
@@ -690,6 +769,10 @@ class AgentSession:
                 "result after interrupt",
                 self._surface,
             )
+            # The terminal never arrived, so a task that launched in the interrupted turn
+            # won't report completion on this stream — abandon it rather than leave the
+            # indicator stranded on (it re-arms if the task is alive and pings again).
+            await self._abandon_outstanding_tasks("interrupt drain timed out")
 
     async def _record_usage(
         self, kind: str, output_tokens: int, input_tokens: int, message_id: int | None = None
@@ -865,6 +948,14 @@ class AgentSessionRegistry:
     def __init__(self) -> None:
         self._sessions: dict[str, AgentSession] = {}
 
+    def background_indicator(self, surface: str) -> bool:
+        """The live "working in background" truth for a surface: True only when a live
+        session currently has the indicator on. False when there's no live session (nothing
+        can be working), so a stale process-global flag can't survive a reconnect and hand a
+        browser a phantom spinner."""
+        session = self._sessions.get(surface)
+        return bool(session and session.is_live() and session.background_indicator_active)
+
     async def send(
         self,
         surface: str,
@@ -904,6 +995,12 @@ class AgentSessionRegistry:
                 resume=resume,
                 needs_title=needs_title,
             )
+            # A fresh session starts with no outstanding tasks; if a prior (leaked) session
+            # left the process-global "working in background" flag on, clear it now and push
+            # the correction to any connected browser. Gated so a normal create doesn't emit a
+            # redundant no-op event on every session spin-up.
+            if store.get_or_create(surface).background_working:
+                await broadcast_background_working(surface, False)
         self._sessions[surface].maybe_title(text)
         # The turn's user line is recorded when the turn runs (see _run_turn), not
         # here, so a message queued behind an in-flight turn can't appear above that
