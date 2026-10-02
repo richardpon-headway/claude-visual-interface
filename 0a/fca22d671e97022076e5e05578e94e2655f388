@@ -1,0 +1,20 @@
+daemon/agent_session.py
+  h_7b65865080601f 48,73-84,86-92,95,229-232,234-240,268-274,304-306,310-316,324-331,338,362-366,395-402,406,408-416,515-541,547-552,555,562,567,772-775,951-958,998-1003
+daemon/main.py
+  h_7b65865080601f 184-192,194
+tests/test_agent_session.py
+  h_7b65865080601f 15,964-975,1228-1230,1256-1410
+web/src/Surface.tsx
+  h_7b65865080601f 319
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0afca22d671e97022076e5e05578e94e2655f388",
+  "prompts": {},
+  "humans": {
+    "h_7b65865080601f": {
+      "author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
