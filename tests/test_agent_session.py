@@ -12,6 +12,7 @@ from claude_agent_sdk import (
     AssistantMessage,
     ResultMessage,
     TaskNotificationMessage,
+    TaskProgressMessage,
     TaskStartedMessage,
     TextBlock,
 )
@@ -960,6 +961,18 @@ def _finished(task_id, status="completed"):
     )
 
 
+def _progress(task_id, description="pnpm install"):
+    return TaskProgressMessage(
+        subtype="task_progress",
+        data={},
+        task_id=task_id,
+        description=description,
+        usage={},
+        uuid=f"u-{task_id}-prog",
+        session_id=SESSION,
+    )
+
+
 async def test_background_turn_surfaces_while_idle_and_is_marked(monkeypatch):
     # A completed background task wakes the agent into a turn the daemon never queried.
     # It must surface on its own (not wait for the next prompt) and be marked background,
@@ -1212,8 +1225,9 @@ async def test_session_teardown_with_outstanding_task_clears_the_indicator(monke
 
 
 async def test_outstanding_task_keeps_the_session_alive_past_idle(monkeypatch):
-    # While a background task is running the idle timeout is suppressed — the session
-    # stays open to observe the task's completion, then reaps once it's gone.
+    # While a background task is running the ordinary idle timeout gives way to the longer
+    # spinner-stall window — the session stays open well past the base idle window to observe
+    # the task's completion, then reaps once it's gone.
     _seed_session(SESSION, session_type="chat")
     store.get_or_create(SESSION).activity.clear()
     monkeypatch.setattr(agent_session, "AGENT_IDLE_SECONDS", 0.05)
@@ -1237,6 +1251,161 @@ async def test_outstanding_task_keeps_the_session_alive_past_idle(monkeypatch):
     # Once the task finishes, the idle timeout applies again and the session reaps.
     FakeClient.instances[0].push(_finished("t1"))
     await _wait_until(lambda: reg.active_surfaces() == [])
+
+
+async def test_silent_task_dims_the_indicator_but_keeps_the_session(monkeypatch):
+    # Stage 1 of the stall watchdog: a task that goes silent past the spinner-stall window
+    # clears the *visible* indicator but leaves the task and session alive — and fresh task
+    # activity re-arms the indicator.
+    chat = sessions.create_chat_session()
+    store.get_or_create(chat).background_working = False
+    monkeypatch.setattr(agent_session, "_TASK_SPINNER_STALL_SECONDS", 0.05)
+    monkeypatch.setattr(agent_session, "AGENT_IDLE_SECONDS", 10.0)  # keep the reap window long
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: SharedIdleClient(options)
+    )
+    reg = AgentSessionRegistry()
+
+    def bg_state():
+        return store.get_or_create(chat).background_working
+
+    await reg.send(chat, "kick off a build")
+    await _wait_until(
+        lambda: bool(FakeClient.instances)
+        and FakeClient.instances[0].queried == ["kick off a build"]
+    )
+    client = FakeClient.instances[0]
+    client.push(_started("t1", "pnpm install"))
+    await _wait_until(lambda: bg_state() is True)
+
+    # Goes silent past the spinner-stall window → the spinner dims, but the task and session
+    # survive (idle-close not triggered yet).
+    await _wait_until(lambda: bg_state() is False)
+    assert reg.active_surfaces() == [chat]
+    assert reg._sessions[chat]._tasks == {"t1": "pnpm install"}
+    assert reg._sessions[chat]._tasks_stalled is True
+
+    # Fresh activity re-arms the indicator.
+    client.push(_progress("t1", "pnpm install"))
+    await _wait_until(lambda: bg_state() is True)
+    assert reg._sessions[chat]._tasks_stalled is False
+
+    await reg.shutdown_all()
+
+
+async def test_silent_task_eventually_reaps_the_session(monkeypatch):
+    # Stage 2: once dimmed, continued silence reaps the apparently-dead session via the
+    # normal idle-close — so a lost completion notification can no longer wedge a zombie
+    # session with the indicator stuck on forever.
+    chat = sessions.create_chat_session()
+    store.get_or_create(chat).background_working = False
+    monkeypatch.setattr(agent_session, "_TASK_SPINNER_STALL_SECONDS", 0.05)
+    monkeypatch.setattr(agent_session, "AGENT_IDLE_SECONDS", 0.05)
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: SharedIdleClient(options)
+    )
+    reg = AgentSessionRegistry()
+
+    await reg.send(chat, "kick off a build")
+    await _wait_until(
+        lambda: bool(FakeClient.instances)
+        and FakeClient.instances[0].queried == ["kick off a build"]
+    )
+    FakeClient.instances[0].push(_started("t1", "pnpm install"))
+    await _wait_until(lambda: store.get_or_create(chat).background_working is True)
+
+    # No completion ever arrives → dim, then reap. The flag ends up cleared.
+    await _wait_until(lambda: reg.active_surfaces() == [])
+    assert store.get_or_create(chat).background_working is False
+
+
+async def test_interrupt_abandons_an_unfinished_task_and_clears_indicator(monkeypatch):
+    # When an interrupt's drain times out with a task still outstanding — its completion can
+    # no longer arrive on this stream — the task is abandoned and the indicator cleared,
+    # rather than left stranded on.
+    _seed_session(SESSION, session_type="chat")
+    store.get_or_create(SESSION).background_working = True
+    monkeypatch.setattr(agent_session, "_INTERRUPT_DRAIN_SECONDS", 0.05)
+    session = await _idle_session(monkeypatch)
+    session._tasks["t1"] = "pnpm install"
+    session._indicator_on = True
+
+    async def response():
+        await asyncio.Event().wait()  # never yields a terminal
+        yield  # pragma: no cover
+
+    await session._drain_interrupted(response())
+    assert session._tasks == {}
+    assert store.get_or_create(SESSION).background_working is False
+
+
+async def test_reconnect_abandons_outstanding_tasks_and_clears_indicator(monkeypatch):
+    # A reconnect tears down the stream that would have delivered a task's completion; the
+    # outstanding set is reconciled (and the indicator cleared) rather than carried into the
+    # fresh client where the notification can never arrive.
+    _seed_session(SESSION)
+    store.get_or_create(SESSION).activity.clear()
+    store.get_or_create(SESSION).background_working = False
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: SharedIdleClient(options)
+    )
+    reg = AgentSessionRegistry()
+
+    await reg.send(SESSION, "kick off a build")
+    await _wait_until(
+        lambda: bool(FakeClient.instances)
+        and FakeClient.instances[0].queried == ["kick off a build"]
+    )
+    FakeClient.instances[0].push(_started("t1", "pnpm install"))
+    await _wait_until(lambda: store.get_or_create(SESSION).background_working is True)
+
+    await reg.reconnect(SESSION)
+    await _wait_until(lambda: len(FakeClient.instances) == 2)
+
+    assert reg._sessions[SESSION]._tasks == {}
+    assert store.get_or_create(SESSION).background_working is False
+    await reg.shutdown_all()
+
+
+async def test_background_indicator_reflects_live_session_not_sticky_flag(monkeypatch):
+    # The connect snapshot derives "working in background" from the live session's real task
+    # state via registry.background_indicator — not the sticky store flag — so a reconnecting
+    # browser can't inherit a phantom spinner.
+    chat = sessions.create_chat_session()
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: SharedIdleClient(options)
+    )
+    reg = AgentSessionRegistry()
+
+    # No live session for the surface → False, even with a stale-true sticky flag.
+    store.get_or_create(chat).background_working = True
+    assert reg.background_indicator(chat) is False
+    assert reg.background_indicator("no-such-surface") is False
+
+    await reg.send(chat, "kick off a build")
+    await _wait_until(
+        lambda: bool(FakeClient.instances)
+        and FakeClient.instances[0].queried == ["kick off a build"]
+    )
+    FakeClient.instances[0].push(_started("t1", "pnpm install"))
+    await _wait_until(lambda: reg.background_indicator(chat) is True)
+
+    FakeClient.instances[0].push(_finished("t1"))
+    await _wait_until(lambda: reg.background_indicator(chat) is False)
+    await reg.shutdown_all()
+
+
+async def test_new_session_clears_a_stale_background_flag():
+    # Creating a fresh session for a surface proactively clears any stale "working in
+    # background" flag a prior (leaked) session left on the process-global store.
+    _seed_session(SESSION, session_type="chat")
+    store.get_or_create(SESSION).background_working = True
+    reg = AgentSessionRegistry()
+
+    await reg.send(SESSION, "hi")
+    # The create path broadcasts False synchronously before send returns.
+    assert store.get_or_create(SESSION).background_working is False
+    await reg.shutdown_all()
 
 
 async def _idle_session(monkeypatch):

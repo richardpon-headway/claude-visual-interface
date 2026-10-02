@@ -177,16 +177,21 @@ async def ws_surface(websocket: WebSocket, surface: str) -> None:
     the daemon stores so the pull primitives can read it back.
     """
     await websocket.accept()
-    hub.register(surface, websocket)
     try:
         # Load any persisted transcript before snapshotting so a conversation that
         # outlived a daemon restart replays on connect (no-op after the first connect).
-        # The snapshot send is inside the try so a client that vanishes mid-connect
-        # (a quick refresh) is handled like any disconnect — no unhandled error, and
-        # the finally still unregisters the dead socket.
         await hydrate_surface(surface)
+        # Capture the snapshot and register as a broadcast subscriber with no await between
+        # them, so a background_working event can't land in the gap and then be clobbered by
+        # a late snapshot. The "working in background" flag is taken from the live session
+        # (not the sticky store) so a leaked flag can't hand a reconnecting browser a phantom
+        # spinner. The send is inside the try so a client that vanishes mid-connect (a quick
+        # refresh) is handled like any disconnect — the finally still unregisters.
+        snap = store.snapshot(surface)
+        snap["background_working"] = agents.background_indicator(surface)
+        hub.register(surface, websocket)
         await websocket.send_json(
-            {"type": "snapshot", "surface": surface, "payload": store.snapshot(surface)}
+            {"type": "snapshot", "surface": surface, "payload": snap}
         )
         while True:
             await _handle_inbound(surface, await websocket.receive_text())
