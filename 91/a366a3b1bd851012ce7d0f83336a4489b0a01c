@@ -1,0 +1,22 @@
+mar-cob-dependency-flow.html
+  s_f5f623d807457e::t_6734489ab0838b 77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "91a366a3b1bd851012ce7d0f83336a4489b0a01c",
+  "prompts": {},
+  "sessions": {
+    "s_f5f623d807457e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67fccb8f-9416-432f-a284-e1ca68530b58",
+        "model": "unknown"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
