@@ -27,7 +27,7 @@ describe("setTurnEndFavicon", () => {
     const links = iconLinks();
     expect(links).toHaveLength(1); // idempotent: mutates the single link, never stacks
     const href = decodeURIComponent(links[0].href);
-    expect(href).toContain("#12ab66"); // base icon field
+    expect(href).toContain("#128656"); // base icon field
     expect(href).not.toContain("<circle");
   });
 
