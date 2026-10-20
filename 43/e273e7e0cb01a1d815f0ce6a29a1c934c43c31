@@ -1,0 +1,26 @@
+web/public/favicon.svg
+  s_96adb3ab0e1037::t_92a5a0743c2e0d 2-3
+web/src/favicon.test.ts
+  s_96adb3ab0e1037::t_e06f1729131445 30
+web/src/favicon.ts
+  s_96adb3ab0e1037::t_11fcb4e9002062 6,9-10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "43e273e7e0cb01a1d815f0ce6a29a1c934c43c31",
+  "prompts": {},
+  "sessions": {
+    "s_96adb3ab0e1037": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "63427aaf-aab5-43d9-95af-404737787e75",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
