@@ -3,11 +3,11 @@
 // so the badge stays visually consistent with the shipped web/public/favicon.svg.
 
 // Base icon markup, minus the closing tag so a badge can be appended before it.
-// Mirrors web/public/favicon.svg (green rounded square + light sparkle).
+// Mirrors web/public/favicon.svg (deep-green rounded square + light Headway arch).
 const BASE_ICON =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">' +
-  '<rect width="64" height="64" rx="13" fill="#12ab66"/>' +
-  '<path fill="#eafaf2" d="M32 6 C34 22 42 30 58 32 C42 34 34 42 32 58 C30 42 22 34 6 32 C22 30 30 22 32 6 Z"/>';
+  '<rect width="64" height="64" rx="13" fill="#128656"/>' +
+  '<path fill="#eafaf2" d="M51 40c0-10.5-8.5-19-19-19s-19 8.5-19 19c0 1.6.2 3.1.6 4.6h36.8c.4-1.5.6-3 .6-4.6z"/>';
 
 // A red dot with a light ring, tucked into the top-right corner so it reads over both
 // the green icon field and light/dark browser tab bars.
