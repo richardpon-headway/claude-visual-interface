@@ -26,6 +26,7 @@ _COLUMNS = (
     "images",
     "pastes",
     "background",
+    "verb",
     "created_at",
 )
 
@@ -43,6 +44,7 @@ def append_message(
     images: str | None = None,
     pastes: str | None = None,
     background: bool = False,
+    verb: str | None = None,
 ) -> int:
     """Append one transcript segment for a surface; return its new row id (used to
     fill in a prompt's summary later). `html` carries an artifact's page; `data` carries
@@ -51,7 +53,8 @@ def append_message(
     live on disk under the app-support `screenshots/` dir, not here); `pastes` carries a
     user turn's large pasted text blocks as a JSON array of strings, so each replays as its
     own collapsible chip; `background` marks a segment from an agent-initiated (background)
-    turn so its dimming + tag survive a reload.
+    turn so its dimming + tag survive a reload; `verb` carries a "doing" segment's short
+    process-lane chip ("reading", "searching", …) so it survives a reload, NULL otherwise.
 
     A user prompt (`kind == "user"`) resurfaces the session if it had been
     auto-archived — chatting in a chat should bring it back to the list. This fires on
@@ -60,9 +63,9 @@ def append_message(
     try:
         cursor = conn.execute(
             "INSERT INTO message "
-            "(surface, kind, text, html, data, images, pastes, background, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (surface, kind, text, html, data, images, pastes, int(background), _now_iso()),
+            "(surface, kind, text, html, data, images, pastes, background, verb, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (surface, kind, text, html, data, images, pastes, int(background), verb, _now_iso()),
         )
         conn.commit()
         message_id = int(cursor.lastrowid)

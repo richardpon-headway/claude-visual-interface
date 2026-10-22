@@ -50,6 +50,18 @@ def test_append_carries_pastes_json():
     assert row["pastes"] == '["first blob", "second blob"]'
 
 
+def test_append_carries_the_doing_verb():
+    mid = messages.append_message("s", "doing", "running the suite", verb="testing")
+    row = messages.list_messages("s")[0]
+    assert row["id"] == mid
+    assert row["verb"] == "testing"
+
+
+def test_append_defaults_verb_to_null():
+    messages.append_message("s", "text", "a normal reply")
+    assert messages.list_messages("s")[0]["verb"] is None
+
+
 def test_append_defaults_pastes_to_null():
     messages.append_message("s", "user", "no paste here")
     assert messages.list_messages("s")[0]["pastes"] is None
