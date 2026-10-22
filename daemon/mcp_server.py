@@ -92,6 +92,7 @@ def _entry_from_row(row: dict[str, Any]) -> ActivityEntry:
         answer=row.get("answer"),
         images=images,
         pastes=pastes,
+        verb=row.get("verb"),
     )
 
 
@@ -122,6 +123,7 @@ async def record_activity(
     background: bool = False,
     images: list[str] | None = None,
     pastes: list[str] | None = None,
+    verb: str | None = None,
 ):
     """Append a conversation segment on a surface and push it to subscribers; return
     the stored entry (callers that need to enrich it later — e.g. a prompt's summary —
@@ -129,10 +131,10 @@ async def record_activity(
     AskUserQuestion picker's payload; `background` marks a segment that belongs to an
     agent-initiated (background-task) turn; `images` carries a user turn's screenshot
     filenames (already written to disk); `pastes` carries a user turn's large pasted text
-    blocks (each renders as its own collapsible chip); each is omitted from the broadcast
-    otherwise."""
+    blocks (each renders as its own collapsible chip); `verb` carries a "doing" segment's
+    process-lane chip; each is omitted from the broadcast otherwise."""
     entry = store.append_activity(
-        surface, kind, text, html, ask_id, questions, background, images, pastes
+        surface, kind, text, html, ask_id, questions, background, images, pastes, verb
     )
     # Write the segment through to SQLite so the transcript survives a daemon restart;
     # hold the row id on the entry so a later summary (or a picker answer) can target it.
@@ -157,6 +159,7 @@ async def record_activity(
         images_json,
         pastes_json,
         background,
+        verb,
     )
     payload: dict[str, Any] = {"kind": kind, "text": text}
     if html is not None:
@@ -171,6 +174,8 @@ async def record_activity(
         payload["images"] = images
     if pastes:
         payload["pastes"] = pastes
+    if verb is not None:
+        payload["verb"] = verb
     await hub.broadcast(
         surface,
         {"type": "activity", "surface": surface, "payload": payload},
@@ -319,12 +324,34 @@ _ASK_PICKER_GUIDANCE = (
     "custom answer, if it is insufficient. Keep re-asking until nothing is open."
 )
 
+# The process-lane contract: everything that's about what YOU are doing (not something
+# for the reader) goes in a dim, set-apart lane the reader can skip — so reader-facing
+# content and your own narration never compete in the same visual channel.
+_DOING_GUIDANCE = (
+    "Separate what you want the reader to READ from a running account of what YOU are "
+    "DOING. Reader-facing content is the page or the short prose reply, per the rules "
+    "above. Your own process narration — what you're about to do, why, what you're "
+    "searching or reading or running, how you're deciding, a status update mid-task — "
+    "is NOT for the reader to study, so put it in the de-emphasized process lane instead "
+    "of plain prose. Wrap each such note in a <cvi-doing> tag with a short free-text verb "
+    "for the step: <cvi-doing verb=\"searching\">for where message kinds are defined"
+    "</cvi-doing>. The verb is whatever fits the moment — reading, searching, testing, "
+    "thinking, planning, patching, checking — and it varies step to step; the lane's "
+    "quiet identity stays constant, only the verb changes. Keep each note to a line or "
+    "two. The lane renders dim and visually subordinate, so use it freely for the "
+    "thinking-out-loud and progress chatter you'd otherwise drop — and keep the main "
+    "flow to pages and the occasional direct reply. A <cvi-doing> tag shown inside a "
+    "code block (teaching it) is never parsed, same as <cvi-artifact>. Do NOT put "
+    "reader-facing conclusions, answers, or anything you want remembered in the lane — "
+    "that belongs in a page or prose."
+)
+
 # The framing for a conversational session — the system prompt every chat agent runs.
 CVI_CHAT_SYSTEM_PROMPT = (
     "You are a Claude session with a visual surface: a single conversation the user "
     "reads top to bottom, where your answers and rendered HTML pages appear inline. "
-    f"{_RENDER_HTML_GUIDANCE} {_ASK_PICKER_GUIDANCE} You can read and edit files and run "
-    "commands, just like any Claude session."
+    f"{_RENDER_HTML_GUIDANCE} {_ASK_PICKER_GUIDANCE} {_DOING_GUIDANCE} You can read and "
+    "edit files and run commands, just like any Claude session."
 )
 
 

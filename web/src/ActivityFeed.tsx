@@ -713,6 +713,22 @@ function ActivityRow({
       </li>
     );
   }
+  // The process lane: Claude's own narration of what it's doing, set apart from
+  // reader-facing prose/artifacts. Rendered dim and visually subordinate so the eye can
+  // skip it — one constant quiet identity (gear + left rule), only the verb chip varies.
+  if (entry.kind === "doing") {
+    return (
+      <li className={`${PROSE} flex items-baseline gap-2 border-l-2 border-zinc-800 pl-3 text-xs text-zinc-500`}>
+        <span aria-hidden className="shrink-0 text-zinc-600">
+          ⚙
+        </span>
+        <span className="shrink-0 rounded bg-violet-950/40 px-1.5 py-0.5 font-mono text-[10px] text-violet-300/80">
+          {entry.verb || "doing"}
+        </span>
+        {entry.text ? <span className="min-w-0">{entry.text}</span> : null}
+      </li>
+    );
+  }
   // Tool calls and run results are compact, dim one-liners.
   const label = kindLabel(entry.kind);
   return (

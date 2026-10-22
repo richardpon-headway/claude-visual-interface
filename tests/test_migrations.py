@@ -48,6 +48,7 @@ def test_migrations_create_message_table(tmp_path):
         "images",
         "pastes",
         "background",
+        "verb",
         "created_at",
     }
 

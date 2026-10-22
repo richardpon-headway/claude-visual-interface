@@ -25,38 +25,46 @@ _MAX_SUMMARY = 120
 
 @dataclass
 class RenderSegment:
-    """One ordered piece of a text block: either prose (`kind="text"`) or a page the
-    model asked to render (`kind="artifact"`, carrying its `html` and optional `title`)."""
+    """One ordered piece of a text block: prose (`kind="text"`), a page the model asked
+    to render (`kind="artifact"`, carrying its `html` and optional `title`), or a
+    process-lane note (`kind="doing"`, carrying its narration in `text` and a short
+    `verb` chip)."""
 
     kind: str
     text: str = ""
     html: str = ""
     title: str = ""
+    verb: str = ""
 
 
 # Left-to-right scanner over a model text block. The alternation order matters: a
 # fenced code block and an inline code span are matched (and thus consumed) BEFORE the
-# artifact tag, so a `<cvi-artifact>` that appears inside code — a ```html example or a
-# `<cvi-artifact>` shown in prose while explaining the feature — is treated as literal
-# text and never rendered. A `<cvi-artifact>` with no closing tag simply doesn't match,
-# so a truncated page is never rendered either.
+# artifact/doing tags, so a `<cvi-artifact>` or `<cvi-doing>` that appears inside code —
+# a ```html example or a tag shown in prose while explaining the feature — is treated as
+# literal text and never rendered. A tag with no closing match simply doesn't match, so a
+# truncated page/note is never rendered either.
 _SEGMENT_SCANNER = re.compile(
     r"(?P<fence>```.*?```)"
     r"|(?P<inline>`[^`\n]*`)"
-    r"|(?P<artifact><cvi-artifact(?P<attrs>[^>]*)>(?P<html>.*?)</cvi-artifact>)",
+    r"|(?P<artifact><cvi-artifact(?P<attrs>[^>]*)>(?P<html>.*?)</cvi-artifact>)"
+    r"|(?P<doing><cvi-doing(?P<doing_attrs>[^>]*)>(?P<doing_body>.*?)</cvi-doing>)",
     re.DOTALL | re.IGNORECASE,
 )
 _TITLE_ATTR = re.compile(
     r"""title\s*=\s*(?P<q>["'])(?P<val>.*?)(?P=q)""", re.IGNORECASE
 )
+_VERB_ATTR = re.compile(
+    r"""verb\s*=\s*(?P<q>["'])(?P<val>.*?)(?P=q)""", re.IGNORECASE
+)
 
 
 def split_render_segments(text: str) -> list[RenderSegment]:
-    """Split a model text block into ordered prose/artifact segments. Each
+    """Split a model text block into ordered prose/artifact/doing segments. Each
     `<cvi-artifact …>…</cvi-artifact>` (outside any code span) becomes an `artifact`
-    segment; the surrounding prose becomes `text` segments, in reading order.
-    Whitespace-only prose is dropped. Text with no artifact tag yields at most one
-    `text` segment (or none, if blank)."""
+    segment and each `<cvi-doing …>…</cvi-doing>` a `doing` segment (its narration in
+    `text`, its chip in `verb`, defaulting to "doing"); the surrounding prose becomes
+    `text` segments, in reading order. Whitespace-only prose (or an empty note) is
+    dropped. Text with no tag yields at most one `text` segment (or none, if blank)."""
     segments: list[RenderSegment] = []
     buf: list[str] = []
 
@@ -80,6 +88,18 @@ def split_render_segments(text: str) -> list[RenderSegment]:
                     title=title_match.group("val") if title_match else "",
                 )
             )
+        elif m.group("doing") is not None:
+            flush_text()
+            verb_match = _VERB_ATTR.search(m.group("doing_attrs") or "")
+            body = m.group("doing_body").strip()
+            if body or verb_match:
+                segments.append(
+                    RenderSegment(
+                        kind="doing",
+                        text=body,
+                        verb=verb_match.group("val").strip() if verb_match else "doing",
+                    )
+                )
         else:
             # A code span (fenced or inline) — keep it verbatim as prose.
             buf.append(m.group(0))
@@ -132,15 +152,21 @@ async def relay_message_activity(
     if isinstance(message, AssistantMessage):
         for block in message.content:
             if isinstance(block, TextBlock):
-                # Sniff the reply for `<cvi-artifact>` pages and emit them as artifacts;
-                # everything else stays prose. Done here — before any log or persist —
-                # so raw HTML never floods the terminal or the text feed.
+                # Sniff the reply for `<cvi-artifact>` pages and `<cvi-doing>` process
+                # notes, emitting each as its own segment; everything else stays prose.
+                # Done here — before any log or persist — so raw HTML never floods the
+                # terminal or the text feed.
                 for seg in split_render_segments(block.text):
                     if seg.kind == "artifact":
                         detail = f" → {seg.title}" if seg.title else ""
                         log.info("[chat %s] artifact:%s", session_id, detail)
                         await render_html_on_surface(
                             session_id, seg.html, seg.title, background=background
+                        )
+                    elif seg.kind == "doing":
+                        log.info("[chat %s] doing[%s]: %s", session_id, seg.verb, seg.text)
+                        await record_activity(
+                            session_id, "doing", seg.text, verb=seg.verb, background=background
                         )
                     else:
                         log.info("[chat %s] %s", session_id, seg.text)

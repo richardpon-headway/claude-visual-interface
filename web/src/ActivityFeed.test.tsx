@@ -102,6 +102,21 @@ describe("ActivityFeed", () => {
     expect(srcdoc).toMatch(/background:\s*#09090b\s*!important/i);
   });
 
+  it("renders a doing note as its verb chip plus narration in the quiet lane", () => {
+    render(
+      <ActivityFeed
+        activity={[{ kind: "doing", text: "running the suite", verb: "testing" }]}
+      />,
+    );
+    expect(screen.getByText("testing")).toBeInTheDocument();
+    expect(screen.getByText("running the suite")).toBeInTheDocument();
+  });
+
+  it("falls back to the 'doing' chip when a note carries no verb", () => {
+    render(<ActivityFeed activity={[{ kind: "doing", text: "poking around" }]} />);
+    expect(screen.getByText("doing")).toBeInTheDocument();
+  });
+
   it("leaves a data-theme=\"light\" mockup in its own colors (no forced dark background)", () => {
     const html =
       '<html data-theme="light"><head></head><body style="background:#fff">mock</body></html>';

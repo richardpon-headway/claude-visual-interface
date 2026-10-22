@@ -26,6 +26,11 @@ class ActivityEntry:
     # model ran on its own after a background task finished, not a reply to a user
     # prompt. The browser marks these so they don't read as answers to something typed.
     background: bool = False
+    # For a "doing" entry: the short process-lane chip verb ("reading", "searching",
+    # "testing", "thinking", …). The lane is Claude's own narration of what it's doing,
+    # rendered dim and set apart from reader-facing prose/artifacts; the verb varies per
+    # segment while the lane's identity stays constant. None for every other kind.
+    verb: str | None = None
     # For an "ask" entry: the tool-use id (a stable handle the browser echoes back when
     # answering) and the structured AskUserQuestion `questions` payload to render as a
     # picker. `answer` is the user's chosen value, set once they pick.
@@ -126,6 +131,7 @@ class ViewStore:
         background: bool = False,
         images: list[str] | None = None,
         pastes: list[str] | None = None,
+        verb: str | None = None,
     ) -> ActivityEntry:
         activity = self.get_or_create(surface).activity
         entry = ActivityEntry(
@@ -137,6 +143,7 @@ class ViewStore:
             background=background,
             images=images,
             pastes=pastes,
+            verb=verb,
         )
         activity.append(entry)
         return entry

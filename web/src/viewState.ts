@@ -3,8 +3,9 @@
 // these in sync with daemon/view_state.py.
 
 // One conversation segment (mirrors daemon ActivityEntry): the user's prompt,
-// Claude's text, a tool call, a run result, or an inline artifact (kind "artifact":
-// `html` is the page, `text` its title).
+// Claude's text, a tool call, a run result, an inline artifact (kind "artifact":
+// `html` is the page, `text` its title), or a process-lane note (kind "doing":
+// `text` is the narration, `verb` its dim chip).
 // One option in an AskUserQuestion question, and a question itself (mirrors the
 // AskUserQuestion tool's `input.questions` shape).
 // `preview` is a self-contained HTML fragment rendered inline in the picker (in a
@@ -29,6 +30,7 @@ export type ActivityEntry = {
   answer?: string | null; // for an "ask" entry: the chosen value, once answered
   images?: string[] | null; // for a "user" entry: screenshot filenames (GET /screenshots/<name>)
   pastes?: string[] | null; // for a "user" entry: large pasted text blocks, each its own chip
+  verb?: string | null; // for a "doing" entry: the dim process-lane chip ("reading", "testing", …)
 };
 
 // Transient view state — mirrors daemon ViewState (store.snapshot): the conversation

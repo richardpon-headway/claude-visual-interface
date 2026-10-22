@@ -141,6 +141,39 @@ def test_split_accepts_a_single_quoted_title():
     assert [(s.kind, s.title) for s in segs] == [("artifact", "Design")]
 
 
+def test_split_extracts_a_doing_note_with_its_verb():
+    segs = split_render_segments('<cvi-doing verb="searching">for the scanner</cvi-doing>')
+    assert [(s.kind, s.verb, s.text) for s in segs] == [("doing", "searching", "for the scanner")]
+
+
+def test_split_doing_without_a_verb_defaults_to_doing():
+    segs = split_render_segments("<cvi-doing>poking around</cvi-doing>")
+    assert [(s.kind, s.verb, s.text) for s in segs] == [("doing", "doing", "poking around")]
+
+
+def test_split_interleaves_doing_prose_and_artifact_in_order():
+    segs = split_render_segments(
+        '<cvi-doing verb="reading">the renderer</cvi-doing>\n'
+        "Here's what I found:\n"
+        '<cvi-artifact title="X"><p>page</p></cvi-artifact>'
+    )
+    assert [(s.kind, s.verb or s.text or s.html) for s in segs] == [
+        ("doing", "reading"),
+        ("text", "Here's what I found:"),
+        ("artifact", "<p>page</p>"),
+    ]
+
+
+def test_split_ignores_a_doing_tag_inside_code():
+    segs = split_render_segments("wrap it in `<cvi-doing>` like this")
+    assert [s.kind for s in segs] == ["text"]
+    assert "<cvi-doing>" in segs[0].text
+
+
+def test_split_drops_an_empty_doing_note():
+    assert split_render_segments("<cvi-doing>   </cvi-doing>") == []
+
+
 def test_split_ignores_an_unclosed_tag():
     # A truncated page must never render.
     segs = split_render_segments("<cvi-artifact><p>never closed")
@@ -167,6 +200,15 @@ async def test_relay_marks_a_background_turn_artifact_as_background():
     )
     entry = store.get_or_create("relay-bg-artifact").activity[-1]
     assert (entry.kind, entry.html, entry.background) == ("artifact", "<p>done</p>", True)
+
+
+async def test_relay_records_a_doing_note_with_its_verb():
+    block = TextBlock(text='<cvi-doing verb="testing">running the suite</cvi-doing>')
+    await relay_message_activity(
+        "relay-doing", AssistantMessage(content=[block], model="test")
+    )
+    entry = store.get_or_create("relay-doing").activity[-1]
+    assert (entry.kind, entry.verb, entry.text) == ("doing", "testing", "running the suite")
 
 
 async def test_relay_records_ask_user_question_as_a_structured_ask_entry():
