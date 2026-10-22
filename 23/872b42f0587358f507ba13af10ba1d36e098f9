@@ -1,0 +1,22 @@
+tests/test_view_state.py
+  s_a8edbac847fbe1::t_73d3d2fa95906b 55,68,120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "23872b42f0587358f507ba13af10ba1d36e098f9",
+  "prompts": {},
+  "sessions": {
+    "s_a8edbac847fbe1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d23ac580-81d1-4165-8455-1b6f7ca79c50",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
