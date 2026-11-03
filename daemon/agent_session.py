@@ -264,12 +264,15 @@ class AgentSession:
 
     async def enqueue(self, turn: ChatTurn) -> None:
         """Queue a user turn for the owner task to run, and show it as pending. The turn
-        both goes on the transport queue and joins the visible pending list; the browser is
-        told the new queue right away so a message typed mid-turn appears immediately
-        (rather than only when it runs)."""
-        self._pending.append(turn)
+        goes on the transport queue; a *recording* turn (an actual typed message) also joins
+        the visible pending list and is broadcast right away, so a message typed mid-turn
+        appears immediately rather than only when it runs. A non-recording turn (a picker
+        answer, already shown on its card) is never shown as pending or made skippable — it
+        only arrives while the agent awaits the answer, so it runs straight through."""
         self._queue.put_nowait(turn)
-        await self._broadcast_pending()
+        if turn.record_user:
+            self._pending.append(turn)
+            await self._broadcast_pending()
 
     def pending_snapshot(self) -> list[dict[str, str]]:
         """The visible queue of not-yet-running turns, for the connect snapshot and every
@@ -661,12 +664,13 @@ class AgentSession:
         # Pending → running: this turn is leaving the queue to execute. If it was skipped
         # while pending, discard it here — the skip dropped it from the visible list but
         # couldn't remove it from the transport queue, so it still arrives and is dropped
-        # now (not recorded, not sent to the model). Either way the visible queue shrinks by
-        # this turn, so re-broadcast. Both branches run on the single event loop, so a skip
-        # and this pop can't interleave mid-mutation.
+        # now (not recorded, not sent to the model). Dropping it from the visible list (the
+        # normal case) shrinks the queue, so re-broadcast; a skipped turn was already dropped
+        # and broadcast by skip(), so there's nothing left to broadcast here. Both run on the
+        # single event loop, so a skip and this pop can't interleave mid-mutation.
         was_skipped = turn.turn_id in self._skipped
         self._skipped.discard(turn.turn_id)
-        if self._drop_pending(turn.turn_id) or was_skipped:
+        if self._drop_pending(turn.turn_id):
             await self._broadcast_pending()
         if was_skipped:
             return

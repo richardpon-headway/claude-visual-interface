@@ -307,6 +307,40 @@ async def test_skip_removes_a_pending_turn_and_it_never_runs(monkeypatch):
         await reg.shutdown_all()
 
 
+async def test_picker_answer_is_not_shown_as_a_pending_turn(monkeypatch):
+    # A non-recording turn (a picker answer, already shown on its card) runs through the
+    # queue but never appears in the visible pending list and isn't skippable.
+    _seed_session(SESSION)
+    store.get_or_create(SESSION).activity.clear()
+    _GatedFirstClient.release = asyncio.Event()
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: _GatedFirstClient(options)
+    )
+    ws = FakeWS()
+    hub.register(SESSION, ws)
+    reg = AgentSessionRegistry()
+    try:
+        await reg.send(SESSION, "first")
+        await _wait_until(lambda: _first_queried() == ["first"])
+        # Enqueued like a picker answer while the first turn is still held open.
+        await reg.send(SESSION, "my answer", record_user=False)
+        await asyncio.sleep(0.05)  # let any (unwanted) broadcast land
+
+        pending_texts = [
+            item["text"]
+            for m in ws.received
+            if m["type"] == "pending_queue"
+            for item in m["payload"]["items"]
+        ]
+        assert "my answer" not in pending_texts
+
+        _GatedFirstClient.release.set()
+        await _wait_until(lambda: _first_queried() == ["first", "my answer"])
+    finally:
+        hub.unregister(SESSION, ws)
+        await reg.shutdown_all()
+
+
 async def test_skip_of_unknown_or_dead_surface_is_a_noop():
     # Skipping an id that isn't pending (already running, already skipped, or never
     # existed), or a surface with no live session, is a harmless no-op.
