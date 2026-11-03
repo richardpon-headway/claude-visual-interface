@@ -1,0 +1,18 @@
+daemon/agent_session.py
+  h_7b65865080601f 23,41,123-125,212-221,265-270,272-299,661-672,1014-1016,1049-1067
+daemon/main.py
+  h_7b65865080601f 192-194,285-287,322-325
+daemon/mcp_server.py
+  h_7b65865080601f 255-267
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5bb88e098f9b7cb98306f9f4ecc6f7c2ba7ab9bf",
+  "prompts": {},
+  "humans": {
+    "h_7b65865080601f": {
+      "author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
