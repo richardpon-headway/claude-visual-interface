@@ -19,6 +19,10 @@ export type AskQuestion = {
   options: AskOption[];
 };
 
+// One not-yet-running user turn in the visible queue (mirrors the daemon's
+// pending_snapshot item): a stable id to skip it by, and a display label.
+export type PendingTurn = { id: string; text: string };
+
 export type ActivityEntry = {
   kind: string;
   text: string;
@@ -42,6 +46,7 @@ export type ViewState = {
   background_working: boolean; // ≥1 background task outstanding (drives the "working in background" indicator)
   session_output_tokens: number; // running session token totals across every LLM call
   session_input_tokens: number;
+  queue: PendingTurn[]; // not-yet-running user turns, in order (drives the pending list)
 };
 
 // The full client state for a surface: the live view, its title (null until known;
@@ -61,7 +66,8 @@ export type WsMessage =
   | { type: "background_working"; surface: string; payload: { active: boolean } }
   | { type: "title"; surface: string; payload: { title: string } }
   | { type: "tokens"; surface: string; payload: { output: number; input: number } }
-  | { type: "answer"; surface: string; payload: { id: string; answer: string } };
+  | { type: "answer"; surface: string; payload: { id: string; answer: string } }
+  | { type: "pending_queue"; surface: string; payload: { items: PendingTurn[] } };
 
 const MESSAGE_TYPES = [
   "snapshot",
@@ -71,6 +77,7 @@ const MESSAGE_TYPES = [
   "title",
   "tokens",
   "answer",
+  "pending_queue",
 ];
 
 export function emptyViewState(surface: string): ViewState {
@@ -81,6 +88,7 @@ export function emptyViewState(surface: string): ViewState {
     background_working: false,
     session_output_tokens: 0,
     session_input_tokens: 0,
+    queue: [],
   };
 }
 
@@ -112,7 +120,9 @@ export function parseMessage(raw: string): WsMessage | null {
 export function applyMessage(state: SurfaceState, msg: WsMessage): SurfaceState {
   switch (msg.type) {
     case "snapshot":
-      return { ...state, view: msg.payload };
+      // Default queue to [] so a daemon that predates the queue field doesn't leave it
+      // undefined (the rest of ViewState is always present on a snapshot).
+      return { ...state, view: { ...msg.payload, queue: msg.payload.queue ?? [] } };
     case "activity":
       return { ...state, view: { ...state.view, activity: [...state.view.activity, msg.payload] } };
     case "thinking":
@@ -138,5 +148,7 @@ export function applyMessage(state: SurfaceState, msg: WsMessage): SurfaceState 
       );
       return { ...state, view: { ...state.view, activity } };
     }
+    case "pending_queue":
+      return { ...state, view: { ...state.view, queue: msg.payload.items } };
   }
 }

@@ -34,6 +34,7 @@ describe("applyMessage", () => {
       background_working: false,
       session_output_tokens: 0,
       session_input_tokens: 0,
+      queue: [],
     });
   });
 
@@ -45,6 +46,7 @@ describe("applyMessage", () => {
       background_working: true,
       session_output_tokens: 0,
       session_input_tokens: 0,
+      queue: [],
     };
     let state = emptySurface("s");
     state = applyMessage(state, { type: "snapshot", surface: "s", payload: incoming });

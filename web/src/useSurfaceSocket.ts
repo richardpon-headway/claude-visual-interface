@@ -19,6 +19,8 @@ export type SendMessage = (
 export type StopAgent = () => void;
 // Submit an AskUserQuestion picker selection: the entry's ask id + the chosen value(s).
 export type SendAnswer = (askId: string, answer: string) => void;
+// Skip a still-pending queued turn by its id (no-op server-side once it's running).
+export type SendSkip = (id: string) => void;
 // Optimistically set the local starred flag (after POSTing star/unstar). No live
 // event exists in v1, so the caller owns the local flip.
 export type SetStarred = (next: boolean) => void;
@@ -31,8 +33,8 @@ const RECONNECT_MIN_MS = 500;
 const RECONNECT_MAX_MS = 5000;
 
 /**
- * Subscribe to a surface. Returns its full state, a `sendMessage`/`stop`/`sendAnswer`
- * trio that push over the socket, and the live `connection` state. The socket
+ * Subscribe to a surface. Returns its full state, a `sendMessage`/`stop`/`sendAnswer`/
+ * `sendSkip` set that push over the socket, and the live `connection` state. The socket
  * auto-reconnects with backoff after an unexpected close (e.g. a daemon restart), and
  * outbound `message`/`answer` frames sent while disconnected are queued and flushed in
  * order on reconnect — so a message typed during the gap is never lost. `stop` is
@@ -41,7 +43,7 @@ const RECONNECT_MAX_MS = 5000;
  */
 export function useSurfaceSocket(
   surface: string,
-): [SurfaceState, SendMessage, StopAgent, SendAnswer, Connection, SetStarred] {
+): [SurfaceState, SendMessage, StopAgent, SendAnswer, Connection, SetStarred, SendSkip] {
   const [state, setState] = useState<SurfaceState>(() => emptySurface(surface));
   const [connection, setConnection] = useState<Connection>("connecting");
   const wsRef = useRef<WebSocket | null>(null);
@@ -150,6 +152,13 @@ export function useSurfaceSocket(
     [enqueueOrSend],
   );
 
+  const sendSkip = useCallback<SendSkip>(
+    (id) => {
+      enqueueOrSend(JSON.stringify({ type: "skip", payload: { id } }));
+    },
+    [enqueueOrSend],
+  );
+
   const stop = useCallback<StopAgent>(() => {
     // Best-effort, not queued: a stop only makes sense against a live, open socket.
     const ws = wsRef.current;
@@ -163,5 +172,5 @@ export function useSurfaceSocket(
     setState((prev) => ({ ...prev, starred: next }));
   }, []);
 
-  return [state, sendMessage, stop, sendAnswer, connection, setStarred];
+  return [state, sendMessage, stop, sendAnswer, connection, setStarred, sendSkip];
 }
