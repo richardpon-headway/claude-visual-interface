@@ -20,6 +20,7 @@ import random
 from collections.abc import AsyncIterator, Coroutine
 from dataclasses import dataclass, field
 from typing import Any
+from uuid import uuid4
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -37,6 +38,7 @@ from daemon.mcp_server import (
     CVI_CHAT_SYSTEM_PROMPT,
     broadcast_answer,
     broadcast_background_working,
+    broadcast_pending_queue,
     broadcast_thinking,
     broadcast_title,
     broadcast_tokens,
@@ -118,6 +120,9 @@ class ChatTurn:
     images: list[ImageInput] = field(default_factory=list)
     pastes: list[str] = field(default_factory=list)
     record_user: bool = True
+    # A stable id stamped at construction, so the browser can skip a specific queued
+    # turn by id (not by a shifting position as the queue drains). Opaque to the model.
+    turn_id: str = field(default_factory=lambda: uuid4().hex)
 
     @property
     def combined_prompt(self) -> str:
@@ -204,6 +209,16 @@ class AgentSession:
         # Carries user turns plus the _RECONNECT wake marker (a reconnect request enqueues
         # it to unblock a between-turns idle wait).
         self._queue: asyncio.Queue[ChatTurn | object] = asyncio.Queue()
+        # The queued-but-not-yet-running user turns, in order — the authoritative source
+        # for the browser's visible pending list. A turn is appended here on enqueue and
+        # removed when it starts running (in _run_turn) or is skipped. Separate from the
+        # asyncio.Queue, which can't remove an arbitrary item and whose get() is load-bearing
+        # for the between-turns stream race (_await_work); the Queue stays the transport, this
+        # list is what we inspect/mutate/broadcast.
+        self._pending: list[ChatTurn] = []
+        # Ids skipped while still pending. The matching turn stays in the asyncio.Queue
+        # (which can't remove it), so it's discarded instead at pop time, in _run_turn.
+        self._skipped: set[str] = set()
         # The live client while a connection is open, so a concurrent caller can
         # interrupt the in-flight turn. `_turn_active` gates interrupt to a running
         # turn; `_interrupting` tells the relay loop to stop relaying once the SDK
@@ -247,8 +262,41 @@ class AgentSession:
         self._deferred: ChatTurn | None = None
         self._task = asyncio.create_task(self._run())
 
-    def enqueue(self, turn: ChatTurn) -> None:
+    async def enqueue(self, turn: ChatTurn) -> None:
+        """Queue a user turn for the owner task to run, and show it as pending. The turn
+        both goes on the transport queue and joins the visible pending list; the browser is
+        told the new queue right away so a message typed mid-turn appears immediately
+        (rather than only when it runs)."""
+        self._pending.append(turn)
         self._queue.put_nowait(turn)
+        await self._broadcast_pending()
+
+    def pending_snapshot(self) -> list[dict[str, str]]:
+        """The visible queue of not-yet-running turns, for the connect snapshot and every
+        pending broadcast. Image-only turns show a "[image]" marker rather than empty text."""
+        return [{"id": t.turn_id, "text": _turn_marker(t)} for t in self._pending]
+
+    async def _broadcast_pending(self) -> None:
+        await broadcast_pending_queue(self._surface, self.pending_snapshot())
+
+    def _drop_pending(self, turn_id: str) -> bool:
+        """Remove a turn from the visible pending list by id. Returns whether it was
+        present. Does not touch the transport queue (see _skipped)."""
+        before = len(self._pending)
+        self._pending = [t for t in self._pending if t.turn_id != turn_id]
+        return len(self._pending) != before
+
+    async def skip(self, turn_id: str) -> bool:
+        """Skip a still-pending queued turn: drop it from the visible list, mark its id so
+        the owner task discards it when it pops off the transport queue, and push the
+        shrunken queue to the browser. A no-op (returns False) once the turn has started
+        running or if the id is unknown — stopping a *running* turn is the separate
+        interrupt path (see ``interrupt``), never this."""
+        if not self._drop_pending(turn_id):
+            return False
+        self._skipped.add(turn_id)
+        await self._broadcast_pending()
+        return True
 
     def is_live(self) -> bool:
         """True while the owner task is still consuming the queue. False once it has
@@ -610,6 +658,18 @@ class AgentSession:
         A genuinely failed turn is still surfaced (P4) but keeps the session alive
         for the next message. The thinking flag brackets the whole turn (cleared in
         the finally) so the indicator never sticks on after success, error, or cancel."""
+        # Pending → running: this turn is leaving the queue to execute. If it was skipped
+        # while pending, discard it here — the skip dropped it from the visible list but
+        # couldn't remove it from the transport queue, so it still arrives and is dropped
+        # now (not recorded, not sent to the model). Either way the visible queue shrinks by
+        # this turn, so re-broadcast. Both branches run on the single event loop, so a skip
+        # and this pop can't interleave mid-mutation.
+        was_skipped = turn.turn_id in self._skipped
+        self._skipped.discard(turn.turn_id)
+        if self._drop_pending(turn.turn_id) or was_skipped:
+            await self._broadcast_pending()
+        if was_skipped:
+            return
         # Record the user's turn at execution time, not enqueue time, so the
         # transcript always pairs this prompt with the reply that follows it. A
         # message sent while a prior turn is still streaming stays queued (invisible)
@@ -951,8 +1011,9 @@ class AgentSessionRegistry:
         self._sessions[surface].maybe_title(text)
         # The turn's user line is recorded when the turn runs (see _run_turn), not
         # here, so a message queued behind an in-flight turn can't appear above that
-        # turn's answer.
-        self._sessions[surface].enqueue(
+        # turn's answer. The turn does show in the visible pending queue immediately
+        # (enqueue broadcasts it) so the user sees it waiting.
+        await self._sessions[surface].enqueue(
             ChatTurn(
                 text=text,
                 images=images or [],
@@ -984,6 +1045,25 @@ class AgentSessionRegistry:
         session = self._sessions.get(surface)
         if session is not None:
             await session.interrupt()
+
+    async def skip(self, surface: str, turn_id: str) -> bool:
+        """Skip a still-pending queued turn on the surface, removing it before it runs. A
+        no-op (returns False) when the surface has no live session, the turn has already
+        started running, or the id is unknown. Distinct from ``interrupt``, which stops the
+        turn that's already running."""
+        session = self._sessions.get(surface)
+        if session is None:
+            return False
+        return await session.skip(turn_id)
+
+    def pending_snapshot(self, surface: str) -> list[dict[str, str]]:
+        """The live queue of not-yet-running turns for a surface, for the connect snapshot.
+        Empty when there's no live session (nothing can be queued), mirroring how
+        ``background_indicator`` reads live truth rather than the sticky store."""
+        session = self._sessions.get(surface)
+        if session is None or not session.is_live():
+            return []
+        return session.pending_snapshot()
 
     async def reconnect(self, surface: str) -> None:
         """Reconnect the surface's live session — drop and reopen its client, resuming the

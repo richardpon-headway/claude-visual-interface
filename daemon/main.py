@@ -189,6 +189,9 @@ async def ws_surface(websocket: WebSocket, surface: str) -> None:
         # refresh) is handled like any disconnect — the finally still unregisters.
         snap = store.snapshot(surface)
         snap["background_working"] = agents.background_indicator(surface)
+        # The pending queue lives on the live session (not the sticky store), so seed it
+        # from there too — a browser reconnecting mid-queue sees the waiting turns.
+        snap["queue"] = agents.pending_snapshot(surface)
         hub.register(surface, websocket)
         await websocket.send_json(
             {"type": "snapshot", "surface": surface, "payload": snap}
@@ -279,8 +282,9 @@ async def _handle_inbound(surface: str, raw: str) -> None:
     """Apply a browser→daemon frame. `message` routes a chat turn to the surface's
     live agent session; `stop` aborts the agent's current work on the surface;
     `reconnect` drops and reopens the session's client (resuming the conversation) so it
-    re-attaches its MCP servers. Anything malformed or unknown is ignored (the socket
-    stays open)."""
+    re-attaches its MCP servers; `skip` drops a still-pending queued turn by id (distinct
+    from `stop`, which interrupts the running turn). Anything malformed or unknown is
+    ignored (the socket stays open)."""
     try:
         msg = json.loads(raw)
     except (ValueError, TypeError):
@@ -315,6 +319,10 @@ async def _handle_inbound(surface: str, raw: str) -> None:
         answer = payload.get("answer")
         if isinstance(ask_id, str) and isinstance(answer, str) and answer:
             await agents.answer(surface, ask_id, answer)
+    elif msg_type == "skip":  # drop a still-pending queued turn (not the running one)
+        turn_id = payload.get("id")
+        if isinstance(turn_id, str) and turn_id:
+            await agents.skip(surface, turn_id)
 
 
 def main() -> None:
