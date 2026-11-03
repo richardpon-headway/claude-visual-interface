@@ -1,18 +1,32 @@
 import { describe, expect, it } from "vitest";
 
-import { activePromptId, promptLandmarks } from "./rail";
+import { activePromptId, promptLandmarks, railLabel } from "./rail";
+
+describe("railLabel", () => {
+  it("returns short prompts unchanged", () => {
+    expect(railLabel("fix the parser")).toBe("fix the parser");
+  });
+
+  it("cuts to the first N characters", () => {
+    expect(railLabel("x".repeat(200), 80)).toBe("x".repeat(80));
+  });
+
+  it("keeps only the first line", () => {
+    expect(railLabel("first line\nsecond line")).toBe("first line");
+  });
+});
 
 describe("promptLandmarks", () => {
   it("derives one stable landmark per user prompt, in order", () => {
     const prompts = promptLandmarks([
-      { kind: "user", text: "first", summary: "the first ask" },
+      { kind: "user", text: "first" },
       { kind: "text", text: "answer" },
       { kind: "tool", text: "Bash" },
       { kind: "user", text: "second" },
     ]);
     expect(prompts).toEqual([
-      { id: "prompt-0", text: "first", summary: "the first ask" },
-      { id: "prompt-1", text: "second", summary: null },
+      { id: "prompt-0", text: "first" },
+      { id: "prompt-1", text: "second" },
     ]);
   });
 

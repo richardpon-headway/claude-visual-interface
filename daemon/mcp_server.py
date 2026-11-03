@@ -183,20 +183,6 @@ async def record_activity(
     return entry
 
 
-async def broadcast_prompt_summary(surface: str, index: int, summary: str) -> None:
-    """Push a generated one-line summary for the index-th user prompt so the outline
-    rail's label updates live. The summary is also set on the stored prompt entry by
-    the caller, so it rides the connect snapshot for a browser that joins later."""
-    await hub.broadcast(
-        surface,
-        {
-            "type": "prompt_summary",
-            "surface": surface,
-            "payload": {"index": index, "text": summary},
-        },
-    )
-
-
 async def broadcast_title(surface: str, title: str) -> None:
     """Push a generated session title to subscribers so the surface header updates
     live. Pure-broadcast: the title is persisted on the session row and seeded into a

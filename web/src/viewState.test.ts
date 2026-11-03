@@ -17,9 +17,6 @@ describe("parseMessage", () => {
     expect(parseMessage(JSON.stringify({ type: "title", surface: "s", payload: {} }))?.type).toBe(
       "title",
     );
-    expect(
-      parseMessage(JSON.stringify({ type: "prompt_summary", surface: "s", payload: {} }))?.type,
-    ).toBe("prompt_summary");
   });
 
   it("rejects malformed JSON and unknown types", () => {
@@ -117,17 +114,5 @@ describe("applyMessage", () => {
       payload: { id: "ask-9", answer: "Approach: Custom modal" },
     });
     expect(state.view.activity[0].answer).toBe("Approach: Custom modal");
-  });
-
-  it("attaches a prompt summary to the matching user prompt", () => {
-    let state = emptySurface("s");
-    state = applyMessage(state, { type: "activity", surface: "s", payload: { kind: "user", text: "first" } });
-    state = applyMessage(state, { type: "activity", surface: "s", payload: { kind: "text", text: "answer" } });
-    state = applyMessage(state, { type: "activity", surface: "s", payload: { kind: "user", text: "second" } });
-    state = applyMessage(state, { type: "prompt_summary", surface: "s", payload: { index: 1, text: "the second ask" } });
-
-    const users = state.view.activity.filter((e) => e.kind === "user");
-    expect(users[0].summary).toBeUndefined();
-    expect(users[1].summary).toBe("the second ask");
   });
 });

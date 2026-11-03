@@ -4,8 +4,16 @@
 
 import type { ActivityEntry } from "./viewState";
 
-export type Prompt = { id: string; text: string; summary: string | null };
+export type Prompt = { id: string; text: string };
 export type PromptPos = { id: string; top: number };
+
+// The outline-rail row label: the prompt's own first line, cut to `limit` characters.
+// CVI no longer generates AI summaries for the rail — the label is just the prompt's
+// leading text.
+export function railLabel(text: string, limit = 80): string {
+  const firstLine = text.split("\n", 1)[0] ?? "";
+  return firstLine.slice(0, limit);
+}
 
 // One landmark per user prompt, in order. The id is stable for the surface lifetime
 // (the Nth user prompt is always `prompt-N`), so the rail and the rendered anchors
@@ -15,7 +23,7 @@ export function promptLandmarks(activity: ActivityEntry[]): Prompt[] {
   let n = 0;
   for (const entry of activity) {
     if (entry.kind === "user") {
-      prompts.push({ id: `prompt-${n}`, text: entry.text, summary: entry.summary ?? null });
+      prompts.push({ id: `prompt-${n}`, text: entry.text });
       n += 1;
     }
   }

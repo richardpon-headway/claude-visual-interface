@@ -17,7 +17,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-from collections import deque
 from collections.abc import AsyncIterator, Coroutine
 from dataclasses import dataclass, field
 from typing import Any
@@ -31,21 +30,20 @@ from claude_agent_sdk import (
     TaskStartedMessage,
 )
 
-from daemon import messages, screenshots, session_sidecar, sessions, titles, token_usage
+from daemon import screenshots, session_sidecar, sessions, titles, token_usage
 from daemon.activity_relay import relay_message_activity
 from daemon.config import get_working_dir
 from daemon.mcp_server import (
     CVI_CHAT_SYSTEM_PROMPT,
     broadcast_answer,
     broadcast_background_working,
-    broadcast_prompt_summary,
     broadcast_thinking,
     broadcast_title,
     broadcast_tokens,
     build_agent_options,
     record_activity,
 )
-from daemon.view_state import ActivityEntry, store
+from daemon.view_state import store
 
 log = logging.getLogger(__name__)
 
@@ -203,14 +201,6 @@ class AgentSession:
         # titling attempt resolves, so we stop spawning title calls per message.
         self._needs_title = needs_title
         self._title_tasks: set[asyncio.Task[None]] = set()
-        # Titling window: the most recent user messages, fed newest-first to the initial
-        # titling attempt. Accumulates only while the chat is untitled; once titled, the
-        # title is frozen (no refresh), so the window is never consulted again.
-        self._recent_user_msgs: deque[str] = deque(maxlen=titles.TITLE_WINDOW_MESSAGES)
-        # Per-prompt outline-rail summaries: a monotonic prompt counter (the rail's
-        # `prompt-N` index) and the in-flight summary tasks.
-        self._prompt_count = 0
-        self._summary_tasks: set[asyncio.Task[None]] = set()
         # Carries user turns plus the _RECONNECT wake marker (a reconnect request enqueues
         # it to unblock a between-turns idle wait).
         self._queue: asyncio.Queue[ChatTurn | object] = asyncio.Queue()
@@ -652,10 +642,6 @@ class AgentSession:
                 images=image_names or None,
                 pastes=turn.pastes or None,
             )
-            # Generate this prompt's one-line outline-rail summary in the background.
-            index = self._prompt_count
-            self._prompt_count += 1
-            self._summarize_prompt(index, entry, turn.text)
             prompt_message_id = entry.message_id
         await broadcast_thinking(self._surface, True)
         self._turn_active = True
@@ -845,41 +831,34 @@ class AgentSession:
         await record_activity(self._surface, "result", "reconnecting…")
 
     def maybe_title(self, text: str) -> None:
-        """Title an untitled chat off its accumulated user messages, then freeze it.
-        Image-only turns (no text) are skipped, so they don't advance the window. While
-        the chat is still untitled, each text-bearing message kicks off a titling attempt
-        off the recent-message window (newest-first), retrying on every prompt until one
-        lands. Once titled, the title is frozen — never refreshed. Fire-and-forget: never
-        blocks the turn."""
+        """Title an untitled chat from its first text-bearing prompt: the prompt's own
+        first characters (see titles.truncate_label). Image-only turns (no text) are
+        skipped so they don't consume the one-shot. Once set, the title is frozen —
+        never refreshed — and a manual rename always overrides it. Fire-and-forget:
+        never blocks the turn."""
         if not text or not self._needs_title:
             return
-        self._recent_user_msgs.append(text)
-        # Snapshot the window now, at the prompt, so the attempt titles from the window
-        # as of this message — not whatever it's grown to when the task happens to run.
-        self._spawn_title_task(self._run_titling(self._title_input()))
+        # Flip the flag synchronously (before any await) so a rapid second prompt can't
+        # also title the chat — the first prompt wins.
+        self._needs_title = False
+        self._spawn_title_task(self._apply_title(text))
 
     def _spawn_title_task(self, coro: Coroutine[Any, Any, None]) -> None:
         task = asyncio.create_task(coro)
         self._title_tasks.add(task)
         task.add_done_callback(self._title_tasks.discard)
 
-    def _title_input(self) -> str:
-        """The recent-message window fed to the title call, newest-first so generate()'s
-        length cap preserves the most recent context."""
-        return "\n".join(reversed(self._recent_user_msgs))
-
-    async def _run_titling(self, title_input: str) -> None:
+    async def _apply_title(self, text: str) -> None:
+        """Persist the derived title and push it live. Best-effort; a failure leaves the
+        chat on its default title (not retried — the title is one-shot by design)."""
         try:
-            result = await titles.generator.generate(title_input)
-            await self._record_usage("title", result.output_tokens, result.input_tokens)
-            if not result.title:
-                return  # leave _needs_title set — retried on the next message
-            # The title is resolved now (this attempt or a concurrent one), so stop
-            # spawning more. The conditional write keeps the first successful attempt:
-            # only the one that actually changed the row broadcasts the live update.
-            self._needs_title = False
+            title = titles.truncate_label(text, titles.TITLE_MAX_CHARS)
+            if not title:
+                return
+            # Conditional write keeps a manual title that may have landed first: only a
+            # write that actually changed the row broadcasts the live update.
             changed = await asyncio.to_thread(
-                sessions.set_generated_title, self._surface, result.title
+                sessions.set_generated_title, self._surface, title
             )
             if changed:
                 await self._broadcast_effective_title()
@@ -899,40 +878,8 @@ class AgentSession:
             # Title just changed — refresh the token-monitor sidecar's label.
             await asyncio.to_thread(session_sidecar.update_sidecar_for_session, self._surface)
 
-    def _summarize_prompt(self, index: int, entry: ActivityEntry, text: str) -> None:
-        """Kick off a background one-line summary for the index-th user prompt, used
-        as its outline-rail label. Fire-and-forget; image-only turns (no text) are
-        skipped (the rail falls back to the prompt text)."""
-        if not text:
-            return
-        task = asyncio.create_task(self._run_summary(index, entry, text))
-        self._summary_tasks.add(task)
-        task.add_done_callback(self._summary_tasks.discard)
-
-    async def _run_summary(self, index: int, entry: ActivityEntry, text: str) -> None:
-        try:
-            result = await titles.summarizer.generate(text)
-            await self._record_usage(
-                "summary", result.output_tokens, result.input_tokens, entry.message_id
-            )
-            summary = result.title
-            if not summary:
-                return
-            entry.summary = summary  # rides the connect snapshot for late joiners
-            if entry.message_id is not None:
-                # Persist the summary onto its already-written row so the rail label
-                # survives a restart, not just this live broadcast.
-                await asyncio.to_thread(
-                    messages.set_message_summary, entry.message_id, summary
-                )
-            await broadcast_prompt_summary(self._surface, index, summary)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            log.warning("prompt summary failed (surface=%s)", self._surface, exc_info=True)
-
     async def aclose(self) -> None:
-        for task in (*self._title_tasks, *self._summary_tasks):
+        for task in self._title_tasks:
             task.cancel()
         self._task.cancel()
         try:

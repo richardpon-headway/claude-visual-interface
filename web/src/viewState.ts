@@ -60,7 +60,6 @@ export type WsMessage =
   | { type: "thinking"; surface: string; payload: { active: boolean } }
   | { type: "background_working"; surface: string; payload: { active: boolean } }
   | { type: "title"; surface: string; payload: { title: string } }
-  | { type: "prompt_summary"; surface: string; payload: { index: number; text: string } }
   | { type: "tokens"; surface: string; payload: { output: number; input: number } }
   | { type: "answer"; surface: string; payload: { id: string; answer: string } };
 
@@ -70,7 +69,6 @@ const MESSAGE_TYPES = [
   "thinking",
   "background_working",
   "title",
-  "prompt_summary",
   "tokens",
   "answer",
 ];
@@ -138,17 +136,6 @@ export function applyMessage(state: SurfaceState, msg: WsMessage): SurfaceState 
       const activity = state.view.activity.map((e) =>
         e.kind === "ask" && e.ask_id === id ? { ...e, answer } : e,
       );
-      return { ...state, view: { ...state.view, activity } };
-    }
-    case "prompt_summary": {
-      // Attach the summary to the index-th user prompt (the rail's `prompt-N`).
-      const { index, text } = msg.payload;
-      let n = -1;
-      const activity = state.view.activity.map((e) => {
-        if (e.kind !== "user") return e;
-        n += 1;
-        return n === index ? { ...e, summary: text } : e;
-      });
       return { ...state, view: { ...state.view, activity } };
     }
   }
