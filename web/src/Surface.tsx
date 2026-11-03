@@ -4,7 +4,7 @@ import { ActivityFeed } from "./ActivityFeed";
 import { ChatInput } from "./ChatInput";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { ThinkingIndicator } from "./ThinkingIndicator";
-import { activePromptId, promptLandmarks } from "./rail";
+import { activePromptId, promptLandmarks, railLabel } from "./rail";
 import { BOTTOM_SLACK_PX, isNearBottom } from "./scroll";
 import { useSurfaceSocket } from "./useSurfaceSocket";
 import type { SendMessage } from "./useSurfaceSocket";
@@ -274,7 +274,7 @@ export function Surface({ surface }: { surface: string }) {
                   active === p.id ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:bg-zinc-900"
                 }`}
               >
-                {p.summary ?? p.text}
+                {railLabel(p.text)}
               </button>
             ))}
           </nav>

@@ -17,7 +17,7 @@ from claude_agent_sdk import (
     TextBlock,
 )
 
-from daemon import agent_session, config, messages, sessions, titles, token_usage
+from daemon import agent_session, config, messages, sessions, token_usage
 from daemon.agent_session import AgentSessionRegistry
 from daemon.db import apply_migrations_sync, open_db
 from daemon.hub import hub
@@ -33,13 +33,6 @@ class FakeWS:
     async def send_json(self, data) -> None:
         self.received.append(data)
 
-
-class _NoTitleGen:
-    """The default titling generator in tests: never produces a title, so existing
-    tests incur no title side-effects and open no second SDK client."""
-
-    async def generate(self, message):
-        return titles.TitleResult(None)
 
 SESSION = "chat-session"
 
@@ -134,10 +127,6 @@ async def _wait_until(predicate, limit=1.0):
 def fake_client(monkeypatch):
     FakeClient.instances.clear()
     monkeypatch.setattr(agent_session, "ClaudeSDKClient", lambda options=None: FakeClient(options))
-    # Neutralize auto-titling and prompt-summaries by default; tests that exercise
-    # them inject their own generator/summarizer.
-    monkeypatch.setattr(titles, "generator", _NoTitleGen())
-    monkeypatch.setattr(titles, "summarizer", _NoTitleGen())
 
 
 async def test_first_message_starts_a_session_records_user_and_relays_reply():
@@ -1577,66 +1566,33 @@ async def test_records_its_sdk_session_id_then_resumes_it_next_time(monkeypatch)
     await reg2.shutdown_all()
 
 
-class _FixedTitleGen:
-    """Always returns a fixed title; counts calls."""
-
-    def __init__(self, title="Generated Title"):
-        self._title = title
-        self.calls = 0
-
-    async def generate(self, message):
-        self.calls += 1
-        return titles.TitleResult(self._title)
-
-
-class _FlakyTitleGen:
-    """Fails (returns None) on the first call, succeeds after."""
-
-    def __init__(self, title="Second Try"):
-        self._title = title
-        self.calls = 0
-
-    async def generate(self, message):
-        self.calls += 1
-        return titles.TitleResult(None if self.calls == 1 else self._title)
-
-
-class _GatedTitleGen:
-    """Blocks each call on a per-call gate so two attempts can be held in flight at
-    once — to exercise the race-safe 'keep the first successful' guarantee. Keyed by
-    call order rather than the message, because concurrent attempts read the same
-    rolling-window input and so can't be told apart by content."""
-
-    def __init__(self):
-        self.gates: dict[int, asyncio.Event] = {}
-        self.done: set[int] = set()
-        self.calls = 0
-
-    def gate(self, call: int) -> asyncio.Event:
-        return self.gates.setdefault(call, asyncio.Event())
-
-    async def generate(self, message):
-        self.calls += 1
-        call = self.calls  # assigned before any await, so each call gets a distinct id
-        await self.gate(call).wait()
-        self.done.add(call)
-        return titles.TitleResult(f"title-{call}")
-
-
-async def test_first_text_message_titles_an_untitled_chat(monkeypatch):
+async def test_first_text_message_titles_an_untitled_chat():
     chat = sessions.create_chat_session()  # type chat, title "New chat"
-    monkeypatch.setattr(titles, "generator", _FixedTitleGen("Fix the parser"))
     reg = AgentSessionRegistry()
     ws = FakeWS()
     hub.register(chat, ws)
     try:
         await reg.send(chat, "help me fix the parser")
-        await _wait_until(lambda: sessions.get_session(chat)["title"] == "Fix the parser")
+        await _wait_until(
+            lambda: sessions.get_session(chat)["title"] == "help me fix the parser"
+        )
     finally:
         hub.unregister(chat, ws)
 
-    # The new title is pushed live to the surface.
-    assert {"type": "title", "surface": chat, "payload": {"title": "Fix the parser"}} in ws.received
+    # The derived title is pushed live to the surface.
+    assert {
+        "type": "title",
+        "surface": chat,
+        "payload": {"title": "help me fix the parser"},
+    } in ws.received
+    await reg.shutdown_all()
+
+
+async def test_title_is_cut_to_the_first_100_characters():
+    chat = sessions.create_chat_session()
+    reg = AgentSessionRegistry()
+    await reg.send(chat, "x" * 250)
+    await _wait_until(lambda: sessions.get_session(chat)["title"] == "x" * 100)
     await reg.shutdown_all()
 
 
@@ -1644,11 +1600,10 @@ def _sidecar_path(sdk_session_id: str) -> Path:
     return Path(os.environ["CVI_TOKEN_MONITOR_SIDECAR_DIR"]) / f"{sdk_session_id}.json"
 
 
-async def test_titling_writes_token_monitor_sidecar(monkeypatch):
+async def test_titling_writes_token_monitor_sidecar():
     # Once a chat is titled and its SDK id known, a sidecar is written so the token
     # monitor attributes the session's tokens to the title.
     chat = sessions.create_chat_session()
-    monkeypatch.setattr(titles, "generator", _FixedTitleGen("Fix the parser"))
     reg = AgentSessionRegistry()
     await reg.send(chat, "help me fix the parser")
     await _wait_until(_sidecar_path(SESSION).exists)
@@ -1656,7 +1611,7 @@ async def test_titling_writes_token_monitor_sidecar(monkeypatch):
 
     assert json.loads(_sidecar_path(SESSION).read_text()) == {
         "session_id": SESSION,
-        "topic": "Fix the parser",
+        "topic": "help me fix the parser",
         "started_via": "cvi",
     }
 
@@ -1687,157 +1642,87 @@ async def test_sidecar_follows_sdk_id_rotation(monkeypatch):
     assert json.loads(_sidecar_path("sdk-rotated").read_text())["topic"] == "Stable Title"
 
 
-async def test_image_only_first_turn_defers_titling_to_the_next_text_message(monkeypatch):
+async def test_image_only_first_turn_defers_titling_to_the_next_text_message():
     chat = sessions.create_chat_session()
-    gen = _FixedTitleGen("Picture chat")
-    monkeypatch.setattr(titles, "generator", gen)
     reg = AgentSessionRegistry()
 
     # An image-only first turn has no text basis — titling is skipped, not attempted.
     await reg.send(chat, "", images=[agent_session.ImageInput(media_type="image/png", data="QUJD")])
     await _wait_until(lambda: len(FakeClient.instances) == 1)
-    assert gen.calls == 0
     assert sessions.get_session(chat)["title"] == "New chat"
 
     # The next message with text titles it.
     await reg.send(chat, "what is in this picture")
-    await _wait_until(lambda: sessions.get_session(chat)["title"] == "Picture chat")
+    await _wait_until(lambda: sessions.get_session(chat)["title"] == "what is in this picture")
     await reg.shutdown_all()
 
 
-async def test_failed_titling_retries_on_the_next_message(monkeypatch):
+async def test_title_is_frozen_after_the_first_prompt():
     chat = sessions.create_chat_session()
-    gen = _FlakyTitleGen("Second Try")
-    monkeypatch.setattr(titles, "generator", gen)
-    reg = AgentSessionRegistry()
-
-    await reg.send(chat, "first")
-    await _wait_until(lambda: gen.calls == 1)
-    assert sessions.get_session(chat)["title"] == "New chat"  # first attempt failed
-
-    await reg.send(chat, "second")
-    await _wait_until(lambda: sessions.get_session(chat)["title"] == "Second Try")
-    await reg.shutdown_all()
-
-
-async def test_titling_stops_after_the_first_success(monkeypatch):
-    chat = sessions.create_chat_session()
-    gen = _FixedTitleGen("Done")
-    monkeypatch.setattr(titles, "generator", gen)
     reg = AgentSessionRegistry()
 
     await reg.send(chat, "one")
-    await _wait_until(lambda: sessions.get_session(chat)["title"] == "Done")
+    await _wait_until(lambda: sessions.get_session(chat)["title"] == "one")
+
+    # Further prompts never change the title — it is frozen on the first prompt.
     await reg.send(chat, "two")
     await reg.send(chat, "three")
-    # Drain the turns so an erroneous extra title attempt would have run by now.
     await _wait_until(lambda: FakeClient.instances[0].queried == ["one", "two", "three"])
 
-    assert gen.calls == 1  # flag flipped after success; no further attempts
+    assert sessions.get_session(chat)["title"] == "one"
     await reg.shutdown_all()
 
 
-async def test_keeps_the_first_successful_title_under_concurrency(monkeypatch):
+async def test_first_prompt_wins_under_rapid_sends():
     chat = sessions.create_chat_session()
-    gen = _GatedTitleGen()
-    monkeypatch.setattr(titles, "generator", gen)
     reg = AgentSessionRegistry()
     ws = FakeWS()
     hub.register(chat, ws)
     try:
-        # Two messages before any title resolves → two concurrent attempts in flight.
+        # Two prompts before the first title lands → the first prompt still wins, and
+        # exactly one title frame is emitted.
         await reg.send(chat, "a")
         await reg.send(chat, "b")
-        await _wait_until(lambda: gen.calls == 2)
-
-        # Let the first attempt win; it titles the chat.
-        gen.gate(1).set()
-        await _wait_until(lambda: sessions.get_session(chat)["title"] == "title-1")
-
-        # The second finishes after — its conditional write no-ops and must not clobber.
-        gen.gate(2).set()
-        await _wait_until(lambda: 2 in gen.done)
-        assert sessions.get_session(chat)["title"] == "title-1"
+        await _wait_until(lambda: sessions.get_session(chat)["title"] == "a")
+        await _wait_until(lambda: FakeClient.instances[0].queried == ["a", "b"])
         title_frames = [m for m in ws.received if m["type"] == "title"]
-        assert title_frames == [{"type": "title", "surface": chat, "payload": {"title": "title-1"}}]
+        assert title_frames == [{"type": "title", "surface": chat, "payload": {"title": "a"}}]
     finally:
         hub.unregister(chat, ws)
     await reg.shutdown_all()
 
 
-async def test_prompt_gets_a_generated_summary(monkeypatch):
-    _seed_session(SESSION, session_type="chat")
-    store.get_or_create(SESSION).activity.clear()
-    monkeypatch.setattr(titles, "summarizer", _FixedTitleGen("fix the parser"))
+async def test_no_background_title_or_summary_agent_is_spawned():
+    # The only SDK client opened per turn is the main conversation client — there is no
+    # extra titling/summary sub-agent — and the rail gets no generated-summary broadcast.
+    chat = sessions.create_chat_session()
     reg = AgentSessionRegistry()
     ws = FakeWS()
-    hub.register(SESSION, ws)
+    hub.register(chat, ws)
     try:
-        await reg.send(SESSION, "can you help me fix the parser please")
+        await reg.send(chat, "help me fix the parser")
         await _wait_until(
-            lambda: any(m.get("type") == "prompt_summary" for m in ws.received)
+            lambda: bool(FakeClient.instances)
+            and FakeClient.instances[0].queried == ["help me fix the parser"]
+        )
+        await _wait_until(
+            lambda: sessions.get_session(chat)["title"] == "help me fix the parser"
         )
     finally:
-        hub.unregister(SESSION, ws)
+        hub.unregister(chat, ws)
 
-    summary_event = next(m for m in ws.received if m["type"] == "prompt_summary")
-    assert summary_event["payload"] == {"index": 0, "text": "fix the parser"}
-    # The summary also lands on the stored prompt entry (rides the snapshot)...
-    user_entry = next(e for e in store.get_or_create(SESSION).activity if e.kind == "user")
-    assert user_entry.summary == "fix the parser"
-    # ...and is written back to its persisted row so it survives a restart.
-    row = next(r for r in messages.list_messages(SESSION) if r["id"] == user_entry.message_id)
-    assert row["summary"] == "fix the parser"
+    assert len(FakeClient.instances) == 1
+    assert not any(m.get("type") == "prompt_summary" for m in ws.received)
     await reg.shutdown_all()
 
 
-async def test_chat_with_an_explicit_title_is_not_auto_titled(monkeypatch):
+async def test_chat_with_an_explicit_title_is_not_auto_titled():
     chat = sessions.create_chat_session("My Title")
-    gen = _FixedTitleGen()
-    monkeypatch.setattr(titles, "generator", gen)
     reg = AgentSessionRegistry()
 
     await reg.send(chat, "hello")
     await _wait_until(lambda: len(FakeClient.instances) == 1)
-    assert gen.calls == 0
     assert sessions.get_session(chat)["title"] == "My Title"
-    await reg.shutdown_all()
-
-
-class _RecordingTitleGen:
-    """Returns a distinct title per call and records the input each call received,
-    so a test can assert how many titling attempts ran and what they were fed."""
-
-    def __init__(self):
-        self.calls = 0
-        self.inputs: list[str] = []
-
-    async def generate(self, message):
-        self.calls += 1
-        self.inputs.append(message)
-        return titles.TitleResult(f"Title {self.calls}")
-
-
-async def test_title_is_frozen_after_the_first_success(monkeypatch):
-    chat = sessions.create_chat_session()
-    gen = _RecordingTitleGen()
-    monkeypatch.setattr(titles, "generator", gen)
-    reg = AgentSessionRegistry()
-
-    # Prompt 1 → the initial title.
-    await reg.send(chat, "one")
-    await _wait_until(lambda: sessions.get_session(chat)["title"] == "Title 1")
-
-    # Further prompts never regenerate the title — it is frozen on the first success.
-    for text in ("two", "three", "four", "five", "six"):
-        await reg.send(chat, text)
-    await _wait_until(
-        lambda: FakeClient.instances[0].queried[:6]
-        == ["one", "two", "three", "four", "five", "six"]
-    )
-
-    assert gen.calls == 1
-    assert sessions.get_session(chat)["title"] == "Title 1"
     await reg.shutdown_all()
 
 
@@ -1861,13 +1746,6 @@ class _UsageClient(FakeClient):
         )
 
 
-class _UsageTitleGen:
-    """A title/summary generator that reports token usage on every call."""
-
-    async def generate(self, message):
-        return titles.TitleResult("A Title", output_tokens=7, input_tokens=70)
-
-
 async def test_turn_records_token_usage_attributed_to_its_prompt(monkeypatch):
     _seed_session(SESSION)
     store.get_or_create(SESSION).activity.clear()
@@ -1882,19 +1760,6 @@ async def test_turn_records_token_usage_attributed_to_its_prompt(monkeypatch):
 
     prompt = next(m for m in messages.list_messages(SESSION) if m["kind"] == "user")
     assert token_usage.tokens_for_message(prompt["id"]) == (30, 1500)
-    await reg.shutdown_all()
-
-
-async def test_title_and_summary_calls_record_token_usage(monkeypatch):
-    chat = sessions.create_chat_session()
-    monkeypatch.setattr(titles, "generator", _UsageTitleGen())
-    monkeypatch.setattr(titles, "summarizer", _UsageTitleGen())
-    reg = AgentSessionRegistry()
-
-    await reg.send(chat, "hello there")
-    # The default FakeClient turn reports no usage; the title and summary sub-calls
-    # each report 7 output / 70 input → 14 / 140 total.
-    await _wait_until(lambda: token_usage.session_totals(chat) == (14, 140))
     await reg.shutdown_all()
 
 
