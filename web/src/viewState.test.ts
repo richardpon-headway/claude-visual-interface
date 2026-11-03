@@ -55,6 +55,34 @@ describe("applyMessage", () => {
     expect(state.view.background_working).toBe(true);
   });
 
+  it("defaults the queue to [] on a snapshot that omits it (old daemon)", () => {
+    const legacy = {
+      surface: "s",
+      activity: [],
+      thinking: false,
+      background_working: false,
+      session_output_tokens: 0,
+      session_input_tokens: 0,
+      // no `queue` field — a daemon that predates it
+    } as unknown as ViewState;
+    let state = emptySurface("s");
+    state = applyMessage(state, { type: "snapshot", surface: "s", payload: legacy });
+    expect(state.view.queue).toEqual([]);
+  });
+
+  it("replaces the queue on a pending_queue event", () => {
+    let state = emptySurface("s");
+    state = applyMessage(state, {
+      type: "pending_queue",
+      surface: "s",
+      payload: { items: [{ id: "a", text: "one" }, { id: "b", text: "two" }] },
+    });
+    expect(state.view.queue).toEqual([{ id: "a", text: "one" }, { id: "b", text: "two" }]);
+    // A later empty event clears it (every pending item skipped / started running).
+    state = applyMessage(state, { type: "pending_queue", surface: "s", payload: { items: [] } });
+    expect(state.view.queue).toEqual([]);
+  });
+
   it("appends activity entries in arrival order", () => {
     let state = emptySurface("s");
     state = applyMessage(state, { type: "activity", surface: "s", payload: { kind: "text", text: "reviewing" } });

@@ -123,6 +123,61 @@ describe("useSurfaceSocket", () => {
     expect(FakeWebSocket.last?.sent).toEqual([JSON.stringify({ type: "stop" })]);
   });
 
+  it("sendSkip sends a skip frame over an open socket", () => {
+    const { result } = renderHook(() => useSurfaceSocket("s1"));
+    act(() => FakeWebSocket.last!.open());
+    act(() => result.current[6]("turn-1"));
+
+    expect(FakeWebSocket.last?.sent).toEqual([
+      JSON.stringify({ type: "skip", payload: { id: "turn-1" } }),
+    ]);
+  });
+
+  it("applies a pending_queue frame to the view queue", () => {
+    const { result } = renderHook(() => useSurfaceSocket("s1"));
+    const ws = FakeWebSocket.last!;
+    act(() => ws.open());
+    act(() =>
+      ws.onmessage?.({
+        data: JSON.stringify({
+          type: "pending_queue",
+          surface: "s1",
+          payload: { items: [{ id: "a", text: "first queued" }, { id: "b", text: "second" }] },
+        }),
+      }),
+    );
+
+    expect(result.current[0].view.queue).toEqual([
+      { id: "a", text: "first queued" },
+      { id: "b", text: "second" },
+    ]);
+  });
+
+  it("seeds the queue from the connect snapshot", () => {
+    const { result } = renderHook(() => useSurfaceSocket("s1"));
+    const ws = FakeWebSocket.last!;
+    act(() => ws.open());
+    act(() =>
+      ws.onmessage?.({
+        data: JSON.stringify({
+          type: "snapshot",
+          surface: "s1",
+          payload: {
+            surface: "s1",
+            activity: [],
+            thinking: false,
+            background_working: false,
+            session_output_tokens: 0,
+            session_input_tokens: 0,
+            queue: [{ id: "q1", text: "waiting" }],
+          },
+        }),
+      }),
+    );
+
+    expect(result.current[0].view.queue).toEqual([{ id: "q1", text: "waiting" }]);
+  });
+
   it("queues a message sent while not open and flushes it in order on open", () => {
     const { result } = renderHook(() => useSurfaceSocket("s1"));
     const ws = FakeWebSocket.last!;
