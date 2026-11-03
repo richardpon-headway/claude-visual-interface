@@ -1,0 +1,22 @@
+web/src/PendingQueue.tsx
+  h_7b65865080601f 1-41
+web/src/Surface.tsx
+  h_7b65865080601f 6,92,317
+web/src/useSurfaceSocket.ts
+  h_7b65865080601f 22-23,36-37,46,155-161,175
+web/src/viewState.test.ts
+  h_7b65865080601f 37,49
+web/src/viewState.ts
+  h_7b65865080601f 22-25,49,69-70,80,91,123-125,151-152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "28c99e27b2145edfb6a4faea0834abd4dc537b17",
+  "prompts": {},
+  "humans": {
+    "h_7b65865080601f": {
+      "author": "Richard Pon <richardpon-headway@users.noreply.github.com>"
+    }
+  }
+}
