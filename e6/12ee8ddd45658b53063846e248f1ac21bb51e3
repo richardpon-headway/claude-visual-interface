@@ -1,0 +1,22 @@
+web/src/rail.ts
+  s_8ed1f2f50c9dd7::t_6731b181fffde9 7,10-17,26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e612ee8ddd45658b53063846e248f1ac21bb51e3",
+  "prompts": {},
+  "sessions": {
+    "s_8ed1f2f50c9dd7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "20ad18ed-da82-469a-9cae-f6221b1009cc",
+        "model": "unknown"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
