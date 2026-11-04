@@ -211,6 +211,151 @@ async def test_user_turn_is_recorded_at_execution_time_not_on_enqueue(monkeypatc
     await reg.shutdown_all()
 
 
+class _GatedFirstClient(FakeClient):
+    """Holds the first turn open on an event so a second turn stays queued (visible as
+    pending), until the test releases it. Shared by the queue/skip tests."""
+
+    release = asyncio.Event()
+
+    async def receive_response(self):
+        last = self.queried[-1]
+        yield AssistantMessage(content=[TextBlock(text=f"answer to {last}")], model="test")
+        if last == "first":
+            await type(self).release.wait()
+        yield ResultMessage(
+            subtype="success",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=1,
+            session_id=SESSION,
+        )
+
+
+def _pending(ws):
+    """The items of the latest pending_queue frame a FakeWS received ([] if none yet)."""
+    frames = [m for m in ws.received if m["type"] == "pending_queue"]
+    return frames[-1]["payload"]["items"] if frames else []
+
+
+def _first_queried():
+    """What the first fake client has been asked to run so far (None before it exists)."""
+    return FakeClient.instances[0].queried if FakeClient.instances else None
+
+
+def _activity_kinds():
+    return [(e.kind, e.text) for e in store.get_or_create(SESSION).activity]
+
+
+async def test_enqueue_while_busy_broadcasts_a_visible_pending_turn(monkeypatch):
+    # A message sent while a turn is running is shown as pending (with a stable id) right
+    # away, then clears from the queue when it starts running.
+    _seed_session(SESSION)
+    store.get_or_create(SESSION).activity.clear()
+    _GatedFirstClient.release = asyncio.Event()
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: _GatedFirstClient(options)
+    )
+    ws = FakeWS()
+    hub.register(SESSION, ws)
+    reg = AgentSessionRegistry()
+    try:
+        await reg.send(SESSION, "first")
+        await _wait_until(lambda: _first_queried() == ["first"])
+        await reg.send(SESSION, "second")
+        await _wait_until(lambda: [i["text"] for i in _pending(ws)] == ["second"])
+        assert len(_pending(ws)) == 1 and _pending(ws)[0]["id"]
+
+        _GatedFirstClient.release.set()
+        # Once the first turn finishes, the second runs and clears from the pending queue.
+        await _wait_until(lambda: _first_queried() == ["first", "second"])
+        await _wait_until(lambda: _pending(ws) == [])
+    finally:
+        hub.unregister(SESSION, ws)
+        await reg.shutdown_all()
+
+
+async def test_skip_removes_a_pending_turn_and_it_never_runs(monkeypatch):
+    # Skipping a queued turn drops it from the visible queue and discards it at pop time —
+    # it is never sent to the model and never recorded.
+    _seed_session(SESSION)
+    store.get_or_create(SESSION).activity.clear()
+    _GatedFirstClient.release = asyncio.Event()
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: _GatedFirstClient(options)
+    )
+    ws = FakeWS()
+    hub.register(SESSION, ws)
+    reg = AgentSessionRegistry()
+    try:
+        await reg.send(SESSION, "first")
+        await _wait_until(lambda: _first_queried() == ["first"])
+        await reg.send(SESSION, "second")
+        await _wait_until(lambda: [i["text"] for i in _pending(ws)] == ["second"])
+        skip_id = _pending(ws)[0]["id"]
+
+        assert await reg.skip(SESSION, skip_id) is True
+        await _wait_until(lambda: _pending(ws) == [])
+
+        _GatedFirstClient.release.set()
+        await _wait_until(lambda: ("result", "success") in _activity_kinds())
+        # The skipped turn never reached the model and left no user bubble.
+        assert _first_queried() == ["first"]
+        assert ("user", "second") not in _activity_kinds()
+    finally:
+        hub.unregister(SESSION, ws)
+        await reg.shutdown_all()
+
+
+async def test_picker_answer_is_not_shown_as_a_pending_turn(monkeypatch):
+    # A non-recording turn (a picker answer, already shown on its card) runs through the
+    # queue but never appears in the visible pending list and isn't skippable.
+    _seed_session(SESSION)
+    store.get_or_create(SESSION).activity.clear()
+    _GatedFirstClient.release = asyncio.Event()
+    monkeypatch.setattr(
+        agent_session, "ClaudeSDKClient", lambda options=None: _GatedFirstClient(options)
+    )
+    ws = FakeWS()
+    hub.register(SESSION, ws)
+    reg = AgentSessionRegistry()
+    try:
+        await reg.send(SESSION, "first")
+        await _wait_until(lambda: _first_queried() == ["first"])
+        # Enqueued like a picker answer while the first turn is still held open.
+        await reg.send(SESSION, "my answer", record_user=False)
+        await asyncio.sleep(0.05)  # let any (unwanted) broadcast land
+
+        pending_texts = [
+            item["text"]
+            for m in ws.received
+            if m["type"] == "pending_queue"
+            for item in m["payload"]["items"]
+        ]
+        assert "my answer" not in pending_texts
+
+        _GatedFirstClient.release.set()
+        await _wait_until(lambda: _first_queried() == ["first", "my answer"])
+    finally:
+        hub.unregister(SESSION, ws)
+        await reg.shutdown_all()
+
+
+async def test_skip_of_unknown_or_dead_surface_is_a_noop():
+    # Skipping an id that isn't pending (already running, already skipped, or never
+    # existed), or a surface with no live session, is a harmless no-op.
+    _seed_session(SESSION)
+    reg = AgentSessionRegistry()
+    try:
+        assert await reg.skip(SESSION, "never-queued") is False  # no live session yet
+        await reg.send(SESSION, "hi")
+        await _wait_until(lambda: reg.active_surfaces() == [SESSION])
+        assert await reg.skip(SESSION, "never-queued") is False  # live, but id unknown
+        assert await reg.skip("no-such-surface", "x") is False
+    finally:
+        await reg.shutdown_all()
+
+
 async def test_idle_timeout_closes_and_deregisters(monkeypatch):
     _seed_session(SESSION)
     monkeypatch.setattr(agent_session, "AGENT_IDLE_SECONDS", 0.05)

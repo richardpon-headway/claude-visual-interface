@@ -252,6 +252,19 @@ async def broadcast_background_working(surface: str, active: bool) -> None:
     )
 
 
+async def broadcast_pending_queue(surface: str, items: list[dict[str, str]]) -> None:
+    """Push the surface's queue of not-yet-running user turns to subscribers so the UI
+    shows pending messages (each skippable via a bare ✕). Pure-broadcast: the queue is
+    ephemeral, owned by the live AgentSession (dropped on idle-close / daemon restart by
+    design, like any un-run turn), and seeded into a connecting browser from the live
+    session in the connect snapshot — so it has no DB home and is not held on the sticky
+    ViewState. Each item is {"id": <turn id>, "text": <display label>}."""
+    await hub.broadcast(
+        surface,
+        {"type": "pending_queue", "surface": surface, "payload": {"items": items}},
+    )
+
+
 # The render contract: visuals render inline in the conversation as self-contained
 # no-script pages. Kept as one constant so the chat prompt's rule can't drift.
 _RENDER_HTML_GUIDANCE = (

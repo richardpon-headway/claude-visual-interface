@@ -137,6 +137,24 @@ async def test_inbound_answer_frame_routes_to_the_agent_registry(monkeypatch):
     assert answered == [(surface, "a1", "Custom modal")]
 
 
+async def test_inbound_skip_frame_routes_to_the_agent_registry(monkeypatch):
+    surface = "ws-skip"
+    skipped: list[tuple[str, str]] = []
+
+    async def fake_skip(s, turn_id):
+        skipped.append((s, turn_id))
+        return True
+
+    monkeypatch.setattr(agent_session.agents, "skip", fake_skip)
+
+    await _handle_inbound(surface, json.dumps({"type": "skip", "payload": {"id": "t1"}}))
+    # Missing / blank / non-string id is ignored, not routed.
+    await _handle_inbound(surface, json.dumps({"type": "skip", "payload": {}}))
+    await _handle_inbound(surface, json.dumps({"type": "skip", "payload": {"id": ""}}))
+
+    assert skipped == [(surface, "t1")]
+
+
 async def test_inbound_stop_frame_interrupts_the_turn(monkeypatch):
     surface = "ws-stop"
     called: dict[str, object] = {}
