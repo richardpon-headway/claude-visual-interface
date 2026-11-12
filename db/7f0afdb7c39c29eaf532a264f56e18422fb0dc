@@ -1,0 +1,22 @@
+docs/screenshots/README.md
+  s_d85f97350bdd32::t_1569dd40bc2af0 1-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "db7f0afdb7c39c29eaf532a264f56e18422fb0dc",
+  "prompts": {},
+  "sessions": {
+    "s_d85f97350bdd32": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8117308f-ec7f-4279-8f8e-d3b241e513dd",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Richard Pon <richardpon-headway@users.noreply.github.com>",
+      "custom_attributes": {
+        "runtime": "local"
+      }
+    }
+  }
+}
