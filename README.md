@@ -8,6 +8,8 @@ gateway.
 It's a single scrolling conversation: ask Claude anything and read the reply top to
 bottom, with designs, diagrams, tables, and reports rendered inline as you go.
 
+![CVI — a rendered page inline in a live session](docs/screenshots/hero.png)
+
 > Early / work in progress.
 
 ## Stack
@@ -17,12 +19,30 @@ bottom, with designs, diagrams, tables, and reports rendered inline as you go.
 
 ## Run
 
-    make install   # set up the daemon (and the web client, once it exists)
-    make run       # start the daemon on 127.0.0.1:47825 (its log streams in this terminal)
+    make install   # set up the daemon and the web client
+    make run       # daemon on 127.0.0.1:47825 + web UI on localhost:5175 (logs stream here)
 
-Health check:
+Then open the visual surface at http://localhost:5175.
+
+Health check (daemon):
 
     curl http://127.0.0.1:47825/health    # {"status": "ok"}
+
+## Screenshots
+
+<!-- Drop images in docs/screenshots/. Add or remove rows freely. -->
+
+**Inline rendering** — designs, tables, and charts rendered in the conversation.
+
+![Inline rendered page](docs/screenshots/inline-render.png)
+
+**The "doing" process lane** — dim, subordinate progress notes with a dynamic verb chip.
+
+![Doing lane](docs/screenshots/doing-lane.png)
+
+**Code & diffs** — Monaco-backed code rendering inline.
+
+![Code rendering](docs/screenshots/code-view.png)
 
 ## Configure
 
@@ -63,5 +83,5 @@ Edits take effect on the next session — no daemon restart needed.
 ## Layout
 
 - `daemon/` — Python FastAPI daemon (SQLite + the MCP render-primitive vocabulary; Agent SDK chat sessions)
-- `web/` — TypeScript React client (added in a later phase)
-- `skills/` — launcher skills (added in a later phase)
+- `web/` — TypeScript React client (Vite + Tailwind + Monaco)
+- `skills/` — launcher skills (planned)
